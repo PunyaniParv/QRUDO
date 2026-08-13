@@ -28,6 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="run every command once and restore the machine")
     mode.add_argument("--command", metavar="NAME",
                       help="execute a single command, e.g. VOLUME_UP")
+    mode.add_argument("--hotkeys", action="store_true",
+                      help="listen for ctrl+alt+U/D/P/L/R/B/N from any app")
     mode.add_argument("--check", action="store_true",
                       help="print backend capabilities and permission warnings")
 
@@ -69,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.selftest:
         from sarv import selftest
         return selftest.run(engine)
+
+    if args.hotkeys:
+        from sarv import hotkeys
+        return hotkeys.run(engine)
 
     if args.simulate:
         from sarv import simulator

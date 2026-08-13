@@ -175,7 +175,19 @@ change.
 python main.py --check       # what works on this machine
 python main.py --selftest    # run all seven, then restore the machine
 python main.py --simulate    # keyboard: U D P L R B N
+python main.py --hotkeys     # ctrl+alt+U/D/P/L/R/B/N from any app
 ```
+
+`--hotkeys` is demo insurance, not part of the product: it drives the same
+seven commands from anywhere on the machine, so if gesture recognition
+misbehaves in front of an audience you can fall back to the keyboard with the
+video still fullscreen. Run it in a second terminal and minimise it.
+
+Chords need ctrl+alt so a bare `u` still types a u everywhere. Matched chords
+are swallowed and never reach the app you are in.
+
+**The vision half does not need this.** Your camera loop reads frames whether or
+not SARV has focus, so nothing about gestures depends on capturing keystrokes.
 
 ## Logs
 
