@@ -130,29 +130,48 @@ class _PowerShellWorker:
     raising: a hung helper during a demo would be far worse than a slow one.
     """
 
-    _LOOP = """
+    #: Seconds a cached brightness reading stays trustworthy.  Long enough to
+    #: cover a burst of gestures, short enough that using the laptop's own
+    #: brightness keys in between is picked up on the next command.
+    _CACHE_SECONDS = 1.5
+
+    _LOOP = f"""
 $out = [Console]::Out
-while ($true) {
+$methods = $null
+$last = $null
+$lastSet = [DateTime]::MinValue
+while ($true) {{
     $line = [Console]::In.ReadLine()
-    if ($null -eq $line -or $line -eq 'quit') { break }
-    try {
-        $b = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop)[0]
-        $cur = [int]$b.CurrentBrightness
-        if ($line -eq 'read') {
+    if ($null -eq $line -or $line -eq 'quit') {{ break }}
+    try {{
+        if ($null -eq $methods) {{
+            $methods = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop)[0]
+        }}
+        $stale = ((Get-Date) - $lastSet).TotalSeconds -gt {_CACHE_SECONDS}
+        if ($line -eq 'read' -or $null -eq $last -or $stale) {{
+            $cur = [int](@(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop)[0]).CurrentBrightness
+        }} else {{
+            $cur = $last
+        }}
+        if ($line -eq 'read') {{
             $out.WriteLine("$cur|ok")
-        } else {
+        }} else {{
             $target = $cur + [int]$line
-            if ($target -gt 100) { $target = 100 }
-            if ($target -lt 0) { $target = 0 }
-            $m = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop)[0]
-            Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Brightness=[byte]$target; Timeout=[uint32]1} | Out-Null
+            if ($target -gt 100) {{ $target = 100 }}
+            if ($target -lt 0) {{ $target = 0 }}
+            Invoke-CimMethod -InputObject $methods -MethodName WmiSetBrightness -Arguments @{{Brightness=[byte]$target; Timeout=[uint32]1}} | Out-Null
             $out.WriteLine("$cur|$target|ok")
-        }
-    } catch {
+            $last = $target
+            $lastSet = Get-Date
+        }}
+    }} catch {{
+        # Forget everything cached; the display may have changed underneath us.
+        $methods = $null
+        $last = $null
         $out.WriteLine("error|$($_.Exception.Message)")
-    }
+    }}
     $out.Flush()
-}
+}}
 """
 
     def __init__(self, log) -> None:
@@ -161,6 +180,15 @@ while ($true) {
         self._broken = False
         self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sarv-ps")
         atexit.register(self.close)
+
+    def prewarm(self) -> None:
+        """Launch the helper now so the first command does not wait for it.
+
+        Popen returns immediately, and PowerShell does its own start-up while
+        SARV carries on booting -- so by the time a gesture arrives, the second
+        or so of launch cost has already been paid.
+        """
+        self._start()
 
     def exchange(self, line: str, timeout: float = 6.0) -> str | None:
         """Send one line, return one reply.  None means "use the slow path"."""
@@ -228,6 +256,8 @@ class WindowsController(Controller):
         _declare(self._user32)
         self._worker = (_PowerShellWorker(self.log)
                         if self.config.windows_persistent_powershell else None)
+        if self._worker is not None:
+            self._worker.prewarm()
 
     # ------------------------------------------------------------------ volume
 
@@ -436,9 +466,9 @@ class WindowsController(Controller):
             f"volume moves in {VOLUME_PERCENT_PER_PRESS}% steps on Windows, so a "
             f"{self.config.volume_step}% setting becomes "
             f"{max(1, round(self.config.volume_step / VOLUME_PERCENT_PER_PRESS)) * VOLUME_PERCENT_PER_PRESS}%",
-            "brightness goes through PowerShell: the first command pays ~1.5s of "
-            "startup, later ones reuse the same process. Use engine.submit() rather "
-            "than execute() so that first one cannot stall the camera loop",
+            "brightness goes through PowerShell, which is started at launch and kept "
+            "alive; if it ever falls back to launching one per command that costs "
+            "~1.4s each, so prefer engine.submit() over execute() in the frame loop",
         ]
         try:
             if self._read_brightness() is None:

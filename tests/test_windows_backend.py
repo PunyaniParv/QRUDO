@@ -211,6 +211,34 @@ class TestPersistentPowerShell(unittest.TestCase):
         self.assertEqual(controller._worker.lines, ["read"])
 
 
+class TestResidentLoopScript(unittest.TestCase):
+    """The loop runs only on Windows, so its text is checked here instead."""
+
+    script = windows._PowerShellWorker._LOOP
+
+    def test_braces_survive_formatting(self):
+        self.assertIn("@{Brightness=[byte]$target; Timeout=[uint32]1}", self.script)
+        self.assertIn("while ($true) {", self.script)
+
+    def test_methods_object_is_fetched_outside_the_loop(self):
+        """Re-querying it per command was one wasted WMI call every time."""
+        self.assertLess(self.script.index("$methods = $null"),
+                        self.script.index("while ($true)"))
+
+    def test_cache_window_is_substituted(self):
+        self.assertIn(str(windows._PowerShellWorker._CACHE_SECONDS), self.script)
+
+    def test_reads_always_go_to_the_hardware(self):
+        """A cached value is fine for a burst of set commands, but a read is
+        used to restore the machine, so it must be true."""
+        self.assertIn("$line -eq 'read' -or $null -eq $last -or $stale", self.script)
+
+    def test_failure_clears_the_cache(self):
+        after_catch = self.script.split("catch")[1]
+        self.assertIn("$methods = $null", after_catch)
+        self.assertIn("$last = $null", after_catch)
+
+
 class TestPreflight(unittest.TestCase):
     def test_reports_the_volume_rounding(self):
         controller = FakeWindowsController(ControlConfig(volume_step=5))
