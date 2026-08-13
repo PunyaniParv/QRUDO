@@ -54,6 +54,29 @@ Command names are also plain strings — `Command.VOLUME_UP == "VOLUME_UP"` — 
 they survive JSON, sockets, or a log file if we later split the two engines
 into separate processes.
 
+## Which window a command lands in
+
+Two of the seven are sensitive to keyboard focus:
+
+| Commands | Where they go |
+|---|---|
+| `VOLUME_UP/DOWN`, `PLAY_PAUSE`, `BRIGHTNESS_UP/DOWN` | system-wide — focus is irrelevant |
+| `REWIND`, `FORWARD` | the **focused window**, because seeking has no system-wide key and we send arrow keys |
+
+So seeking cannot be tested from `--simulate`: you are typing into the terminal,
+which means the terminal is focused and swallows the arrows. Test it with a
+countdown instead, and click your video before it fires:
+
+```bash
+python main.py --command FORWARD --delay 5
+```
+
+For the real app this means **the video must keep focus while gestures are
+recognised.** The camera loop reads frames whether or not your window is
+focused, so don't call anything that steals focus (`cv2.setWindowProperty`
+fullscreen, `win32gui.SetForegroundWindow`, etc.) after the user clicks their
+video. If your preview window must be visible, keep it visible but unfocused.
+
 ## If 200 ms is too slow for your frame loop
 
 `VOLUME_UP`/`VOLUME_DOWN` cost ~200 ms because macOS makes us shell out to

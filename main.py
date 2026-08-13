@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from sarv import ControlConfig, ControlEngine, log, parse_command
 
@@ -30,6 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--check", action="store_true",
                       help="print backend capabilities and permission warnings")
 
+    parser.add_argument("--delay", type=float, default=0.0, metavar="SECONDS",
+                        help="count down before firing --command, so you can click "
+                             "the video first (REWIND/FORWARD go to the focused window)")
     parser.add_argument("--dry-run", action="store_true",
                         help="log commands without performing them")
     parser.add_argument("--config", metavar="PATH", help="path to a JSON config file")
@@ -75,6 +79,17 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+    # Seeking sends arrow keys, which go to whichever window has keyboard
+    # focus.  Run from a terminal, that is the terminal -- so give the user a
+    # moment to click the video they actually want to seek.
+    for remaining in range(int(args.delay), 0, -1):
+        print(f"  {command} in {remaining}s -- click the window you want it to hit",
+              end="\r", flush=True)
+        time.sleep(1)
+    if args.delay:
+        print(" " * 70, end="\r")
+
     result = engine.execute(command, force=True)
     print(result)
     return 0 if result.ok else 1
