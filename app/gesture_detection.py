@@ -1,22 +1,34 @@
 from collections import Counter, deque
 import math
+import time
+
 
 
 gesture_history = deque(maxlen=3)
+
+# Swipe tracking
+swipe_start_x = None
+swipe_start_time = None
+swipe_cooldown_until = 0
+
+def distance(point1, point2):
+    """Calculate 3D distance between two landmarks."""
+    return math.sqrt(
+        (point1.x - point2.x) ** 2 +
+        (point1.y - point2.y) ** 2 +
+        (point1.z - point2.z) ** 2
+    )
 
 
 def is_palm_facing(hand_landmarks, handedness):
     """
     Check whether the palm is facing the camera.
-
-    Returns True only when the palm is approximately facing forward.
     """
 
     wrist = hand_landmarks[0]
     index_mcp = hand_landmarks[5]
     pinky_mcp = hand_landmarks[17]
 
-    # Vectors from wrist to the two sides of the palm
     v1 = (
         index_mcp.x - wrist.x,
         index_mcp.y - wrist.y,
@@ -29,72 +41,178 @@ def is_palm_facing(hand_landmarks, handedness):
         pinky_mcp.z - wrist.z
     )
 
-    # Cross product gives the direction the palm is facing
     normal_z = (
         v1[0] * v2[1]
         - v1[1] * v2[0]
     )
 
-    # MediaPipe handedness tells us which hand it is.
-    # We use it to determine the expected palm orientation.
     if handedness == "Right":
         return normal_z < 0
 
-    else:
-        return normal_z > 0
+    return normal_z > 0
+
+
+def finger_is_extended(hand_landmarks, tip, pip, mcp):
+    """
+    Determine whether a finger is extended using
+    distance from the wrist and joint geometry.
+    """
+
+    wrist = hand_landmarks[0]
+
+    tip_distance = distance(hand_landmarks[tip], wrist)
+    pip_distance = distance(hand_landmarks[pip], wrist)
+
+    return tip_distance > pip_distance * 1.15
+
+
+def detect_fingers(hand_landmarks):
+    """
+    Return the extended state of the four fingers.
+    """
+
+    return {
+        "index": finger_is_extended(hand_landmarks, 8, 6, 5),
+        "middle": finger_is_extended(hand_landmarks, 12, 10, 9),
+        "ring": finger_is_extended(hand_landmarks, 16, 14, 13),
+        "pinky": finger_is_extended(hand_landmarks, 20, 18, 17)
+    }
+
+
+def detect_swipe(hand_landmarks, handedness):
+    """
+    Detect a horizontal two-finger swipe.
+
+    Returns:
+        SWIPE_LEFT
+        SWIPE_RIGHT
+        None
+    """
+
+    global swipe_start_x
+    global swipe_start_time
+    global swipe_cooldown_until
+
+    current_time = time.time()
+
+    # Still inside cooldown
+    if current_time < swipe_cooldown_until:
+        return None
+
+    # Palm must face camera
+    if not is_palm_facing(hand_landmarks, handedness):
+        swipe_start_x = None
+        swipe_start_time = None
+        return None
+
+    fingers = detect_fingers(hand_landmarks)
+
+    # Require index + middle only
+    two_finger_pose = (
+        fingers["index"]
+        and fingers["middle"]
+        and not fingers["ring"]
+        and not fingers["pinky"]
+    )
+
+    if not two_finger_pose:
+        swipe_start_x = None
+        swipe_start_time = None
+        return None
+
+    # Midpoint between index and middle fingertips
+    index_tip = hand_landmarks[8]
+    middle_tip = hand_landmarks[12]
+
+    current_x = (index_tip.x + middle_tip.x) / 2
+
+    # Start tracking
+    if swipe_start_x is None:
+        swipe_start_x = current_x
+        swipe_start_time = current_time
+        return None
+
+    distance_x = current_x - swipe_start_x
+    elapsed = current_time - swipe_start_time
+
+    # Reset if movement takes too long
+    if elapsed > 0.7:
+        swipe_start_x = current_x
+        swipe_start_time = current_time
+        return None
+
+    # Minimum horizontal movement
+    threshold = 0.18
+
+    if abs(distance_x) >= threshold:
+
+        if distance_x > 0:
+            gesture = "SWIPE_RIGHT"
+        else:
+            gesture = "SWIPE_LEFT"
+
+        # Prevent repeated triggers
+        swipe_cooldown_until = current_time + 0.8
+
+        swipe_start_x = None
+        swipe_start_time = None
+
+        return gesture
+
+    return None
 
 
 def detect_gesture(hand_landmarks, handedness):
     """
-    Detect basic gestures only when the palm is facing the camera.
-
-    Returns:
+    Detect:
         OPEN_PALM
         FIST
         POINT
+        TWO_FINGER
         UNKNOWN
+
+    Swipe direction will be handled separately.
     """
 
-    # Reject the gesture if the palm isn't facing the camera
+    # Palm must face camera
     if not is_palm_facing(hand_landmarks, handedness):
         gesture_history.clear()
         return "UNKNOWN"
 
-    fingers = {
-        "index": (8, 6),
-        "middle": (12, 10),
-        "ring": (16, 14),
-        "pinky": (20, 18)
-    }
+    fingers = detect_fingers(hand_landmarks)
 
-    extended = {}
+    extended_count = sum(fingers.values())
 
-    for finger, (tip, pip) in fingers.items():
-        extended[finger] = (
-            hand_landmarks[tip].y < hand_landmarks[pip].y
-        )
-
-    extended_count = sum(extended.values())
-
-    # Determine raw gesture
-    if extended_count == 4:
-        raw_gesture = "OPEN_PALM"
-
-    elif extended_count == 0:
+    # FIST
+    if extended_count == 0:
         raw_gesture = "FIST"
 
+    # POINT
     elif (
-        extended["index"]
-        and not extended["middle"]
-        and not extended["ring"]
-        and not extended["pinky"]
+        fingers["index"]
+        and not fingers["middle"]
+        and not fingers["ring"]
+        and not fingers["pinky"]
     ):
         raw_gesture = "POINT"
+
+    # TWO FINGER
+    elif (
+        fingers["index"]
+        and fingers["middle"]
+        and not fingers["ring"]
+        and not fingers["pinky"]
+    ):
+        raw_gesture = "TWO_FINGER"
+
+    # OPEN PALM
+    elif extended_count == 4:
+        raw_gesture = "OPEN_PALM"
 
     else:
         raw_gesture = "UNKNOWN"
 
-    # Stabilize the result
+    # Stabilize static gesture
     gesture_history.append(raw_gesture)
 
     if len(gesture_history) < 3:

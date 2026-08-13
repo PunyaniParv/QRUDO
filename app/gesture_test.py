@@ -4,7 +4,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from gesture_detection import detect_gesture
+from gesture_detection import detect_gesture, detect_swipe
 
 
 MODEL_PATH = "models/hand_landmarker.task"
@@ -61,6 +61,14 @@ while True:
             hand_landmarks,
             handedness
         )
+
+        swipe = detect_swipe(
+            hand_landmarks,
+            handedness
+        )
+
+        if swipe:
+            gesture = swipe
 
         cv2.putText(
             frame,
