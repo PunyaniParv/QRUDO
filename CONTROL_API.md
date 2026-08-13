@@ -31,16 +31,20 @@ That's it. Rules the control side guarantees:
 
 ## The seven commands
 
-| Command | Effect on macOS |
-|---|---|
-| `VOLUME_UP` | +5 % (unmutes if muted) |
-| `VOLUME_DOWN` | −5 % |
-| `PLAY_PAUSE` | play/pause media key — works in any app |
-| `REWIND` | seek back ~10 s |
-| `FORWARD` | seek forward ~10 s |
-| `BRIGHTNESS_UP` | +8 % on the built-in display |
-| `BRIGHTNESS_DOWN` | −8 % |
-| `NONE` | nothing |
+| Command | macOS | Windows |
+|---|---|---|
+| `VOLUME_UP` | +5 % (unmutes if muted) | +4 % (2 key presses of 2 %) |
+| `VOLUME_DOWN` | −5 % | −4 % |
+| `PLAY_PAUSE` | play/pause media key — works in any app | same |
+| `REWIND` | seek back ~10 s | same |
+| `FORWARD` | seek forward ~10 s | same |
+| `BRIGHTNESS_UP` | +8 % on the built-in display | +8 % via WMI, laptop screens only |
+| `BRIGHTNESS_DOWN` | −8 % | −8 % |
+| `NONE` | nothing | nothing |
+
+Windows moves the volume in fixed 2 % notches, so a 5 % setting becomes 4 %.
+Everything above the backend — the interface, the debouncing, the logging — is
+identical on both, so you write your gesture code once.
 
 Command names are also plain strings — `Command.VOLUME_UP == "VOLUME_UP"` — so
 they survive JSON, sockets, or a log file if we later split the two engines
@@ -80,16 +84,30 @@ Useful for the on-screen overlay: draw `result.detail` when `result.ok`, and
 
 ## Setup on your machine
 
+**Windows** — nothing extra to install; the backend uses only `ctypes` and
+PowerShell, both built in.
+
+```powershell
+pip install -r requirements.txt
+python main.py --check
+```
+
+**macOS** — needs pyobjc for the media keys. (Do *not* run this on Windows;
+pyobjc is macOS-only and will fail to build.)
+
 ```bash
 pip install -r requirements.txt
 pip install pyobjc-framework-Quartz pyobjc-framework-Cocoa
 python main.py --check
 ```
 
-`--check` tells you what works on your laptop. If it warns about Accessibility,
-grant it in System Settings → Privacy & Security → Accessibility for whatever
-launches SARV (Terminal / iTerm / VS Code). Volume and brightness work without
-it; play/pause and seeking don't.
+`--check` tells you what works on your laptop. On macOS, if it warns about
+Accessibility, grant it in System Settings → Privacy & Security → Accessibility
+for whatever launches SARV (Terminal / iTerm / VS Code); volume and brightness
+work without it, play/pause and seeking don't. Windows needs no such permission.
+
+Then run `python main.py --selftest` — it fires all seven commands and puts your
+machine back the way it was.
 
 ## Configuration
 

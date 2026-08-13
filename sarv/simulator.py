@@ -89,7 +89,23 @@ def _key_stream():
         for line in sys.stdin:
             yield line.strip()[:1] or "\n"
         return
+    # Reading one key without Enter is done differently on each OS, and the
+    # POSIX modules do not even exist on Windows.
+    yield from (_windows_keys() if sys.platform == "win32" else _posix_keys())
 
+
+def _windows_keys():
+    import msvcrt
+
+    while True:
+        char = msvcrt.getwch()
+        if char in ("\x00", "\xe0"):
+            msvcrt.getwch()  # arrow/function keys arrive as two reads; drop both
+            continue
+        yield char
+
+
+def _posix_keys():
     import termios
     import tty
 

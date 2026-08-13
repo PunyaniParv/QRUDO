@@ -244,6 +244,9 @@ def get_controller(config: ControlConfig | None = None) -> Controller:
     if system == "Darwin":
         from .backends.macos import MacOSController
         return MacOSController(config)
+    if system == "Windows":
+        from .backends.windows import WindowsController
+        return WindowsController(config)
     from .backends.null import NullController
     log.get_logger().warning(
         "no control backend for %s; using NullController (commands are logged only)", system)
