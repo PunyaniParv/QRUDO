@@ -47,6 +47,7 @@ class MacOSController(Controller):
         self._quartz = _load_quartz()
         self._display_services = _load_display_services()
         self._core_audio = _load_core_audio()
+        self._workspace = _load_workspace()
         self._brightness_cli = shutil.which("brightness")
 
     # ------------------------------------------------------------------ volume
@@ -212,10 +213,27 @@ class MacOSController(Controller):
         # turns that into "about `seconds` seconds".
         presses = self.config.seek_presses
         key = KEY_RIGHT_ARROW if forward else KEY_LEFT_ARROW
+        pid = self._target_pid()
         for _ in range(presses):
-            self._post_key(key)
+            self._post_key(key, to_pid=pid)
         covered = presses * self.config.seek_step_seconds
-        return f"seek {direction} ~{covered}s ({presses}x arrow, {seconds}s requested)"
+        where = f" to {self.config.seek_target_app}" if pid else ""
+        return (f"seek {direction} ~{covered}s{where} "
+                f"({presses}x arrow, {seconds}s requested)")
+
+    def _target_pid(self) -> int | None:
+        """The process to aim seek keys at, or None to use the focused window."""
+        name = self.config.seek_target_app.strip()
+        if not name or self._workspace is None:
+            return None
+        wanted = name.lower()
+        for app in self._workspace.sharedWorkspace().runningApplications():
+            running = app.localizedName()
+            if running and wanted in running.lower():
+                return app.processIdentifier()
+        self.log.warning("seek_target_app %r is not running; "
+                         "sending to the focused window instead", name)
+        return None
 
     def _applescript_play_pause(self) -> str:
         """Fallback when Quartz is unavailable: drive a known player directly."""
@@ -251,13 +269,21 @@ class MacOSController(Controller):
             )
             quartz.CGEventPost(quartz.kCGHIDEventTap, event.CGEvent())
 
-    def _post_key(self, key_code: int) -> None:
-        """Send a normal keystroke (used for arrow-key seeking)."""
+    def _post_key(self, key_code: int, *, to_pid: int | None = None) -> None:
+        """Send a normal keystroke (used for arrow-key seeking).
+
+        With ``to_pid`` the key goes straight to that process even while
+        another app is focused, which is what lets seeking work without
+        switching windows.
+        """
         if self._quartz is not None:
             quartz, _ = self._quartz
             for pressed in (True, False):
                 event = quartz.CGEventCreateKeyboardEvent(None, key_code, pressed)
-                quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+                if to_pid is None:
+                    quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+                else:
+                    quartz.CGEventPostToPid(to_pid, event)
             return
         self._osascript(f'tell application "System Events" to key code {key_code}')
 
@@ -441,6 +467,15 @@ def _load_quartz():
     except ImportError:
         return None
     return Quartz, NSEvent
+
+
+def _load_workspace():
+    """NSWorkspace, used to look up a target app's process id by name."""
+    try:
+        from AppKit import NSWorkspace
+    except ImportError:
+        return None
+    return NSWorkspace
 
 
 def _load_display_services():

@@ -40,6 +40,9 @@ VK_RIGHT = 0x27
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 
+WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
+
 #: Windows moves the volume one fiftieth of full scale per key press.
 VOLUME_PERCENT_PER_PRESS = 2
 
@@ -254,11 +257,81 @@ class WindowsController(Controller):
         # Same approach as macOS: repeat the player's own arrow-key shortcut.
         presses = self.config.seek_presses
         key = VK_RIGHT if forward else VK_LEFT
+        window = self._target_window()
         for _ in range(presses):
-            self._press(key, extended=True)  # arrows are extended keys
+            if window:
+                self._post_key_to_window(window, key)
+            else:
+                self._press(key, extended=True)  # arrows are extended keys
         covered = presses * self.config.seek_step_seconds
         direction = "forward" if forward else "back"
-        return f"seek {direction} ~{covered}s ({presses}x arrow, {seconds}s requested)"
+        where = f" to {self.config.seek_target_app}" if window else ""
+        return (f"seek {direction} ~{covered}s{where} "
+                f"({presses}x arrow, {seconds}s requested)")
+
+    # -------------------------------------------------- targeting a window
+
+    def _target_window(self) -> int | None:
+        """Handle of a window whose title matches ``seek_target_app``.
+
+        Returns None when nothing is configured or nothing matches, in which
+        case seeking falls back to the focused window.
+        """
+        wanted = self.config.seek_target_app.strip().lower()
+        if not wanted:
+            return None
+
+        user32 = self._user32
+        matches: list[int] = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def visit(hwnd, _param):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if not length:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            if wanted in buffer.value.lower():
+                matches.append(hwnd)
+                return False  # first match is enough
+            return True
+
+        user32.EnumWindows(visit, 0)
+        if not matches:
+            self.log.warning("no window matching %r; sending seek to the focused "
+                             "window instead", self.config.seek_target_app)
+            return None
+        return self._render_surface(matches[0])
+
+    def _render_surface(self, hwnd: int) -> int:
+        """Chromium ignores keys posted to its outer frame, so aim at the child
+        window that actually hosts the page.  Other apps take the frame."""
+        found: list[int] = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def visit(child, _param):
+            name = ctypes.create_unicode_buffer(256)
+            self._user32.GetClassNameW(child, name, 256)
+            if name.value == "Chrome_RenderWidgetHostHWND":
+                found.append(child)
+                return False
+            return True
+
+        self._user32.EnumChildWindows(hwnd, visit, 0)
+        return found[0] if found else hwnd
+
+    def _post_key_to_window(self, hwnd: int, key: int) -> None:
+        """Deliver a keystroke to one window without giving it focus."""
+        scan = self._user32.MapVirtualKeyW(key, 0)
+        # lParam layout: repeat count, scan code, and the extended-key bit that
+        # arrow keys need; key-up additionally sets the previous-state and
+        # transition bits.
+        down = 1 | (scan << 16) | (1 << 24)
+        up = down | (1 << 30) | (1 << 31)
+        self._user32.PostMessageW(hwnd, WM_KEYDOWN, key, down)
+        self._user32.PostMessageW(hwnd, WM_KEYUP, key, up)
 
     # ------------------------------------------------------- event plumbing
 

@@ -41,9 +41,12 @@ def help_text(engine: ControlEngine) -> str:
         f"{'  [DRY RUN]' if engine.config.dry_run else ''}",
         "",
     ]
+    target = engine.config.seek_target_app
     for key, command in KEY_MAP.items():
-        note = "   (counts down first, so you can click your video)" \
-            if command in FOCUS_SENSITIVE else ""
+        note = ""
+        if command in FOCUS_SENSITIVE:
+            note = f"   (goes to {target})" if target \
+                else "   (counts down first, so you can click your video)"
         lines.append(f"    {key}   {command.value}{note}")
     lines += [
         "    ?   this help",
@@ -86,8 +89,10 @@ def run(engine: ControlEngine | None = None, seek_delay: float = 3.0) -> int:
             continue
         # L and R send arrow keys, which go to the focused window -- and while
         # you are typing here, that is this terminal.  Count down so you can
-        # click the video first, otherwise the seek lands on the simulator.
-        if command in FOCUS_SENSITIVE and seek_delay > 0:
+        # click the video first.  With seek_target_app set, the keys are
+        # addressed to that app directly and focus no longer matters.
+        if (command in FOCUS_SENSITIVE and seek_delay > 0
+                and not engine.config.seek_target_app):
             _countdown(command, seek_delay)
 
         # force=True: a keypress is a deliberate human action, so it should

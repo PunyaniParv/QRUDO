@@ -39,6 +39,19 @@ class ControlConfig:
     this to 10 when driving those.
     """
 
+    seek_target_app: str = ""
+    """Send REWIND/FORWARD to this app whether or not it has keyboard focus.
+
+    Seeking has no system-wide key, so it is sent as arrow keys -- and arrow
+    keys normally land in the focused window, which is why seeking from the
+    simulator hits the terminal instead of the video.  Naming the app here
+    routes them to it directly, so you can seek without switching windows.
+
+    macOS: the app's name, e.g. "Google Chrome" (substring match).
+    Windows: any part of the window title, e.g. "YouTube".
+    Empty means "send to whatever has focus", the old behaviour.
+    """
+
     seek_mode: str = "seek"
     """``"seek"`` = move within the current track (arrow keys).
     ``"track"`` = previous/next track (HID media keys)."""

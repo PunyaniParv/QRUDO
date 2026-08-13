@@ -63,19 +63,29 @@ Two of the seven are sensitive to keyboard focus:
 | `VOLUME_UP/DOWN`, `PLAY_PAUSE`, `BRIGHTNESS_UP/DOWN` | system-wide — focus is irrelevant |
 | `REWIND`, `FORWARD` | the **focused window**, because seeking has no system-wide key and we send arrow keys |
 
-So seeking cannot be tested from `--simulate`: you are typing into the terminal,
-which means the terminal is focused and swallows the arrows. Test it with a
-countdown instead, and click your video before it fires:
+That's why seeking from `--simulate` appears to do nothing: you are typing into
+the terminal, so the terminal is focused and swallows the arrows.
+
+**Fix it by naming the app you want seeking to reach.** In `sarv_config.json`:
+
+```json
+{ "seek_target_app": "Google Chrome" }
+```
+
+macOS matches the app name; Windows matches any part of the window title (so
+`"YouTube"` works). The keys are then delivered to that app whether or not it
+has focus — no window switching, and the simulator stops counting down. If the
+app isn't running, seeking quietly falls back to the focused window.
+
+Without it, seek only reaches the focused window, so either click your video
+first or use the countdown:
 
 ```bash
 python main.py --command FORWARD --delay 5
 ```
 
-For the real app this means **the video must keep focus while gestures are
-recognised.** The camera loop reads frames whether or not your window is
-focused, so don't call anything that steals focus (`cv2.setWindowProperty`
-fullscreen, `win32gui.SetForegroundWindow`, etc.) after the user clicks their
-video. If your preview window must be visible, keep it visible but unfocused.
+For the real app, setting `seek_target_app` is the robust choice: it keeps
+seeking working even if your camera preview window takes focus.
 
 ## If 200 ms is too slow for your frame loop
 
@@ -147,6 +157,7 @@ to `main.py`:
   "brightness_step": 5,
   "seek_seconds": 10,
   "seek_step_seconds": 5,
+  "seek_target_app": "Google Chrome",
   "cooldown_seconds": 0.6,
   "dry_run": false
 }

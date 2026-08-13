@@ -127,6 +127,33 @@ class TestMedia(unittest.TestCase):
         self.assertEqual(controller.pressed, [(VK_MEDIA_NEXT_TRACK, False)])
 
 
+class TestSeekTargeting(unittest.TestCase):
+    """Aiming seek keys at a named window instead of the focused one."""
+
+    def test_no_target_uses_ordinary_key_presses(self):
+        controller = FakeWindowsController(ControlConfig(seek_target_app=""))
+        detail = controller.forward(10)
+        self.assertEqual(controller.pressed, [(VK_RIGHT, True)] * 2)
+        self.assertNotIn(" to ", detail)
+
+    def test_missing_window_falls_back_to_key_presses(self):
+        """A configured app that is not open must not break seeking."""
+        controller = FakeWindowsController(ControlConfig(seek_target_app="YouTube"))
+        controller._target_window = lambda: None
+        controller.forward(10)
+        self.assertEqual(controller.pressed, [(VK_RIGHT, True)] * 2)
+
+    def test_found_window_receives_posted_keys(self):
+        controller = FakeWindowsController(ControlConfig(seek_target_app="YouTube"))
+        controller._target_window = lambda: 4242
+        posted = []
+        controller._post_key_to_window = lambda hwnd, key: posted.append((hwnd, key))
+        detail = controller.forward(10)
+        self.assertEqual(posted, [(4242, VK_RIGHT)] * 2)
+        self.assertEqual(controller.pressed, [])  # nothing sent to the focused window
+        self.assertIn("to YouTube", detail)
+
+
 class TestState(unittest.TestCase):
     def test_reports_brightness(self):
         controller = FakeWindowsController(read_reply="37|ok")
