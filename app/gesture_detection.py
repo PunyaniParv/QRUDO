@@ -52,18 +52,79 @@ def is_palm_facing(hand_landmarks, handedness):
     return normal_z > 0
 
 
+def calculate_angle(a, b, c):
+    """
+    Calculate the angle ABC in degrees.
+    """
+
+    ba = (
+        a.x - b.x,
+        a.y - b.y,
+        a.z - b.z
+    )
+
+    bc = (
+        c.x - b.x,
+        c.y - b.y,
+        c.z - b.z
+    )
+
+    dot_product = (
+        ba[0] * bc[0]
+        + ba[1] * bc[1]
+        + ba[2] * bc[2]
+    )
+
+    magnitude_ba = math.sqrt(
+        ba[0] ** 2 +
+        ba[1] ** 2 +
+        ba[2] ** 2
+    )
+
+    magnitude_bc = math.sqrt(
+        bc[0] ** 2 +
+        bc[1] ** 2 +
+        bc[2] ** 2
+    )
+
+    if magnitude_ba == 0 or magnitude_bc == 0:
+        return 0
+
+    cosine = dot_product / (
+        magnitude_ba * magnitude_bc
+    )
+
+    cosine = max(-1.0, min(1.0, cosine))
+
+    return math.degrees(
+        math.acos(cosine)
+    )
+
+
 def finger_is_extended(hand_landmarks, tip, pip, mcp):
     """
-    Determine whether a finger is extended using
-    distance from the wrist and joint geometry.
+    Determine whether a finger is extended
+    using joint angles.
     """
 
-    wrist = hand_landmarks[0]
+    dip = pip + 1
 
-    tip_distance = distance(hand_landmarks[tip], wrist)
-    pip_distance = distance(hand_landmarks[pip], wrist)
+    pip_angle = calculate_angle(
+        hand_landmarks[mcp],
+        hand_landmarks[pip],
+        hand_landmarks[dip]
+    )
 
-    return tip_distance > pip_distance * 1.15
+    dip_angle = calculate_angle(
+        hand_landmarks[pip],
+        hand_landmarks[dip],
+        hand_landmarks[tip]
+    )
+
+    return (
+        pip_angle > 155
+        and dip_angle > 150
+    )
 
 
 def detect_fingers(hand_landmarks):
