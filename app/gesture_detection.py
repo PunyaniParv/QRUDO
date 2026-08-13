@@ -201,7 +201,8 @@ def is_two_finger_pose(hand_landmarks):
 
 def detect_swipe(hand_landmarks, handedness):
     """
-    Detect a smooth horizontal two-finger swipe.
+    Detect a horizontal swipe after a two-finger gesture
+    has been detected.
 
     Returns:
         "SWIPE_LEFT"
@@ -215,65 +216,103 @@ def detect_swipe(hand_landmarks, handedness):
 
     current_time = time.time()
 
-    # Prevent repeated swipe triggers
+    # Cooldown
     if current_time < swipe_cooldown_until:
         return None
 
-    # Palm must face the camera
-    if not is_palm_facing(
-        hand_landmarks,
-        handedness
-    ):
-        swipe_start_x = None
-        swipe_start_time = None
+    # Palm orientation check
+    if not is_palm_facing(hand_landmarks, handedness):
         return None
 
-    # Require two fingers
-    if not is_two_finger_pose(hand_landmarks):
-        swipe_start_x = None
-        swipe_start_time = None
+    fingers = detect_fingers(hand_landmarks)
+
+    # -------------------------------------------------
+    # Two-finger pose
+    # -------------------------------------------------
+
+    two_finger = (
+        fingers["index"]
+        and fingers["middle"]
+        and not fingers["ring"]
+        and not fingers["pinky"]
+    )
+
+    # -------------------------------------------------
+    # If we don't currently have two fingers,
+    # don't immediately destroy an existing swipe.
+    # -------------------------------------------------
+
+    if not two_finger:
+
+        if swipe_start_x is None:
+            return None
+
+        # Allow tracking to continue briefly
+        # even if finger classification fluctuates.
+        if current_time - swipe_start_time > 0.8:
+            swipe_start_x = None
+            swipe_start_time = None
+
         return None
 
-    # Midpoint between index and middle fingertips
+    # -------------------------------------------------
+    # Calculate center of index + middle fingertips
+    # -------------------------------------------------
+
     current_x = (
         hand_landmarks[8].x +
         hand_landmarks[12].x
     ) / 2
 
+    # -------------------------------------------------
     # Start tracking
+    # -------------------------------------------------
+
     if swipe_start_x is None:
         swipe_start_x = current_x
         swipe_start_time = current_time
         return None
 
+    # -------------------------------------------------
+    # Calculate movement
+    # -------------------------------------------------
+
     distance_x = current_x - swipe_start_x
     elapsed = current_time - swipe_start_time
 
-    # Swipe must happen quickly enough
-    if elapsed > 0.8:
+    # Reset if tracking takes too long
+    if elapsed > 1.0:
         swipe_start_x = current_x
         swipe_start_time = current_time
         return None
 
-    # Minimum horizontal movement
-    SWIPE_THRESHOLD = 0.20
+    # -------------------------------------------------
+    # Swipe threshold
+    # -------------------------------------------------
 
-    # Ignore tiny movements
+    SWIPE_THRESHOLD = 0.12
+
     if abs(distance_x) < SWIPE_THRESHOLD:
         return None
 
+    # -------------------------------------------------
     # Determine direction
+    # -------------------------------------------------
+
     if distance_x > 0:
         gesture = "SWIPE_RIGHT"
     else:
         gesture = "SWIPE_LEFT"
 
-    # Reset tracking
+    # -------------------------------------------------
+    # Reset
+    # -------------------------------------------------
+
     swipe_start_x = None
     swipe_start_time = None
 
-    # Prevent immediate repeated detection
-    swipe_cooldown_until = current_time + 0.7
+    # Prevent immediate retrigger
+    swipe_cooldown_until = current_time + 0.6
 
     return gesture
 
