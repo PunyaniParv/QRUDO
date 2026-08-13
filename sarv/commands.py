@@ -48,6 +48,13 @@ ACTIONABLE_COMMANDS: tuple[Command, ...] = (
 )
 
 
+#: Backends put this in their detail string when a command succeeded but moved
+#: nothing -- volume already at 100%, brightness already at 0%.  The self-test
+#: relies on it: undoing a command that did nothing would leave the machine
+#: quieter or dimmer than it found it.
+NO_CHANGE = "already at"
+
+
 class Status(str, Enum):
     """Outcome of an execution attempt."""
 

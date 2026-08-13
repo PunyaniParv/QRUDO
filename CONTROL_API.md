@@ -46,6 +46,10 @@ Windows moves the volume in fixed 2 % notches, so a 5 % setting becomes 4 %.
 Everything above the backend — the interface, the debouncing, the logging — is
 identical on both, so you write your gesture code once.
 
+Windows also cannot read the current volume back (that needs an extra package),
+so if you start `--selftest` at exactly 0 % or 100 % volume, it can finish one
+notch off. Brightness reads back correctly on both platforms.
+
 Command names are also plain strings — `Command.VOLUME_UP == "VOLUME_UP"` — so
 they survive JSON, sockets, or a log file if we later split the two engines
 into separate processes.

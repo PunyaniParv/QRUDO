@@ -21,6 +21,7 @@ from __future__ import annotations
 import ctypes
 import subprocess
 
+from ..commands import NO_CHANGE
 from ..config import ControlConfig
 from ..controller import Controller, ControlError, UnsupportedCommand
 from ..log import get_logger
@@ -118,7 +119,7 @@ class WindowsController(Controller):
         except ValueError as exc:
             raise ControlError(f"unexpected brightness output {raw!r}") from exc
         if old == new:
-            return f"brightness already at {'maximum' if delta > 0 else 'minimum'} ({old}%)"
+            return f"brightness {NO_CHANGE} {'maximum' if delta > 0 else 'minimum'} ({old}%)"
         return f"brightness {old}% -> {new}%"
 
     # ------------------------------------------------------------------- media

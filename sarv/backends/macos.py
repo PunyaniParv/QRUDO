@@ -19,6 +19,7 @@ import ctypes
 import shutil
 import subprocess
 
+from ..commands import NO_CHANGE
 from ..config import ControlConfig
 from ..controller import Controller, ControlError, UnsupportedCommand
 from ..log import get_logger
@@ -83,7 +84,7 @@ class MacOSController(Controller):
         if outcome == "unmuted":
             return f"unmuted (volume {old}%)"
         if old == new:
-            return f"volume already at {'maximum' if delta > 0 else 'minimum'} ({old}%)"
+            return f"volume {NO_CHANGE} {'maximum' if delta > 0 else 'minimum'} ({old}%)"
         return f"volume {old}% -> {new}%"
 
     def _volume_settings(self) -> dict:
@@ -117,6 +118,12 @@ class MacOSController(Controller):
             current = self._get_brightness()
             if current is not None:
                 target = min(1.0, max(0.0, current + delta_percent / 100.0))
+                if abs(target - current) < 0.005:
+                    # Already at the end of the scale.  Say so explicitly, so
+                    # the self-test knows there is nothing to undo.
+                    return (f"brightness {NO_CHANGE} "
+                            f"{'maximum' if delta_percent > 0 else 'minimum'} "
+                            f"({current * 100:.0f}%)")
                 if self._set_brightness(target):
                     return f"brightness {current * 100:.0f}% -> {target * 100:.0f}%"
 

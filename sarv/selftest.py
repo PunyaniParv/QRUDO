@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from .commands import Command
+from .commands import NO_CHANGE, Command
 from .controller import ControlEngine
 
 PAUSE_BETWEEN = 0.4
@@ -47,8 +47,12 @@ def run(engine: ControlEngine | None = None) -> int:
         print(f"  {'PASS' if result.ok else 'FAIL'}  {command.value:<16} "
               f"{result.detail or result.error}  ({result.duration_ms:.0f} ms)")
         time.sleep(PAUSE_BETWEEN)
-        engine.execute(undo, force=True)  # restore
-        time.sleep(PAUSE_BETWEEN)
+        # Only undo what actually moved.  At a limit -- brightness already at
+        # 100%, volume already at 0% -- the command is a no-op, and undoing it
+        # anyway would leave the machine dimmer or quieter than we found it.
+        if NO_CHANGE not in result.detail:
+            engine.execute(undo, force=True)
+            time.sleep(PAUSE_BETWEEN)
 
     # Behaviour checks that do not touch the OS.
     print()

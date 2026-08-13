@@ -8,6 +8,8 @@ is covered separately by ``python main.py --selftest``.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import time
 import unittest
@@ -16,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sarv import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, Status, log, parse_command
+from sarv.commands import NO_CHANGE
 from sarv.backends.null import NullController
 from sarv.controller import ControlError
 from sarv.simulator import KEY_MAP
@@ -182,6 +185,48 @@ class TestAsyncSubmit(unittest.TestCase):
     def test_close_without_submit_is_safe(self):
         engine, _ = make_engine()
         engine.close()
+
+
+class TestSelfTestRestores(unittest.TestCase):
+    """The self-test must leave the machine exactly as it found it."""
+
+    class AtMaximum(NullController):
+        """A machine whose brightness is already at 100%."""
+
+        def brightness_up(self, step):
+            self.calls.append("brightness up (no-op)")
+            return f"brightness {NO_CHANGE} maximum (100%)"
+
+    def test_no_op_command_is_not_undone(self):
+        """Undoing a command that did nothing would dim the screen.
+
+        Regression: BRIGHTNESS_UP at 100% did nothing, but the paired
+        BRIGHTNESS_DOWN still fired, so running the self-test left the display
+        one step darker every time.
+        """
+        from sarv import selftest
+
+        config = ControlConfig(cooldown_seconds=0.0)
+        controller = self.AtMaximum(config)
+        engine = ControlEngine(controller=controller, config=config)
+
+        original_pause = selftest.PAUSE_BETWEEN
+        selftest.PAUSE_BETWEEN = 0.0
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                selftest.run(engine)
+        finally:
+            selftest.PAUSE_BETWEEN = original_pause
+
+        ups = controller.calls.count("brightness up (no-op)")
+        downs = controller.calls.count("brightness -8%")
+        # BRIGHTNESS_UP runs twice: once as its own test, once undoing the
+        # BRIGHTNESS_DOWN test.  Both are no-ops on this machine.
+        self.assertEqual(ups, 2)
+        # BRIGHTNESS_DOWN should run exactly once -- as its own test.  With the
+        # bug it ran twice, the second time "undoing" a no-op, and that second
+        # one is what dimmed the screen on every run.
+        self.assertEqual(downs, 1, f"no-op was undone anyway: {controller.calls}")
 
 
 class TestSeekConfig(unittest.TestCase):
