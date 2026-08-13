@@ -257,7 +257,7 @@ def detect_gesture(hand_landmarks, handedness):
     ):
         raw_gesture = "POINT"
 
-    # TWO FINGER
+        # TWO FINGER
     elif (
         fingers["index"]
         and fingers["middle"]
