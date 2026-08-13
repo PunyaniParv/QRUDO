@@ -268,6 +268,20 @@ class MacOSController(Controller):
                 "(external monitors may ignore them)")
         return warnings
 
+    def snapshot(self) -> str:
+        parts = []
+        try:
+            settings = self._volume_settings()
+            parts.append(f"volume {settings['volume']}%"
+                         + (" (muted)" if settings["muted"] else ""))
+        except ControlError as exc:
+            parts.append(f"volume unreadable ({exc})")
+        if self._display_services is not None:
+            level = self._get_brightness()
+            if level is not None:
+                parts.append(f"brightness {level * 100:.0f}%")
+        return ", ".join(parts)
+
     def _can_post_events(self) -> bool:
         """Best-effort Accessibility check; assume OK if macOS won't tell us."""
         quartz, _ = self._quartz

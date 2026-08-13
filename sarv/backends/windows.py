@@ -63,6 +63,19 @@ try {{
 """
 
 
+# Read-only version of the above, for the self-test's before/after lines and
+# for the --check probe.  Worth keeping separate: the setting script writes the
+# brightness even when the delta is zero.
+_READ_BRIGHTNESS_SCRIPT = """
+try {
+    $b = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop)[0]
+    Write-Output "$([int]$b.CurrentBrightness)|ok"
+} catch {
+    Write-Output "error|$($_.Exception.Message)"
+}
+"""
+
+
 class WindowsController(Controller):
     name = "Windows"
 
@@ -172,15 +185,35 @@ class WindowsController(Controller):
 
     # -------------------------------------------------------------- preflight
 
+    def _read_brightness(self) -> int | None:
+        """Current brightness percentage, or None if this display cannot say."""
+        raw = self._powershell(_READ_BRIGHTNESS_SCRIPT)
+        if raw.startswith("error|"):
+            return None
+        try:
+            return int(raw.split("|")[0])
+        except ValueError:
+            return None
+
+    def snapshot(self) -> str:
+        # Volume cannot be read back on Windows without an extra package, so
+        # brightness is the only state the self-test can verify here.
+        try:
+            level = self._read_brightness()
+        except ControlError:
+            return ""
+        return f"brightness {level}%" if level is not None else ""
+
     def preflight(self) -> list[str]:
         warnings = [
             f"volume moves in {VOLUME_PERCENT_PER_PRESS}% steps on Windows, so a "
             f"{self.config.volume_step}% setting becomes "
-            f"{max(1, round(self.config.volume_step / VOLUME_PERCENT_PER_PRESS)) * VOLUME_PERCENT_PER_PRESS}%"
+            f"{max(1, round(self.config.volume_step / VOLUME_PERCENT_PER_PRESS)) * VOLUME_PERCENT_PER_PRESS}%",
+            "brightness goes through PowerShell and takes about 1.5s; use "
+            "engine.submit() instead of execute() to keep the camera loop smooth",
         ]
         try:
-            probe = self._powershell(_BRIGHTNESS_SCRIPT.format(delta=0))
-            if probe.startswith("error|"):
+            if self._read_brightness() is None:
                 warnings.append(
                     "brightness control unavailable on this display "
                     "(normal for desktops and external monitors); "

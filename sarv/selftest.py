@@ -81,24 +81,11 @@ def _check(label: str, passed: bool) -> None:
 
 
 def _snapshot(engine: ControlEngine) -> str:
-    """Read volume/brightness if the backend exposes them (macOS only)."""
-    controller = engine.controller
-    parts = []
-    if hasattr(controller, "_volume_settings"):
-        try:
-            settings = controller._volume_settings()
-            parts.append(f"volume {settings['volume']}%"
-                         + (" (muted)" if settings["muted"] else ""))
-        except Exception as exc:
-            parts.append(f"volume unreadable ({exc})")
-    if hasattr(controller, "_get_brightness"):
-        try:
-            level = controller._get_brightness()
-            if level is not None:
-                parts.append(f"brightness {level * 100:.0f}%")
-        except Exception:
-            pass
-    return ", ".join(parts)
+    """Whatever this platform can read back.  Never fails the test."""
+    try:
+        return engine.controller.snapshot()
+    except Exception as exc:  # reading state is a nicety, not the test
+        return f"state unreadable ({exc})"
 
 
 if __name__ == "__main__":

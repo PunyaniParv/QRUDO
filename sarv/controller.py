@@ -95,6 +95,15 @@ class Controller(ABC):
         permissions, unsupported hardware).  An empty list means all good."""
         return []
 
+    def snapshot(self) -> str:
+        """Current machine state, e.g. "volume 63%, brightness 47%".
+
+        The self-test prints this before and after so a run that fails to
+        restore something is visible at a glance.  Return "" for anything this
+        platform cannot read back.
+        """
+        return ""
+
 
 class ControlEngine:
     """Dispatch, debounce, log.  This is the object the rest of SARV holds."""

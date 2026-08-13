@@ -124,6 +124,16 @@ class TestMedia(unittest.TestCase):
         self.assertEqual(controller.pressed, [(VK_MEDIA_NEXT_TRACK, False)])
 
 
+class TestSnapshot(unittest.TestCase):
+    def test_reports_brightness(self):
+        controller = FakeWindowsController(reply="37|ok")
+        self.assertEqual(controller.snapshot(), "brightness 37%")
+
+    def test_unreadable_display_is_blank_not_an_error(self):
+        controller = FakeWindowsController(reply="error|Not supported")
+        self.assertEqual(controller.snapshot(), "")
+
+
 class TestPreflight(unittest.TestCase):
     def test_reports_the_volume_rounding(self):
         controller = FakeWindowsController(ControlConfig(volume_step=5))
