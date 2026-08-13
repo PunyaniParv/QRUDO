@@ -81,6 +81,43 @@ try {
 """
 
 
+#: Signature of the callback EnumWindows/EnumChildWindows hand each window to.
+_ENUM_PROC = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+    ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+
+def _declare(user32) -> None:
+    """Give ctypes the real signatures for the user32 calls we make.
+
+    Undeclared functions default to a 32-bit int return and 32-bit int
+    arguments.  On 64-bit Python that silently truncates window handles, and
+    PostMessageW's lParam -- which carries bit 31 for a key-up -- does not fit
+    in a signed 32-bit int at all, so the call would raise instead of running.
+    """
+    from ctypes import wintypes
+
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.restype = ctypes.c_int
+    user32.EnumWindows.argtypes = [_ENUM_PROC, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, _ENUM_PROC, wintypes.LPARAM]
+    user32.EnumChildWindows.restype = wintypes.BOOL
+    user32.MapVirtualKeyW.argtypes = [wintypes.UINT, wintypes.UINT]
+    user32.MapVirtualKeyW.restype = wintypes.UINT
+    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                    wintypes.WPARAM, wintypes.LPARAM]
+    user32.PostMessageW.restype = wintypes.BOOL
+    user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE,
+                                   wintypes.DWORD, ctypes.c_void_p]
+    user32.keybd_event.restype = None
+
+
 class _PowerShellWorker:
     """One long-lived PowerShell that takes brightness commands on stdin.
 
@@ -188,6 +225,7 @@ class WindowsController(Controller):
         if win_dll is None:
             raise ControlError("WindowsController requires Windows")
         self._user32 = win_dll("user32", use_last_error=True)
+        _declare(self._user32)
         self._worker = (_PowerShellWorker(self.log)
                         if self.config.windows_persistent_powershell else None)
 
@@ -284,7 +322,7 @@ class WindowsController(Controller):
         user32 = self._user32
         matches: list[int] = []
 
-        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        @_ENUM_PROC
         def visit(hwnd, _param):
             if not user32.IsWindowVisible(hwnd):
                 return True
@@ -310,7 +348,7 @@ class WindowsController(Controller):
         window that actually hosts the page.  Other apps take the frame."""
         found: list[int] = []
 
-        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        @_ENUM_PROC
         def visit(child, _param):
             name = ctypes.create_unicode_buffer(256)
             self._user32.GetClassNameW(child, name, 256)

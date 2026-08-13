@@ -151,14 +151,36 @@ def _run_windows(engine: ControlEngine) -> int:
     VK_CONTROL, VK_MENU = 0x11, 0x12
     HELD = 0x8000
 
+    # Every handle here is pointer-sized.  ctypes assumes a 32-bit int return
+    # for anything undeclared, which silently truncates them on 64-bit Python
+    # -- that is what made SetWindowsHookExW fail with error 126.
+    LRESULT = ctypes.c_ssize_t
+    HHOOK = wintypes.HANDLE
+
     class KBDLLHOOKSTRUCT(ctypes.Structure):
         _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD),
                     ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
                     ("dwExtraInfo", ctypes.POINTER(wintypes.ULONG))]
 
     _report(engine)
-    proc_type = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int,
+    proc_type = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int,
                                    wintypes.WPARAM, wintypes.LPARAM)
+
+    kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+    kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+    user32.SetWindowsHookExW.argtypes = [ctypes.c_int, proc_type,
+                                         wintypes.HMODULE, wintypes.DWORD]
+    user32.SetWindowsHookExW.restype = HHOOK
+    user32.UnhookWindowsHookEx.argtypes = [HHOOK]
+    user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+    user32.CallNextHookEx.argtypes = [HHOOK, ctypes.c_int,
+                                      wintypes.WPARAM, wintypes.LPARAM]
+    user32.CallNextHookEx.restype = LRESULT
+    user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+    user32.GetAsyncKeyState.restype = ctypes.c_short
+    user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND,
+                                   wintypes.UINT, wintypes.UINT]
+    user32.GetMessageW.restype = ctypes.c_int  # -1 signals an error
 
     def proc(code, message, data):
         if code == 0 and message in (WM_KEYDOWN, WM_SYSKEYDOWN):
@@ -172,8 +194,12 @@ def _run_windows(engine: ControlEngine) -> int:
         return user32.CallNextHookEx(None, code, message, data)
 
     callback = proc_type(proc)  # keep a reference, or it is garbage collected
-    hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, callback,
-                                    kernel32.GetModuleHandleW(None), 0)
+    module = kernel32.GetModuleHandleW(None)
+    hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, callback, module, 0)
+    if not hook:
+        # A low-level hook may also be installed with no module at all; try
+        # that before giving up.
+        hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, callback, None, 0)
     if not hook:
         print(f"  could not watch the keyboard (error {ctypes.get_last_error()})",
               file=sys.stderr)
