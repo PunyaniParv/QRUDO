@@ -3,22 +3,89 @@ import math
 import time
 
 
+# ---------------------------------------------------------
+# Gesture stabilization
+# ---------------------------------------------------------
 
 gesture_history = deque(maxlen=3)
 
+
+# ---------------------------------------------------------
 # Swipe tracking
+# ---------------------------------------------------------
+
 swipe_start_x = None
 swipe_start_time = None
 swipe_cooldown_until = 0
 
+
+# ---------------------------------------------------------
+# Basic geometry
+# ---------------------------------------------------------
+
 def distance(point1, point2):
     """Calculate 3D distance between two landmarks."""
+
     return math.sqrt(
         (point1.x - point2.x) ** 2 +
         (point1.y - point2.y) ** 2 +
         (point1.z - point2.z) ** 2
     )
 
+
+def calculate_angle(a, b, c):
+    """
+    Calculate angle ABC in degrees.
+    """
+
+    ba = (
+        a.x - b.x,
+        a.y - b.y,
+        a.z - b.z
+    )
+
+    bc = (
+        c.x - b.x,
+        c.y - b.y,
+        c.z - b.z
+    )
+
+    dot_product = (
+        ba[0] * bc[0] +
+        ba[1] * bc[1] +
+        ba[2] * bc[2]
+    )
+
+    magnitude_ba = math.sqrt(
+        ba[0] ** 2 +
+        ba[1] ** 2 +
+        ba[2] ** 2
+    )
+
+    magnitude_bc = math.sqrt(
+        bc[0] ** 2 +
+        bc[1] ** 2 +
+        bc[2] ** 2
+    )
+
+    if magnitude_ba == 0 or magnitude_bc == 0:
+        return 0
+
+    cosine = dot_product / (
+        magnitude_ba * magnitude_bc
+    )
+
+    # Prevent floating-point errors
+    cosine = max(-1.0, min(1.0, cosine))
+
+    return math.degrees(
+        math.acos(cosine)
+    )
+
+
+# ---------------------------------------------------------
+# Palm orientation
+# ---------------------------------------------------------
 
 def is_palm_facing(hand_landmarks, handedness):
     """
@@ -52,54 +119,9 @@ def is_palm_facing(hand_landmarks, handedness):
     return normal_z > 0
 
 
-def calculate_angle(a, b, c):
-    """
-    Calculate the angle ABC in degrees.
-    """
-
-    ba = (
-        a.x - b.x,
-        a.y - b.y,
-        a.z - b.z
-    )
-
-    bc = (
-        c.x - b.x,
-        c.y - b.y,
-        c.z - b.z
-    )
-
-    dot_product = (
-        ba[0] * bc[0]
-        + ba[1] * bc[1]
-        + ba[2] * bc[2]
-    )
-
-    magnitude_ba = math.sqrt(
-        ba[0] ** 2 +
-        ba[1] ** 2 +
-        ba[2] ** 2
-    )
-
-    magnitude_bc = math.sqrt(
-        bc[0] ** 2 +
-        bc[1] ** 2 +
-        bc[2] ** 2
-    )
-
-    if magnitude_ba == 0 or magnitude_bc == 0:
-        return 0
-
-    cosine = dot_product / (
-        magnitude_ba * magnitude_bc
-    )
-
-    cosine = max(-1.0, min(1.0, cosine))
-
-    return math.degrees(
-        math.acos(cosine)
-    )
-
+# ---------------------------------------------------------
+# Finger detection
+# ---------------------------------------------------------
 
 def finger_is_extended(hand_landmarks, tip, pip, mcp):
     """
@@ -133,20 +155,57 @@ def detect_fingers(hand_landmarks):
     """
 
     return {
-        "index": finger_is_extended(hand_landmarks, 8, 6, 5),
-        "middle": finger_is_extended(hand_landmarks, 12, 10, 9),
-        "ring": finger_is_extended(hand_landmarks, 16, 14, 13),
-        "pinky": finger_is_extended(hand_landmarks, 20, 18, 17)
+        "index": finger_is_extended(
+            hand_landmarks, 8, 6, 5
+        ),
+
+        "middle": finger_is_extended(
+            hand_landmarks, 12, 10, 9
+        ),
+
+        "ring": finger_is_extended(
+            hand_landmarks, 16, 14, 13
+        ),
+
+        "pinky": finger_is_extended(
+            hand_landmarks, 20, 18, 17
+        )
     }
 
 
+# ---------------------------------------------------------
+# Two-finger detection
+# ---------------------------------------------------------
+
+def is_two_finger_pose(hand_landmarks):
+    """
+    Detect the basic two-finger pose.
+
+    Index + middle extended.
+    Ring + pinky folded.
+    """
+
+    fingers = detect_fingers(hand_landmarks)
+
+    return (
+        fingers["index"]
+        and fingers["middle"]
+        and not fingers["ring"]
+        and not fingers["pinky"]
+    )
+
+
+# ---------------------------------------------------------
+# Swipe detection
+# ---------------------------------------------------------
+
 def detect_swipe(hand_landmarks, handedness):
     """
-    Detect a horizontal two-finger swipe.
+    Detect a smooth horizontal two-finger swipe.
 
     Returns:
-        SWIPE_LEFT
-        SWIPE_RIGHT
+        "SWIPE_LEFT"
+        "SWIPE_RIGHT"
         None
     """
 
@@ -156,36 +215,30 @@ def detect_swipe(hand_landmarks, handedness):
 
     current_time = time.time()
 
-    # Still inside cooldown
+    # Prevent repeated swipe triggers
     if current_time < swipe_cooldown_until:
         return None
 
-    # Palm must face camera
-    if not is_palm_facing(hand_landmarks, handedness):
+    # Palm must face the camera
+    if not is_palm_facing(
+        hand_landmarks,
+        handedness
+    ):
         swipe_start_x = None
         swipe_start_time = None
         return None
 
-    fingers = detect_fingers(hand_landmarks)
-
-    # Require index + middle only
-    two_finger_pose = (
-        fingers["index"]
-        and fingers["middle"]
-        and not fingers["ring"]
-        and not fingers["pinky"]
-    )
-
-    if not two_finger_pose:
+    # Require two fingers
+    if not is_two_finger_pose(hand_landmarks):
         swipe_start_x = None
         swipe_start_time = None
         return None
 
     # Midpoint between index and middle fingertips
-    index_tip = hand_landmarks[8]
-    middle_tip = hand_landmarks[12]
-
-    current_x = (index_tip.x + middle_tip.x) / 2
+    current_x = (
+        hand_landmarks[8].x +
+        hand_landmarks[12].x
+    ) / 2
 
     # Start tracking
     if swipe_start_x is None:
@@ -196,90 +249,130 @@ def detect_swipe(hand_landmarks, handedness):
     distance_x = current_x - swipe_start_x
     elapsed = current_time - swipe_start_time
 
-    # Reset if movement takes too long
-    if elapsed > 0.7:
+    # Swipe must happen quickly enough
+    if elapsed > 0.8:
         swipe_start_x = current_x
         swipe_start_time = current_time
         return None
 
     # Minimum horizontal movement
-    threshold = 0.18
+    SWIPE_THRESHOLD = 0.20
 
-    if abs(distance_x) >= threshold:
+    # Ignore tiny movements
+    if abs(distance_x) < SWIPE_THRESHOLD:
+        return None
 
-        if distance_x > 0:
-            gesture = "SWIPE_RIGHT"
-        else:
-            gesture = "SWIPE_LEFT"
+    # Determine direction
+    if distance_x > 0:
+        gesture = "SWIPE_RIGHT"
+    else:
+        gesture = "SWIPE_LEFT"
 
-        # Prevent repeated triggers
-        swipe_cooldown_until = current_time + 0.8
+    # Reset tracking
+    swipe_start_x = None
+    swipe_start_time = None
 
-        swipe_start_x = None
-        swipe_start_time = None
+    # Prevent immediate repeated detection
+    swipe_cooldown_until = current_time + 0.7
 
-        return gesture
+    return gesture
 
-    return None
 
+# ---------------------------------------------------------
+# Static gesture detection
+# ---------------------------------------------------------
 
 def detect_gesture(hand_landmarks, handedness):
     """
     Detect:
+
         OPEN_PALM
         FIST
         POINT
         TWO_FINGER
         UNKNOWN
 
-    Swipe direction will be handled separately.
+    Swipe direction is handled separately.
     """
 
     # Palm must face camera
-    if not is_palm_facing(hand_landmarks, handedness):
+    if not is_palm_facing(
+        hand_landmarks,
+        handedness
+    ):
         gesture_history.clear()
         return "UNKNOWN"
 
     fingers = detect_fingers(hand_landmarks)
 
-    extended_count = sum(fingers.values())
+    extended_count = sum(
+        fingers.values()
+    )
 
+    # -------------------------
     # FIST
+    # -------------------------
+
     if extended_count == 0:
+
         raw_gesture = "FIST"
 
+    # -------------------------
     # POINT
+    # -------------------------
+
     elif (
         fingers["index"]
         and not fingers["middle"]
         and not fingers["ring"]
         and not fingers["pinky"]
     ):
+
         raw_gesture = "POINT"
 
-        # TWO FINGER
+    # -------------------------
+    # TWO FINGER
+    # -------------------------
+
     elif (
         fingers["index"]
         and fingers["middle"]
         and not fingers["ring"]
         and not fingers["pinky"]
     ):
+
         raw_gesture = "TWO_FINGER"
 
+    # -------------------------
     # OPEN PALM
+    # -------------------------
+
     elif extended_count == 4:
+
         raw_gesture = "OPEN_PALM"
 
+    # -------------------------
+    # UNKNOWN
+    # -------------------------
+
     else:
+
         raw_gesture = "UNKNOWN"
 
-    # Stabilize static gesture
-    gesture_history.append(raw_gesture)
+    # -------------------------
+    # Stabilize gesture
+    # -------------------------
+
+    gesture_history.append(
+        raw_gesture
+    )
 
     if len(gesture_history) < 3:
         return "UNKNOWN"
 
-    gesture, count = Counter(gesture_history).most_common(1)[0]
+    gesture, count = Counter(
+        gesture_history
+    ).most_common(1)[0]
 
     if count >= 2:
         return gesture
