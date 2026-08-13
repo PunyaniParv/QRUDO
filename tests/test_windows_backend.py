@@ -34,19 +34,22 @@ log.setup(console=False)
 class FakeWindowsController(WindowsController):
     """WindowsController with user32 and PowerShell replaced by recorders."""
 
-    def __init__(self, config=None, reply="40|48|ok"):
+    def __init__(self, config=None, reply="40|48|ok", read_reply="40|ok"):
         self.config = config or ControlConfig()
         self.log = log.get_logger("test")
         self.pressed: list[tuple[int, bool]] = []
         self.scripts: list[str] = []
-        self.reply = reply
+        self.reply = reply            # what the setting script returns
+        self.read_reply = read_reply  # what the read-only script returns
+        self._worker = None           # no resident PowerShell in tests
 
     def _press(self, key, *, extended=False):
         self.pressed.append((key, extended))
 
     def _powershell(self, script):
         self.scripts.append(script)
-        return self.reply
+        # The two scripts return different shapes: "old|new|ok" vs "level|ok".
+        return self.reply if "WmiSetBrightness" in script else self.read_reply
 
 
 class TestVolume(unittest.TestCase):
@@ -124,14 +127,61 @@ class TestMedia(unittest.TestCase):
         self.assertEqual(controller.pressed, [(VK_MEDIA_NEXT_TRACK, False)])
 
 
-class TestSnapshot(unittest.TestCase):
+class TestState(unittest.TestCase):
     def test_reports_brightness(self):
-        controller = FakeWindowsController(reply="37|ok")
-        self.assertEqual(controller.snapshot(), "brightness 37%")
+        controller = FakeWindowsController(read_reply="37|ok")
+        self.assertEqual(controller.read_state(), {"brightness": 0.37})
 
     def test_unreadable_display_is_blank_not_an_error(self):
-        controller = FakeWindowsController(reply="error|Not supported")
-        self.assertEqual(controller.snapshot(), "")
+        controller = FakeWindowsController(read_reply="error|Not supported")
+        self.assertEqual(controller.read_state(), {})
+
+    def test_restore_asks_for_the_exact_delta(self):
+        """Windows can only move brightness relatively, so restoring 40% from
+        37% has to become "+3"."""
+        controller = FakeWindowsController(read_reply="37|ok", reply="37|40|ok")
+        controller.restore_state({"brightness": 0.40})
+        self.assertIn("$cur + (3)", controller.scripts[-1])
+
+    def test_restore_does_nothing_when_already_correct(self):
+        controller = FakeWindowsController(read_reply="37|ok")
+        controller.restore_state({"brightness": 0.37})
+        self.assertEqual(len(controller.scripts), 1)  # the read only, no write
+
+
+class TestPersistentPowerShell(unittest.TestCase):
+    """The resident helper must never be able to break brightness control."""
+
+    class DeadWorker:
+        def exchange(self, line, timeout=6.0):
+            return None  # unavailable, however it failed
+
+    class LiveWorker:
+        def __init__(self):
+            self.lines = []
+
+        def exchange(self, line, timeout=6.0):
+            self.lines.append(line)
+            return "40|48|ok" if line != "read" else "40|ok"
+
+    def test_falls_back_to_launching_powershell(self):
+        controller = FakeWindowsController()
+        controller._worker = self.DeadWorker()
+        self.assertEqual(controller.brightness_up(8), "brightness 40% -> 48%")
+        self.assertEqual(len(controller.scripts), 1)  # the one-shot path ran
+
+    def test_uses_the_worker_when_it_answers(self):
+        controller = FakeWindowsController()
+        controller._worker = self.LiveWorker()
+        self.assertEqual(controller.brightness_up(8), "brightness 40% -> 48%")
+        self.assertEqual(controller.scripts, [])      # no process was launched
+        self.assertEqual(controller._worker.lines, ["8"])
+
+    def test_reads_go_through_the_worker_too(self):
+        controller = FakeWindowsController()
+        controller._worker = self.LiveWorker()
+        self.assertEqual(controller.read_state(), {"brightness": 0.40})
+        self.assertEqual(controller._worker.lines, ["read"])
 
 
 class TestPreflight(unittest.TestCase):
@@ -140,7 +190,7 @@ class TestPreflight(unittest.TestCase):
         self.assertTrue(any("becomes 4%" in w for w in controller.preflight()))
 
     def test_reports_missing_brightness_support(self):
-        controller = FakeWindowsController(reply="error|Not supported")
+        controller = FakeWindowsController(read_reply="error|Not supported")
         self.assertTrue(any("brightness control unavailable" in w
                             for w in controller.preflight()))
 

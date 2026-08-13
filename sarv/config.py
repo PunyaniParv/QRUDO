@@ -49,6 +49,11 @@ class ControlConfig:
     many frames per second; without this, one hand pose becomes 30 volume
     steps.  Repeats of the same command are throttled per-command."""
 
+    windows_persistent_powershell: bool = True
+    """Windows only.  Keep one PowerShell alive for brightness instead of
+    launching one per command (~1.4s each).  Set false if it ever misbehaves;
+    the slower path is always available as a fallback."""
+
     dry_run: bool = False
     """Log what would happen but never touch the OS.  Useful for demos and for
     the Vision Engine's own testing."""

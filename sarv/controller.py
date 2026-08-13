@@ -95,14 +95,20 @@ class Controller(ABC):
         permissions, unsupported hardware).  An empty list means all good."""
         return []
 
-    def snapshot(self) -> str:
-        """Current machine state, e.g. "volume 63%, brightness 47%".
+    def read_state(self) -> dict[str, float]:
+        """Whatever this platform can measure, as 0.0-1.0 fractions.
 
-        The self-test prints this before and after so a run that fails to
-        restore something is visible at a glance.  Return "" for anything this
-        platform cannot read back.
+        Keys are free-form ("volume", "brightness", "muted").  The self-test
+        prints this before and after, and uses it to put the machine back
+        exactly -- undoing a command with its opposite is not enough near the
+        ends of a scale, where the command clamps but its opposite does not.
+        Return {} for platforms that cannot read anything back.
         """
-        return ""
+        return {}
+
+    def restore_state(self, state: dict[str, float]) -> None:
+        """Put back what :meth:`read_state` measured.  Best effort."""
+        return None
 
 
 class ControlEngine:

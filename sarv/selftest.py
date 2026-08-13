@@ -24,9 +24,9 @@ def run(engine: ControlEngine | None = None) -> int:
     for warning in engine.preflight():
         print(f"  ! {warning}\n")
 
-    before = _snapshot(engine)
-    if before:
-        print(f"  before: {before}\n")
+    before_state = _read_state(engine)
+    if before_state:
+        print(f"  before: {_describe(before_state)}\n")
 
     # (command, note) pairs.  The paired command after each one puts the
     # machine back where it started.
@@ -67,7 +67,16 @@ def run(engine: ControlEngine | None = None) -> int:
     if first.ok:
         engine.execute(Command.VOLUME_DOWN, force=True)
 
-    after = _snapshot(engine)
+    # Paired undos keep the machine roughly steady during the run, but they
+    # cannot be exact: near the end of a scale a command clamps while its
+    # opposite moves the full step.  Put the measured values back.
+    if before_state:
+        try:
+            engine.controller.restore_state(before_state)
+        except Exception as exc:
+            print(f"\n  ! could not restore machine state: {exc}")
+
+    after = _describe(_read_state(engine))
     if after:
         print(f"\n  after:  {after}")
 
@@ -80,12 +89,20 @@ def _check(label: str, passed: bool) -> None:
     print(f"  {'PASS' if passed else 'FAIL'}  {label}")
 
 
-def _snapshot(engine: ControlEngine) -> str:
+def _read_state(engine: ControlEngine) -> dict[str, float]:
     """Whatever this platform can read back.  Never fails the test."""
     try:
-        return engine.controller.snapshot()
-    except Exception as exc:  # reading state is a nicety, not the test
-        return f"state unreadable ({exc})"
+        return engine.controller.read_state()
+    except Exception:  # reading state is a nicety, not the test itself
+        return {}
+
+
+def _describe(state: dict[str, float]) -> str:
+    parts = [f"{name} {value * 100:.0f}%"
+             for name, value in state.items() if name != "muted"]
+    if state.get("muted"):
+        parts.append("muted")
+    return ", ".join(parts)
 
 
 if __name__ == "__main__":

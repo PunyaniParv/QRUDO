@@ -48,6 +48,11 @@ ACTIONABLE_COMMANDS: tuple[Command, ...] = (
 )
 
 
+#: Seeking has no system-wide key on either platform, so it is sent as arrow
+#: keys -- which land in whichever window has keyboard focus.  Everything else
+#: is a media key or a system call and ignores focus entirely.
+FOCUS_SENSITIVE: tuple[Command, ...] = (Command.REWIND, Command.FORWARD)
+
 #: Backends put this in their detail string when a command succeeded but moved
 #: nothing -- volume already at 100%, brightness already at 0%.  The self-test
 #: relies on it: undoing a command that did nothing would leave the machine

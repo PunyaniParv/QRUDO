@@ -18,8 +18,10 @@ number of presses.
 
 from __future__ import annotations
 
+import atexit
 import ctypes
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from ..commands import NO_CHANGE
 from ..config import ControlConfig
@@ -76,6 +78,101 @@ try {
 """
 
 
+class _PowerShellWorker:
+    """One long-lived PowerShell that takes brightness commands on stdin.
+
+    Launching ``powershell`` costs about a second, and the brightness commands
+    were paying it every single time -- measured at 1.4 s per command on a real
+    laptop, which stalls a 30 fps preview for forty frames.  Keeping one process
+    alive pays that once.
+
+    Every failure path here falls back to the one-shot method rather than
+    raising: a hung helper during a demo would be far worse than a slow one.
+    """
+
+    _LOOP = """
+$out = [Console]::Out
+while ($true) {
+    $line = [Console]::In.ReadLine()
+    if ($null -eq $line -or $line -eq 'quit') { break }
+    try {
+        $b = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop)[0]
+        $cur = [int]$b.CurrentBrightness
+        if ($line -eq 'read') {
+            $out.WriteLine("$cur|ok")
+        } else {
+            $target = $cur + [int]$line
+            if ($target -gt 100) { $target = 100 }
+            if ($target -lt 0) { $target = 0 }
+            $m = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop)[0]
+            Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{Brightness=[byte]$target; Timeout=[uint32]1} | Out-Null
+            $out.WriteLine("$cur|$target|ok")
+        }
+    } catch {
+        $out.WriteLine("error|$($_.Exception.Message)")
+    }
+    $out.Flush()
+}
+"""
+
+    def __init__(self, log) -> None:
+        self.log = log
+        self._process: subprocess.Popen | None = None
+        self._broken = False
+        self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sarv-ps")
+        atexit.register(self.close)
+
+    def exchange(self, line: str, timeout: float = 6.0) -> str | None:
+        """Send one line, return one reply.  None means "use the slow path"."""
+        if self._broken:
+            return None
+        if not self._start():
+            return None
+        try:
+            self._process.stdin.write(line + "\n")
+            self._process.stdin.flush()
+            # A blocking readline cannot be given a timeout directly, so it runs
+            # on a helper thread.  Killing the process on timeout unblocks it.
+            for _ in range(3):
+                reply = self._reader.submit(self._process.stdout.readline).result(timeout)
+                if not reply:
+                    break
+                if "|" in reply:
+                    return reply.strip()
+                # Ignore anything else PowerShell decides to print.
+        except Exception as exc:
+            self.log.warning("persistent powershell failed (%s); using slow path", exc)
+        self._give_up()
+        return None
+
+    def _start(self) -> bool:
+        if self._process is not None and self._process.poll() is None:
+            return True
+        try:
+            self._process = subprocess.Popen(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", self._LOOP],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            return True
+        except OSError as exc:
+            self.log.warning("could not start persistent powershell: %s", exc)
+            self._broken = True
+            return False
+
+    def _give_up(self) -> None:
+        self._broken = True
+        self.close()
+
+    def close(self) -> None:
+        process, self._process = self._process, None
+        if process is None or process.poll() is not None:
+            return
+        try:
+            process.kill()
+        except OSError:
+            pass
+
+
 class WindowsController(Controller):
     name = "Windows"
 
@@ -88,6 +185,8 @@ class WindowsController(Controller):
         if win_dll is None:
             raise ControlError("WindowsController requires Windows")
         self._user32 = win_dll("user32", use_last_error=True)
+        self._worker = (_PowerShellWorker(self.log)
+                        if self.config.windows_persistent_powershell else None)
 
     # ------------------------------------------------------------------ volume
 
@@ -119,7 +218,7 @@ class WindowsController(Controller):
         return self._set_brightness(-step)
 
     def _set_brightness(self, delta: int) -> str:
-        raw = self._powershell(_BRIGHTNESS_SCRIPT.format(delta=delta))
+        raw = self._brightness_call(str(delta), _BRIGHTNESS_SCRIPT.format(delta=delta))
         if raw.startswith("error|"):
             # Desktops and most external monitors do not expose WMI brightness;
             # unlike macOS there is no key-press fallback to try.
@@ -185,9 +284,17 @@ class WindowsController(Controller):
 
     # -------------------------------------------------------------- preflight
 
+    def _brightness_call(self, worker_line: str, fallback_script: str) -> str:
+        """Ask the resident PowerShell; launch a fresh one if it is unavailable."""
+        if self._worker is not None:
+            reply = self._worker.exchange(worker_line)
+            if reply is not None:
+                return reply
+        return self._powershell(fallback_script)
+
     def _read_brightness(self) -> int | None:
         """Current brightness percentage, or None if this display cannot say."""
-        raw = self._powershell(_READ_BRIGHTNESS_SCRIPT)
+        raw = self._brightness_call("read", _READ_BRIGHTNESS_SCRIPT)
         if raw.startswith("error|"):
             return None
         try:
@@ -195,22 +302,32 @@ class WindowsController(Controller):
         except ValueError:
             return None
 
-    def snapshot(self) -> str:
+    def read_state(self) -> dict[str, float]:
         # Volume cannot be read back on Windows without an extra package, so
         # brightness is the only state the self-test can verify here.
         try:
             level = self._read_brightness()
         except ControlError:
-            return ""
-        return f"brightness {level}%" if level is not None else ""
+            return {}
+        return {"brightness": level / 100} if level is not None else {}
+
+    def restore_state(self, state: dict[str, float]) -> None:
+        if "brightness" not in state:
+            return
+        target = round(state["brightness"] * 100)
+        current = self._read_brightness()
+        if current is not None and current != target:
+            # Only relative moves are available, so ask for the exact delta.
+            self._set_brightness(target - current)
 
     def preflight(self) -> list[str]:
         warnings = [
             f"volume moves in {VOLUME_PERCENT_PER_PRESS}% steps on Windows, so a "
             f"{self.config.volume_step}% setting becomes "
             f"{max(1, round(self.config.volume_step / VOLUME_PERCENT_PER_PRESS)) * VOLUME_PERCENT_PER_PRESS}%",
-            "brightness goes through PowerShell and takes about 1.5s; use "
-            "engine.submit() instead of execute() to keep the camera loop smooth",
+            "brightness goes through PowerShell: the first command pays ~1.5s of "
+            "startup, later ones reuse the same process. Use engine.submit() rather "
+            "than execute() so that first one cannot stall the camera loop",
         ]
         try:
             if self._read_brightness() is None:

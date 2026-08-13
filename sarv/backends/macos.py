@@ -46,6 +46,7 @@ class MacOSController(Controller):
         self.log = get_logger("macos")
         self._quartz = _load_quartz()
         self._display_services = _load_display_services()
+        self._core_audio = _load_core_audio()
         self._brightness_cli = shutil.which("brightness")
 
     # ------------------------------------------------------------------ volume
@@ -57,6 +58,36 @@ class MacOSController(Controller):
         return self._change_volume(-step)
 
     def _change_volume(self, delta: int) -> str:
+        """CoreAudio if we can, AppleScript if we must."""
+        if self._core_audio is not None:
+            detail = self._change_volume_fast(delta)
+            if detail is not None:
+                return detail
+        return self._change_volume_applescript(delta)
+
+    def _change_volume_fast(self, delta: int) -> str | None:
+        """~0.1 ms.  Returns None if this device cannot be driven this way."""
+        device = self._core_audio.device()
+        if device is None:
+            return None
+        current = self._core_audio.get_volume(device)
+        if current is None:
+            return None
+
+        if self._core_audio.is_muted(device) and delta > 0 and self.config.unmute_on_volume_up:
+            if not self._core_audio.unmute(device):
+                return None
+            return f"unmuted (volume {current * 100:.0f}%)"
+
+        target = min(1.0, max(0.0, current + delta / 100.0))
+        old, new = round(current * 100), round(target * 100)
+        if old == new:
+            return f"volume {NO_CHANGE} {'maximum' if delta > 0 else 'minimum'} ({old}%)"
+        if not self._core_audio.set_volume(device, target):
+            return None
+        return f"volume {old}% -> {new}%"
+
+    def _change_volume_applescript(self, delta: int) -> str:
         """Read and write the volume in a single osascript call.
 
         Two calls would take ~400 ms (most of it process startup) and could
@@ -268,19 +299,38 @@ class MacOSController(Controller):
                 "(external monitors may ignore them)")
         return warnings
 
-    def snapshot(self) -> str:
-        parts = []
-        try:
-            settings = self._volume_settings()
-            parts.append(f"volume {settings['volume']}%"
-                         + (" (muted)" if settings["muted"] else ""))
-        except ControlError as exc:
-            parts.append(f"volume unreadable ({exc})")
+    def read_state(self) -> dict[str, float]:
+        state: dict[str, float] = {}
+        device = self._core_audio.device() if self._core_audio else None
+        if device is not None:
+            level = self._core_audio.get_volume(device)
+            if level is not None:
+                state["volume"] = level
+                state["muted"] = float(self._core_audio.is_muted(device))
+        elif self._volume_settings_safe() is not None:
+            settings = self._volume_settings_safe()
+            state["volume"] = settings["volume"] / 100
+            state["muted"] = float(settings["muted"])
         if self._display_services is not None:
             level = self._get_brightness()
             if level is not None:
-                parts.append(f"brightness {level * 100:.0f}%")
-        return ", ".join(parts)
+                state["brightness"] = level
+        return state
+
+    def restore_state(self, state: dict[str, float]) -> None:
+        device = self._core_audio.device() if self._core_audio else None
+        if device is not None and "volume" in state:
+            self._core_audio.set_volume(device, state["volume"])
+        elif "volume" in state:
+            self._osascript(f"set volume output volume {round(state['volume'] * 100)}")
+        if "brightness" in state and self._display_services is not None:
+            self._set_brightness(state["brightness"])
+
+    def _volume_settings_safe(self) -> dict | None:
+        try:
+            return self._volume_settings()
+        except ControlError:
+            return None
 
     def _can_post_events(self) -> bool:
         """Best-effort Accessibility check; assume OK if macOS won't tell us."""
@@ -290,6 +340,98 @@ class MacOSController(Controller):
             return bool(check()) if check else True
         except Exception:  # API missing on this OS version
             return True
+
+
+class _CoreAudio:
+    """Volume straight from CoreAudio instead of shelling out to osascript.
+
+    osascript costs ~200 ms per command, nearly all of it process startup, which
+    is long enough to stutter a 30 fps camera loop.  These calls take ~0.1 ms.
+    """
+
+    _SYSTEM_OBJECT = 1
+
+    class _Address(ctypes.Structure):
+        _fields_ = [("selector", ctypes.c_uint32),
+                    ("scope", ctypes.c_uint32),
+                    ("element", ctypes.c_uint32)]
+
+    def __init__(self) -> None:
+        self._lib = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreAudio.framework/CoreAudio")
+        address = ctypes.POINTER(self._Address)
+        self._lib.AudioObjectGetPropertyData.argtypes = [
+            ctypes.c_uint32, address, ctypes.c_uint32, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+        self._lib.AudioObjectSetPropertyData.argtypes = [
+            ctypes.c_uint32, address, ctypes.c_uint32, ctypes.c_void_p,
+            ctypes.c_uint32, ctypes.c_void_p]
+        self._lib.AudioObjectHasProperty.argtypes = [ctypes.c_uint32, address]
+        self._default_output = _fourcc("dOut")
+        self._scope_global = _fourcc("glob")
+        self._scope_output = _fourcc("outp")
+        self._volume = _fourcc("volm")
+        self._mute = _fourcc("mute")
+
+    def device(self) -> int | None:
+        """The current default output device.
+
+        Looked up per call rather than cached: plugging in headphones changes
+        it, and the lookup is far too cheap to be worth caching.
+        """
+        device = ctypes.c_uint32()
+        size = ctypes.c_uint32(4)
+        address = self._Address(self._default_output, self._scope_global, 0)
+        rc = self._lib.AudioObjectGetPropertyData(
+            self._SYSTEM_OBJECT, ctypes.byref(address), 0, None,
+            ctypes.byref(size), ctypes.byref(device))
+        return device.value if rc == 0 else None
+
+    def get_volume(self, device: int) -> float | None:
+        address = self._Address(self._volume, self._scope_output, 0)
+        if not self._lib.AudioObjectHasProperty(device, ctypes.byref(address)):
+            return None  # e.g. some USB/Bluetooth devices have no master channel
+        level = ctypes.c_float()
+        size = ctypes.c_uint32(4)
+        rc = self._lib.AudioObjectGetPropertyData(
+            device, ctypes.byref(address), 0, None, ctypes.byref(size),
+            ctypes.byref(level))
+        return level.value if rc == 0 else None
+
+    def set_volume(self, device: int, level: float) -> bool:
+        address = self._Address(self._volume, self._scope_output, 0)
+        value = ctypes.c_float(level)
+        return self._lib.AudioObjectSetPropertyData(
+            device, ctypes.byref(address), 0, None, 4, ctypes.byref(value)) == 0
+
+    def is_muted(self, device: int) -> bool:
+        address = self._Address(self._mute, self._scope_output, 0)
+        if not self._lib.AudioObjectHasProperty(device, ctypes.byref(address)):
+            return False
+        muted = ctypes.c_uint32()
+        size = ctypes.c_uint32(4)
+        rc = self._lib.AudioObjectGetPropertyData(
+            device, ctypes.byref(address), 0, None, ctypes.byref(size),
+            ctypes.byref(muted))
+        return rc == 0 and bool(muted.value)
+
+    def unmute(self, device: int) -> bool:
+        address = self._Address(self._mute, self._scope_output, 0)
+        value = ctypes.c_uint32(0)
+        return self._lib.AudioObjectSetPropertyData(
+            device, ctypes.byref(address), 0, None, 4, ctypes.byref(value)) == 0
+
+
+def _fourcc(code: str) -> int:
+    """CoreAudio selectors are four-character codes packed into a uint32."""
+    return int.from_bytes(code.encode("ascii"), "big")
+
+
+def _load_core_audio():
+    try:
+        return _CoreAudio()
+    except OSError:
+        return None
 
 
 def _load_quartz():

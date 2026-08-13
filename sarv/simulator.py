@@ -15,8 +15,9 @@ scriptable::
 from __future__ import annotations
 
 import sys
+import time
 
-from .commands import Command
+from .commands import FOCUS_SENSITIVE, Command
 from .controller import ControlEngine
 
 #: Spec E: "U/D/P/L/R/B/N for the seven V1 commands".
@@ -41,7 +42,9 @@ def help_text(engine: ControlEngine) -> str:
         "",
     ]
     for key, command in KEY_MAP.items():
-        lines.append(f"    {key}   {command.value}")
+        note = "   (counts down first, so you can click your video)" \
+            if command in FOCUS_SENSITIVE else ""
+        lines.append(f"    {key}   {command.value}{note}")
     lines += [
         "    ?   this help",
         "    q   quit",
@@ -54,7 +57,15 @@ def help_text(engine: ControlEngine) -> str:
     return "\n".join(lines)
 
 
-def run(engine: ControlEngine | None = None) -> int:
+def _countdown(command: Command, seconds: float) -> None:
+    for remaining in range(int(seconds), 0, -1):
+        print(f"    {command} in {remaining}s -- click your video now",
+              end="\r", flush=True)
+        time.sleep(1)
+    print(" " * 60, end="\r")
+
+
+def run(engine: ControlEngine | None = None, seek_delay: float = 3.0) -> int:
     engine = engine or ControlEngine()
 
     for warning in engine.preflight():
@@ -73,6 +84,12 @@ def run(engine: ControlEngine | None = None) -> int:
             if key.strip():
                 print(f"    unmapped key {key!r} -- press ? for help")
             continue
+        # L and R send arrow keys, which go to the focused window -- and while
+        # you are typing here, that is this terminal.  Count down so you can
+        # click the video first, otherwise the seek lands on the simulator.
+        if command in FOCUS_SENSITIVE and seek_delay > 0:
+            _countdown(command, seek_delay)
+
         # force=True: a keypress is a deliberate human action, so it should
         # never be swallowed by the gesture debounce.
         result = engine.execute(command, force=True)

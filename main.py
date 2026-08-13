@@ -72,7 +72,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.simulate:
         from sarv import simulator
-        return simulator.run(engine)
+        # --delay overrides the countdown before L/R; 0 would make them
+        # unusable from a terminal, so fall back to the default.
+        return simulator.run(engine, seek_delay=args.delay or 3.0)
 
     try:
         command = parse_command(args.command)
