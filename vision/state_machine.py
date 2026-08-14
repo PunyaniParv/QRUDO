@@ -17,7 +17,7 @@ from collections import Counter, deque
 #: must agree.  At about 30 frames a second this is a sixth of a second --
 #: long enough to ignore a flicker, short enough to feel immediate.
 STABLE_FRAMES = 5
-STABLE_AGREEMENT = 3
+STABLE_AGREEMENT = 4
 
 
 class GestureStabiliser:
@@ -85,17 +85,51 @@ class SwipeState:
     the pose halfway through a turn should not lose the turn.
     """
 
-    def __init__(self, arm_hold, cooldown, window):
+    def __init__(self, arm_hold, cooldown, window, hold=0.0, gap=0.2):
         self.arm_hold = arm_hold
         self.cooldown = cooldown
+        self.hold = hold
+        self.gap = gap
         self.history = MotionHistory(window)
         self.armed_until = 0.0
         self.armed_kind = None
         self.cooldown_until = 0.0
+        self._seen_kind = None
+        self._seen_since = 0.0
+        self._last_pose_at = 0.0
 
-    def arm(self, now, kind):
-        self.armed_until = now + self.arm_hold
-        self.armed_kind = kind
+    def note_pose(self, now, kind):
+        """The pose seen this frame; arms a swipe once it has been held.
+
+        Arming on the first frame that looks right is what let a hand doing
+        something else fire a swipe: reaching across the desk passes through
+        shapes that resemble two fingers for an instant, and an instant was
+        all it took.  Requiring the pose to persist costs a deliberate
+        gesture nothing -- you are holding it anyway -- and rules out the
+        accidental ones almost entirely.
+        """
+
+        if kind is None:
+            # A pose lost for a frame or two is the same pose: recognition
+            # flickers most while the hand is moving, which is precisely
+            # when a swipe is under way.  Only a real gap restarts it.
+            if now - self._last_pose_at > self.gap:
+                self._seen_kind = None
+            return
+
+        # Only appearing and disappearing restart the clock.  Which of the
+        # two poses it is can flip mid-turn, as the fingers swing past the
+        # angle that separates them, and that is the same hand held
+        # continuously -- not a new gesture.
+        if self._seen_kind is None:
+            self._seen_since = now
+
+        self._seen_kind = kind
+        self._last_pose_at = now
+
+        if now - self._seen_since >= self.hold:
+            self.armed_until = now + self.arm_hold
+            self.armed_kind = kind
 
     def is_armed(self, now):
         return now < self.armed_until
@@ -109,12 +143,14 @@ class SwipeState:
         self.history.clear()
         self.armed_until = 0.0
         self.armed_kind = None
+        self._seen_kind = None
         self.cooldown_until = now + self.cooldown
 
     def clear(self):
         self.history.clear()
         self.armed_until = 0.0
         self.armed_kind = None
+        self._seen_kind = None
 
 
 class Presence:

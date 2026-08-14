@@ -69,6 +69,11 @@ def run(engine, args, tuning=False):
         for frame in camera.frames():
             frame_times.append(time.time())
             hand = tracker.track(frame)
+
+            # Someone walking past at the back of the room is not
+            # gesturing at us.
+            if hand is not None and not hand_state.is_prominent(hand):
+                hand = None
             gesture = None
 
             if hand is None:

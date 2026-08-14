@@ -43,6 +43,13 @@ FINGERS = {
 #: line; turning the hand does not.
 EXTENDED_RATIO = 0.82
 
+#: A fist is not merely "no finger is straight".  A hand resting on a
+#: keyboard, or just relaxed, is halfway between -- and calling that a
+#: fist is what made play/pause fire at nothing.  Every finger has to be
+#: properly folded, which leaves a deliberate deadband in between where
+#: the hand is neither and nothing happens.
+CURLED_RATIO = 0.68
+
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
 #: sixty degrees off it.
@@ -52,6 +59,11 @@ AIM_AT_CAMERA = 0.50
 #: its sign is then decided by noise.  Below this the answer is "cannot
 #: tell" rather than a coin flip.
 PALM_CERTAINTY = 0.12
+
+#: Smallest a hand can look on screen and still be taken as deliberate,
+#: as a fraction of the frame width.  A hand across the room, or one
+#: mostly out of shot, is doing something else.
+MIN_HAND_ON_SCREEN = 0.09
 
 
 # ---------------------------------------------------------
@@ -155,6 +167,12 @@ def hand_scale(hand_landmarks):
     )
 
 
+def is_prominent(hand):
+    """Whether the hand is close enough and whole enough to mean it."""
+
+    return hand_scale(screen_of(hand)) >= MIN_HAND_ON_SCREEN
+
+
 # ---------------------------------------------------------
 # Palm orientation
 # ---------------------------------------------------------
@@ -244,6 +262,15 @@ def detect_fingers(hand_landmarks):
         name: finger_is_extended(hand_landmarks, tip, pip, mcp)
         for name, (tip, pip, mcp) in FINGERS.items()
     }
+
+
+def is_clenched(hand_landmarks):
+    """Whether every finger is properly folded, not merely un-straight."""
+
+    return all(
+        finger_extension(hand_landmarks, tip, pip, mcp) < CURLED_RATIO
+        for tip, pip, mcp in FINGERS.values()
+    )
 
 
 def finger_scores(hand_landmarks):

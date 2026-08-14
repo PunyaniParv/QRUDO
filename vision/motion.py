@@ -33,6 +33,7 @@ SWIPE_CONSISTENCY = 0.65  # how directly the motion got where it ended up
 SWIPE_MIN_SAMPLES = 3     # a fast flick is only a few frames long
 ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
+POSE_HOLD = 0.15          # the pose must be held this long before it counts
 
 SWIPE_SLIDE = 0.90        # palm widths the hand must cover
 SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
@@ -41,7 +42,7 @@ SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 #: user's right and a rightward swipe is a rise in x.
 FRAME_IS_MIRRORED = True
 
-_state = SwipeState(ARM_HOLD, SWIPE_COOLDOWN, SWIPE_WINDOW)
+_state = SwipeState(ARM_HOLD, SWIPE_COOLDOWN, SWIPE_WINDOW, POSE_HOLD)
 
 #: Filled in every frame for the tuning overlay.
 _debug = {}
@@ -121,8 +122,7 @@ def detect_swipe(hand, handedness=None):
 
     kind = gestures.two_finger_pose_kind(hand)
 
-    if kind is not None:
-        _state.arm(moment, kind)
+    _state.note_pose(moment, kind)
 
     armed = _state.is_armed(moment)
 

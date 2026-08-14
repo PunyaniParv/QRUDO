@@ -173,6 +173,19 @@ class GestureTestCase(unittest.TestCase):
         import time as real_time
         motion.now = real_time.time
 
+    def hold_pose(self, hand, seconds=0.25, frames=6):
+        """Present a still pose before moving, as a real hand does.
+
+        A swipe now requires the pose to persist briefly before it counts,
+        which is what stops a hand reaching across the desk from firing
+        one.  These tests used to feed the movement with no hand shown
+        beforehand, which no real gesture does.
+        """
+
+        for _ in range(frames):
+            motion.detect_swipe(hand, HAND)
+            self.clock.tick(seconds / frames)
+
     def settle(self, hand, frames=5):
         """Hold a pose long enough for the stabiliser to accept it."""
 
@@ -312,6 +325,8 @@ class TestGunSwipe(GestureTestCase):
     """Wrist held still, two fingers turned left or right."""
 
     def turn(self, start, end, seconds, frames=12, pose=True, cx=0.50):
+        if pose:
+            self.hold_pose(gun(cx=cx, turn=start))
         result = None
         for i in range(frames):
             amount = start + (end - start) * (i / (frames - 1))
@@ -343,10 +358,11 @@ class TestGunSwipe(GestureTestCase):
     def test_wobble_is_not_a_swipe(self):
         """A shaking hand turns a lot without turning anywhere."""
 
+        self.hold_pose(gun(turn=0.0))
         result = None
         for i in range(14):
             result = result or motion.detect_swipe(
-                gun(turn=0.5 if i % 2 else -0.5), HAND)
+                gun(turn=0.15 if i % 2 else -0.15), HAND)
             self.clock.tick(0.025)
         self.assertIsNone(result)
 
@@ -357,6 +373,7 @@ class TestGunSwipe(GestureTestCase):
         turning it reads as no movement at all.
         """
 
+        self.hold_pose(gun(cx=0.30))
         result = None
         for i in range(12):
             cx = 0.30 + 0.40 * (i / 11)
@@ -378,7 +395,22 @@ class TestGunSwipe(GestureTestCase):
 
     def test_cooldown_blocks_an_immediate_second_swipe(self):
         self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
-        self.assertIsNone(self.turn(-0.6, 0.6, 0.30))
+
+        fired_at = motion._state.cooldown_until - motion.SWIPE_COOLDOWN
+
+        # A second gesture begun at once: the shortest one that could
+        # possibly register, so the whole of it lands inside the cooldown.
+        self.hold_pose(gun(turn=-0.6), seconds=0.16, frames=4)
+
+        result = None
+        for i in range(6):
+            result = result or motion.detect_swipe(gun(turn=-0.6 + 1.2 * i / 5),
+                                                   HAND)
+            self.clock.tick(0.02)
+
+        self.assertLess(self.clock.now, fired_at + motion.SWIPE_COOLDOWN,
+                        "the test itself ran past the cooldown")
+        self.assertIsNone(result)
 
     def test_swipe_allowed_again_after_cooldown(self):
         self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
@@ -404,6 +436,7 @@ class TestPeaceSignSwipe(GestureTestCase):
     """Two fingers up, palm to the camera: slid or tilted across."""
 
     def slide(self, start, end, seconds, frames=12):
+        self.hold_pose(peace_sign(cx=start))
         result = None
         for i in range(frames):
             cx = start + (end - start) * (i / (frames - 1))
@@ -426,6 +459,7 @@ class TestPeaceSignSwipe(GestureTestCase):
     def test_tilting_also_works(self):
         """Leaning the fingers over turns the aim, same as the gun pose."""
 
+        self.hold_pose(peace_sign(roll=math.radians(-40)))
         result = None
         for i in range(12):
             roll = math.radians(-40 + 80 * (i / 11))
@@ -446,6 +480,7 @@ class TestRotatedPeaceSign(GestureTestCase):
     """
 
     def roll(self, start, end, seconds, frames=12):
+        self.hold_pose(peace_sign(roll=math.radians(start)))
         result = None
         for i in range(frames):
             degrees = start + (end - start) * (i / (frames - 1))
@@ -494,6 +529,7 @@ class TestFastSwipes(GestureTestCase):
     def flick(self, seconds, frames, dropped=()):
         """Rotate through 50 degrees, losing the listed frames entirely."""
 
+        self.hold_pose(peace_sign(roll=math.radians(-25)))
         result = None
         for i in range(frames):
             degrees = -25 + 50 * (i / (frames - 1))

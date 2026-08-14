@@ -29,11 +29,15 @@ def reset():
 def classify(hand):
     """The shape this single frame shows, before stabilising."""
 
-    fingers = hand_state.detect_fingers(hand_state.shape_of(hand))
+    shape = hand_state.shape_of(hand)
+
+    fingers = hand_state.detect_fingers(shape)
     extended = sum(fingers.values())
 
     if extended == 0:
-        return "FIST"
+        # Nothing straight is not enough: a hand at rest has nothing
+        # straight either.  It has to be shut.
+        return "FIST" if hand_state.is_clenched(shape) else "UNKNOWN"
 
     if (
         fingers["index"]
