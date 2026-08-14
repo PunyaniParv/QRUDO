@@ -42,10 +42,28 @@ _state = SwipeState(ARM_HOLD, SWIPE_COOLDOWN, SWIPE_WINDOW)
 #: Filled in every frame for the tuning overlay.
 _debug = {}
 
+#: The tuning numbers peak during the swipe and are back to nothing by the
+#: time you look at the screen, so the highest recent value is kept too.
+PEAK_HOLD = 2.0
+_peaks = {}
+
+
+def _peak(name, value, moment):
+    """Highest value seen in the last couple of seconds."""
+
+    best, when = _peaks.get(name, (0.0, 0.0))
+
+    if value >= best or moment - when > PEAK_HOLD:
+        _peaks[name] = (value, moment)
+        return value
+
+    return best
+
 
 def reset():
     _state.clear()
     _debug.clear()
+    _peaks.clear()
 
 
 def debug_state():
@@ -137,7 +155,11 @@ def detect_swipe(hand_landmarks, handedness=None):
         turn=round(abs(turn), 2),
         slide=round(abs(slide), 2),
         speed=round(turn_speed, 2),
-        agree=round(turn_agree, 2)
+        agree=round(turn_agree, 2),
+        peak_turn=round(_peak("turn", abs(turn), moment), 2),
+        peak_slide=round(_peak("slide", abs(slide), moment), 2),
+        peak_speed=round(_peak("speed", turn_speed, moment), 2),
+        peak_agree=round(_peak("agree", turn_agree, moment), 2),
     )
 
     turned = (

@@ -85,15 +85,28 @@ def tuning_lines(state, motion, hand_state):
 
     scores = state.get("ext", {})
 
+    def line(label, key, target, note=""):
+        """Now, the best of the last couple of seconds, and what is needed.
+
+        The peak is the number to read: everything spikes during the swipe
+        and is back to nothing by the time you look up.  A peak short of
+        its target is the reason the swipe did not fire.
+        """
+
+        peak = state.get(f"peak_{key}", 0)
+        mark = "ok " if peak >= target else "   "
+
+        return (f"{mark}{label} {state.get(key, 0):.2f}"
+                f"  peak {peak:.2f} / {target}{note}")
+
     return [
-        f"pose  {state.get('pose')}   armed {state.get('armed')}",
-        f"aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
-        f"turn  {state.get('turn', 0):.2f} / {motion.SWIPE_TURN}",
-        f"slide {state.get('slide', 0):.2f} / {motion.SWIPE_SLIDE}"
-        f"   (peace sign only)",
-        f"speed {state.get('speed', 0):.2f} / {motion.SWIPE_TURN_SPEED}",
-        f"agree {state.get('agree', 0):.2f} / {motion.SWIPE_CONSISTENCY}",
-        "ext   " + "  ".join(
+        f"   pose  {state.get('pose')}   armed {state.get('armed')}",
+        f"   aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
+        line("turn ", "turn", motion.SWIPE_TURN),
+        line("slide", "slide", motion.SWIPE_SLIDE, "  (peace sign only)"),
+        line("speed", "speed", motion.SWIPE_TURN_SPEED),
+        line("agree", "agree", motion.SWIPE_CONSISTENCY),
+        "   ext   " + "  ".join(
             f"{name[0]}{score:.2f}" for name, score in scores.items()
         ) + f"   (out above {hand_state.EXTENDED_RATIO})",
     ]

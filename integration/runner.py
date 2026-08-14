@@ -8,8 +8,12 @@ it, ui draws it.  This file only decides the order.
 from __future__ import annotations
 
 import sys
+import time
 
 from .bridge import GestureRouter
+
+#: How long a completed swipe stays on screen, in seconds.
+SWIPE_SHOWN_FOR = 0.8
 
 
 def run(engine, args, tuning=False):
@@ -29,6 +33,8 @@ def run(engine, args, tuning=False):
 
     router = GestureRouter()
     last_result = None
+    last_swipe = None
+    last_swipe_at = 0.0
 
     def remember(result):
         nonlocal last_result
@@ -78,7 +84,14 @@ def run(engine, args, tuning=False):
                         engine.submit(command)
 
                 if swipe:
-                    gesture = swipe
+                    last_swipe = swipe
+                    last_swipe_at = time.time()
+
+            # A swipe is reported on the single frame it completes, which at
+            # 30 fps is far too brief to read.  Hold it on screen for long
+            # enough to see that it happened.
+            if last_swipe and time.time() - last_swipe_at < SWIPE_SHOWN_FOR:
+                gesture = last_swipe
 
             if not show_window:
                 continue
