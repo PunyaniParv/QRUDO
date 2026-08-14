@@ -969,3 +969,44 @@ class TestPinch(GestureTestCase):
             self.clock.tick(0.30 / 11)
 
         self.assertIsNone(result)
+
+
+class TestPinchMistakenForOpenHand(GestureTestCase):
+    """Reported from use: a pinch sometimes read as an open hand.
+
+    Pinching with the other three fingers out leaves four fingers reading
+    as extended, so a pinch that falls a little short of the pinch test
+    lands on the open hand -- which is the gesture that turns SARV off.
+    A pinch that goes unrecognised is a nuisance; a pinch that pauses the
+    app is worse.
+    """
+
+    def loose_pinch(self, gap):
+        """A pinch with the fingers not quite touching."""
+
+        hand = pinching()
+        tip = hand[hand_state.INDEX_TIP]
+        hand[hand_state.THUMB_TIP] = Point(tip.x - gap, tip.y + gap * 0.6, 0.0)
+        return hand
+
+    def test_a_pinch_that_does_not_quite_touch_still_counts(self):
+        self.assertEqual(self.settle(self.loose_pinch(0.030)), "PINCH")
+
+    def test_a_pinch_too_loose_to_read_is_nothing_rather_than_open(self):
+        """The important half: not recognised beats wrongly recognised."""
+
+        self.assertEqual(self.settle(self.loose_pinch(0.060)), "UNKNOWN")
+
+    def test_a_genuinely_open_hand_still_reads_as_one(self):
+        self.assertEqual(self.settle(make_hand()), "OPEN_PALM")
+
+    def test_the_gap_is_measured_the_same_way_at_any_angle(self):
+        """Whatever the answer, it must not depend on the viewpoint."""
+
+        face_on = hand_state.pinch_gap(pinching())
+
+        for yaw in (-45, 0, 45):
+            with self.subTest(yaw=yaw):
+                turned = pinching(yaw=math.radians(yaw))
+                self.assertAlmostEqual(face_on, hand_state.pinch_gap(turned),
+                                       places=6)

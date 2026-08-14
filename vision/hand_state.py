@@ -56,9 +56,16 @@ FIST_REACH = 1.15
 
 #: How close the thumb and fingertip must come to count as a pinch, as a
 #: fraction of the palm's length.  Measured on the synthetic hands:
-#: pinched 0.24, a closed fist 0.41, and anything open 0.81 -- so a third
-#: of a palm sits in the gap, with the fist test behind it as well.
-PINCH_GAP = 0.33
+#: pinched 0.24, a closed fist 0.41, and anything open 0.81.  Set nearer
+#: the open end than the middle, because people do not reliably touch --
+#: a pinch held a centimetre apart is still a pinch, and the fist test
+#: behind this one is what keeps a closed hand out.
+PINCH_GAP = 0.45
+
+#: An open hand has to be clearly clear of a pinch, not merely past the
+#: line.  A pinch misread as an open hand is worse than one misread as
+#: nothing: holding an open hand is what turns SARV off.
+OPEN_HAND_GAP = 1.5
 
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
