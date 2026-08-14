@@ -8,7 +8,7 @@ support: implement the same seven methods.
 from __future__ import annotations
 
 from ..config import ControlConfig
-from ..controller import Controller
+from ..executor import Controller
 
 
 class NullController(Controller):

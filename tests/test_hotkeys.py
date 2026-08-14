@@ -15,10 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sarv import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, log
-from sarv import hotkeys
-from sarv.backends.null import NullController
-from sarv.simulator import KEY_MAP
+from control import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, log
+from control import hotkeys
+from control.backends.null import NullController
+from control.simulator import KEY_MAP
 
 log.setup(console=False)
 

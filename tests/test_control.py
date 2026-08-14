@@ -17,11 +17,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sarv import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, Status, log, parse_command
-from sarv.commands import NO_CHANGE
-from sarv.backends.null import NullController
-from sarv.controller import ControlError
-from sarv.simulator import KEY_MAP
+from control import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, Status, log, parse_command
+from control.commands import NO_CHANGE
+from control.backends.null import NullController
+from control.executor import ControlError
+from control.simulator import KEY_MAP
 
 log.setup(console=False)  # keep test output readable; the file log still fills
 
@@ -204,7 +204,7 @@ class TestSelfTestRestores(unittest.TestCase):
         BRIGHTNESS_DOWN still fired, so running the self-test left the display
         one step darker every time.
         """
-        from sarv import selftest
+        from control import selftest
 
         config = ControlConfig(cooldown_seconds=0.0)
         controller = self.AtMaximum(config)

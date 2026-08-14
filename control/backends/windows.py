@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ..commands import NO_CHANGE
 from ..config import ControlConfig
-from ..controller import Controller, ControlError, UnsupportedCommand
+from ..executor import Controller, ControlError, UnsupportedCommand
 from ..log import get_logger
 
 # --- Virtual key codes (winuser.h) ------------------------------------------

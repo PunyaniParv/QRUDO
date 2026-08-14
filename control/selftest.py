@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 
 from .commands import NO_CHANGE, Command
-from .controller import ControlEngine
+from .executor import ControlEngine
 
 PAUSE_BETWEEN = 0.4
 

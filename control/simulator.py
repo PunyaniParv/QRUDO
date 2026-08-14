@@ -18,7 +18,7 @@ import sys
 import time
 
 from .commands import FOCUS_SENSITIVE, Command
-from .controller import ControlEngine
+from .executor import ControlEngine
 
 #: Spec E: "U/D/P/L/R/B/N for the seven V1 commands".
 KEY_MAP: dict[str, Command] = {

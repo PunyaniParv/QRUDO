@@ -21,7 +21,7 @@ import subprocess
 
 from ..commands import NO_CHANGE
 from ..config import ControlConfig
-from ..controller import Controller, ControlError, UnsupportedCommand
+from ..executor import Controller, ControlError, UnsupportedCommand
 from ..log import get_logger
 
 # --- HID "special key" codes, from IOKit's ev_keymap.h -----------------------

@@ -14,8 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from sarv import Command
-from sarv_app import POSE_COMMANDS, SWIPE_COMMANDS, GestureRouter
+from control import Command
+from integration.bridge import POSE_COMMANDS, SWIPE_COMMANDS, GestureRouter
 
 
 class TestSwipes(unittest.TestCase):

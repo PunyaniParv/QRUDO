@@ -7,7 +7,7 @@ into you.
 ## The contract
 
 ```python
-from sarv import Command, ControlEngine
+from control import Command, ControlEngine
 
 engine = ControlEngine()          # build once, at startup
 
@@ -148,7 +148,7 @@ machine back the way it was.
 
 ## Configuration
 
-Defaults live in `sarv/config.py`. To override, drop a `sarv_config.json` next
+Defaults live in `control/config.py`. To override, drop a `sarv_config.json` next
 to `main.py`:
 
 ```json
@@ -175,6 +175,7 @@ change.
 python main.py --check       # what works on this machine
 python main.py --selftest    # run all seven, then restore the machine
 python main.py --simulate    # keyboard: U D P L R B N
+python main.py --tune        # camera, gesture numbers shown, nothing done
 python main.py --hotkeys     # ctrl+alt+U/D/P/L/R/B/N from any app
 ```
 

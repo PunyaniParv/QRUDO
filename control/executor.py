@@ -124,15 +124,14 @@ class ControlEngine:
         self._last_run: dict[str, float] = {}
         self._queue: queue.Queue = queue.Queue(maxsize=4)
         self._worker: threading.Thread | None = None
-        self._handlers = {
-            Command.VOLUME_UP: lambda: self.controller.volume_up(self.config.volume_step),
-            Command.VOLUME_DOWN: lambda: self.controller.volume_down(self.config.volume_step),
-            Command.PLAY_PAUSE: self.controller.play_pause,
-            Command.REWIND: lambda: self.controller.rewind(self.config.seek_seconds),
-            Command.FORWARD: lambda: self.controller.forward(self.config.seek_seconds),
-            Command.BRIGHTNESS_UP: lambda: self.controller.brightness_up(self.config.brightness_step),
-            Command.BRIGHTNESS_DOWN: lambda: self.controller.brightness_down(self.config.brightness_step),
-        }
+        # Each area declares the commands it owns, so adding one means
+        # editing that area rather than this table.
+        from . import brightness, media, volume
+
+        self._handlers = {}
+
+        for area in (volume, media, brightness):
+            self._handlers.update(area.handlers(self.controller, self.config))
         # Fail loudly at construction if a command has no handler, rather than
         # at demo time.
         missing = [c for c in ACTIONABLE_COMMANDS if c not in self._handlers]

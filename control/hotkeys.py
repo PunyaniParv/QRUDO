@@ -21,7 +21,7 @@ from __future__ import annotations
 import sys
 
 from .commands import Command
-from .controller import ControlEngine
+from .executor import ControlEngine
 from .simulator import KEY_MAP
 
 MODIFIERS = "ctrl+alt"

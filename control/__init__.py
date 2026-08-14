@@ -1,21 +1,21 @@
-"""SARV -- gesture-controlled computer control.
+"""SARV Control Engine: commands in, OS actions out.
 
 The Computer Control Engine's public surface is deliberately tiny::
 
-    from sarv import Command, ControlEngine
+    from control import Command, ControlEngine
 
     engine = ControlEngine()
     result = engine.execute(Command.VOLUME_UP)
     if not result.ok:
         print(result.error)
 
-Nothing here imports MediaPipe or OpenCV, so the Vision Engine and the Control
-Engine can be developed and tested independently.
+Nothing here imports MediaPipe or OpenCV, so this half can be developed and
+tested without a camera.  The two halves meet only in integration/bridge.py.
 """
 
 from .commands import ACTIONABLE_COMMANDS, Command, Status, parse_command
 from .config import ControlConfig
-from .controller import (
+from .executor import (
     CommandResult,
     ControlEngine,
     ControlError,

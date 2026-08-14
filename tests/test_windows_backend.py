@@ -15,9 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sarv import ControlConfig, log
-from sarv.backends import windows
-from sarv.backends.windows import (
+from control import ControlConfig, log
+from control.backends import windows
+from control.backends.windows import (
     VK_LEFT,
     VK_MEDIA_NEXT_TRACK,
     VK_MEDIA_PLAY_PAUSE,
@@ -26,7 +26,7 @@ from sarv.backends.windows import (
     VK_VOLUME_UP,
     WindowsController,
 )
-from sarv.controller import UnsupportedCommand
+from control.executor import UnsupportedCommand
 
 log.setup(console=False)
 

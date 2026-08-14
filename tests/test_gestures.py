@@ -23,9 +23,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT))
 
-import gesture_detection as gd
+import vision
+from vision import gestures, hand_state, motion
 
 
 class Point:
@@ -164,20 +165,20 @@ VIEWPOINTS = [math.radians(degrees) for degrees in
 class GestureTestCase(unittest.TestCase):
     def setUp(self):
         self.clock = Clock()
-        gd.time.time = self.clock
-        gd.reset_state()
-        gd.swipe_cooldown_until = 0.0
+        motion.now = self.clock
+        vision.reset_state()
+        motion._state.cooldown_until = 0.0
 
     def tearDown(self):
         import time as real_time
-        gd.time.time = real_time.time
+        motion.now = real_time.time
 
     def settle(self, hand, frames=5):
         """Hold a pose long enough for the stabiliser to accept it."""
 
         result = "UNKNOWN"
         for _ in range(frames):
-            result = gd.detect_gesture(hand, HAND)
+            result = gestures.detect_gesture(hand, HAND)
         return result
 
 
@@ -199,7 +200,7 @@ class TestStaticGestures(GestureTestCase):
     def test_needs_several_frames(self):
         """One good frame is not a gesture; that is how flicker gets in."""
 
-        self.assertEqual(gd.detect_gesture(make_hand(), HAND), "UNKNOWN")
+        self.assertEqual(gestures.detect_gesture(make_hand(), HAND), "UNKNOWN")
 
     def test_punch_is_a_fist(self):
         """A punch shows the camera its knuckles, not its palm."""
@@ -225,7 +226,7 @@ class TestEveryAngle(GestureTestCase):
             for pitch in (0.0, math.radians(45), AT_CAMERA, math.radians(-45)):
                 with self.subTest(yaw=round(math.degrees(yaw)),
                                   pitch=round(math.degrees(pitch))):
-                    gd.reset_state()
+                    vision.reset_state()
                     self.assertEqual(
                         self.settle(builder(yaw=yaw, pitch=pitch)), expected)
 
@@ -254,7 +255,7 @@ class TestEveryAngle(GestureTestCase):
 
         for degrees in (-90, -45, 0, 45, 90, 180):
             with self.subTest(roll=degrees):
-                gd.reset_state()
+                vision.reset_state()
                 self.assertEqual(
                     self.settle(fist(roll=math.radians(degrees))), "FIST")
 
@@ -264,20 +265,20 @@ class TestFingerMeasure(GestureTestCase):
 
     def test_straight_finger_scores_near_one(self):
         self.assertGreater(
-            gd.finger_extension(make_hand(), 8, 6, 5), 0.95)
+            hand_state.finger_extension(make_hand(), 8, 6, 5), 0.95)
 
     def test_curled_finger_scores_low(self):
         self.assertLess(
-            gd.finger_extension(fist(), 8, 6, 5), 0.7)
+            hand_state.finger_extension(fist(), 8, 6, 5), 0.7)
 
     def test_score_survives_rotation(self):
         """The whole point: turning the hand must not change the answer."""
 
-        face_on = gd.finger_extension(make_hand(), 8, 6, 5)
+        face_on = hand_state.finger_extension(make_hand(), 8, 6, 5)
 
         for yaw in VIEWPOINTS:
             with self.subTest(yaw=round(math.degrees(yaw))):
-                turned = gd.finger_extension(make_hand(yaw=yaw), 8, 6, 5)
+                turned = hand_state.finger_extension(make_hand(yaw=yaw), 8, 6, 5)
                 self.assertAlmostEqual(face_on, turned, places=6)
 
 
@@ -285,23 +286,23 @@ class TestFingerMeasure(GestureTestCase):
 
 class TestTwoFingerPose(GestureTestCase):
     def test_gun_pose(self):
-        self.assertEqual(gd.two_finger_pose_kind(gun()), gd.POSE_GUN)
+        self.assertEqual(gestures.two_finger_pose_kind(gun()), gestures.POSE_GUN)
 
     def test_peace_pose(self):
-        self.assertEqual(gd.two_finger_pose_kind(peace_sign()), gd.POSE_PEACE)
+        self.assertEqual(gestures.two_finger_pose_kind(peace_sign()), gestures.POSE_PEACE)
 
     def test_open_hand_is_not_the_pose(self):
-        self.assertIsNone(gd.two_finger_pose_kind(make_hand()))
+        self.assertIsNone(gestures.two_finger_pose_kind(make_hand()))
 
     def test_fist_is_not_the_pose(self):
-        self.assertIsNone(gd.two_finger_pose_kind(fist()))
+        self.assertIsNone(gestures.two_finger_pose_kind(fist()))
 
     def test_pose_found_at_any_yaw(self):
         """The fingers decide the pose; the angle only decides which one."""
 
         for yaw in VIEWPOINTS:
             with self.subTest(yaw=round(math.degrees(yaw))):
-                self.assertIsNotNone(gd.two_finger_pose_kind(
+                self.assertIsNotNone(gestures.two_finger_pose_kind(
                     make_hand(EXTENDED, EXTENDED, CURLED, CURLED, yaw=yaw)))
 
 
@@ -315,7 +316,7 @@ class TestGunSwipe(GestureTestCase):
         for i in range(frames):
             amount = start + (end - start) * (i / (frames - 1))
             landmarks = gun(cx=cx, turn=amount) if pose else fist(cx=cx)
-            result = result or gd.detect_swipe(landmarks, HAND)
+            result = result or motion.detect_swipe(landmarks, HAND)
             self.clock.tick(seconds / (frames - 1))
         return result
 
@@ -344,7 +345,7 @@ class TestGunSwipe(GestureTestCase):
 
         result = None
         for i in range(14):
-            result = result or gd.detect_swipe(
+            result = result or motion.detect_swipe(
                 gun(turn=0.5 if i % 2 else -0.5), HAND)
             self.clock.tick(0.025)
         self.assertIsNone(result)
@@ -359,7 +360,7 @@ class TestGunSwipe(GestureTestCase):
         result = None
         for i in range(12):
             cx = 0.30 + 0.40 * (i / 11)
-            result = result or gd.detect_swipe(gun(cx=cx, turn=0.0), HAND)
+            result = result or motion.detect_swipe(gun(cx=cx, turn=0.0), HAND)
             self.clock.tick(0.30 / 11)
         self.assertIsNone(result)
 
@@ -371,7 +372,7 @@ class TestGunSwipe(GestureTestCase):
         for i in range(12):
             amount = -0.6 + 1.2 * (i / 11)
             landmarks = make_hand() if i == 6 else gun(turn=amount)
-            result = result or gd.detect_swipe(landmarks, HAND)
+            result = result or motion.detect_swipe(landmarks, HAND)
             self.clock.tick(0.30 / 11)
         self.assertEqual(result, "SWIPE_RIGHT")
 
@@ -381,20 +382,20 @@ class TestGunSwipe(GestureTestCase):
 
     def test_swipe_allowed_again_after_cooldown(self):
         self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
-        self.clock.tick(gd.SWIPE_COOLDOWN + 0.1)
+        self.clock.tick(motion.SWIPE_COOLDOWN + 0.1)
         self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
 
     def test_position_in_frame_does_not_matter(self):
         for cx in (0.25, 0.50, 0.75):
             with self.subTest(cx=cx):
-                gd.reset_state()
-                gd.swipe_cooldown_until = 0.0
+                vision.reset_state()
+                motion._state.cooldown_until = 0.0
                 self.assertEqual(
                     self.turn(-0.6, 0.6, 0.30, cx=cx), "SWIPE_RIGHT")
 
     def test_debug_state_is_populated(self):
-        gd.detect_swipe(gun(), HAND)
-        state = gd.debug_state()
+        motion.detect_swipe(gun(), HAND)
+        state = motion.debug_state()
         for key in ("pose", "armed", "aim", "turn", "slide", "speed", "agree"):
             self.assertIn(key, state)
 
@@ -406,7 +407,7 @@ class TestPeaceSignSwipe(GestureTestCase):
         result = None
         for i in range(frames):
             cx = start + (end - start) * (i / (frames - 1))
-            result = result or gd.detect_swipe(peace_sign(cx=cx), HAND)
+            result = result or motion.detect_swipe(peace_sign(cx=cx), HAND)
             self.clock.tick(seconds / (frames - 1))
         return result
 
@@ -428,7 +429,7 @@ class TestPeaceSignSwipe(GestureTestCase):
         result = None
         for i in range(12):
             roll = math.radians(-40 + 80 * (i / 11))
-            result = result or gd.detect_swipe(peace_sign(roll=roll), HAND)
+            result = result or motion.detect_swipe(peace_sign(roll=roll), HAND)
             self.clock.tick(0.30 / 11)
         self.assertIn(result, ("SWIPE_LEFT", "SWIPE_RIGHT"))
 
