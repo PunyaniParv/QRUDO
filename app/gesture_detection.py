@@ -312,6 +312,24 @@ def detect_pointing_fingers(hand_landmarks):
     }
 
 
+def detect_fingers_out(hand_landmarks):
+    """Which fingers are out, whichever way the hand is turned.
+
+    A finger counts as out if it is straight across the image or aimed at
+    the camera.  Asking only the first question means a finger pointing at
+    the lens reads as curled, so pointing at the camera never registered;
+    asking only the second means a hand held flat never registers at all.
+    """
+
+    flat = detect_fingers(hand_landmarks)
+    pointing = detect_pointing_fingers(hand_landmarks)
+
+    return {
+        name: flat[name] or pointing[name]
+        for name in FINGERS
+    }
+
+
 def finger_is_curled(hand_landmarks, tip, mcp, scale):
     """True when a finger is clearly not aimed at the camera."""
 
@@ -553,17 +571,19 @@ def detect_swipe(hand_landmarks, handedness):
 def detect_gesture(hand_landmarks, handedness):
     """Detect a held gesture: OPEN_PALM, FIST, POINT, TWO_FINGER, UNKNOWN.
 
-    These are meant to be held with the palm toward the camera.  A hand
-    that is edge-on -- the swipe pose -- reports UNKNOWN rather than
-    guessing, which also stops swipes from firing a static gesture on
-    the way past.
+    Which way the hand faces is not checked.  It used to be, and that
+    quietly ruled out the two most natural ways to make these gestures: a
+    punch shows the camera its knuckles rather than the palm, and pointing
+    at the lens turns the hand edge-on.  Both were rejected before their
+    fingers were ever counted.
+
+    The cost is that the gun pose also reads as TWO_FINGER here, since two
+    fingers really are out.  Swipes are reported separately by
+    detect_swipe, so nothing is lost unless TWO_FINGER is later bound to a
+    command of its own.
     """
 
-    if not is_palm_facing(hand_landmarks, handedness):
-        gesture_history.clear()
-        return "UNKNOWN"
-
-    fingers = detect_fingers(hand_landmarks)
+    fingers = detect_fingers_out(hand_landmarks)
     extended_count = sum(fingers.values())
 
     if extended_count == 0:

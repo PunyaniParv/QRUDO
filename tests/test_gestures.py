@@ -115,14 +115,25 @@ def two_finger_pointing(cx=0.50, cy=0.50, yaw=0.0):
     return hand
 
 
-def edge_on_hand(cx=0.50):
-    """A hand turned side-on, where the palm normal says nothing."""
+def back_of_hand_fist(cx=0.50):
+    """A punch: fingers curled, knuckles toward the camera.
 
-    hand = make_hand(cx=cx)
-    # Put wrist and both knuckles on one screen line.
-    hand[gd.WRIST] = Point(cx, 0.60)
-    hand[gd.INDEX_MCP] = Point(cx, 0.50)
-    hand[gd.PINKY_MCP] = Point(cx, 0.40)
+    Mirroring the knuckle row flips the palm normal, which is what shows
+    the back of the hand rather than the palm.
+    """
+
+    hand = make_hand(CURLED, CURLED, CURLED, CURLED, cx=cx)
+    hand[gd.INDEX_MCP] = Point(cx + 0.06, 0.50)
+    hand[gd.PINKY_MCP] = Point(cx - 0.06, 0.51)
+    return hand
+
+
+def pointing_at_camera(cx=0.50):
+    """One finger aimed at the lens, the rest curled."""
+
+    hand = make_hand(index=POINTING, middle=CURLED,
+                     ring=CURLED, pinky=CURLED, cx=cx)
+    hand[gd.WRIST] = Point(cx, 0.51, 0.10)
     return hand
 
 
@@ -173,13 +184,33 @@ class TestStaticGestures(GestureTestCase):
 
         self.assertEqual(gd.detect_gesture(make_hand(), HAND), "UNKNOWN")
 
-    def test_edge_on_palm_is_unknown_not_guessed(self):
-        """The swipe pose must not be reported as a held gesture."""
+    def test_punch_is_a_fist(self):
+        """A punch shows the camera its knuckles, not its palm.
 
-        self.assertEqual(self.settle(edge_on_hand()), "UNKNOWN")
+        Requiring a visible palm rejected this before the fingers were
+        even counted, which is why a punch registered as nothing.
+        """
 
-    def test_swipe_pose_does_not_fire_a_static_gesture(self):
-        self.assertEqual(self.settle(two_finger_pointing()), "UNKNOWN")
+        self.assertEqual(self.settle(back_of_hand_fist()), "FIST")
+
+    def test_pointing_at_the_camera_is_a_point(self):
+        """The other gesture the palm check used to swallow.
+
+        An index finger aimed at the lens is foreshortened into a short
+        cluster of landmarks, so it reads as curled by joint angle; it is
+        recognised by depth instead -- tip nearer than knuckle.
+        """
+
+        self.assertEqual(self.settle(pointing_at_camera()), "POINT")
+
+    def test_gun_pose_reads_as_two_finger(self):
+        """Accepted consequence of dropping the orientation check.
+
+        Two fingers really are out, so it is not wrong -- and swipes come
+        from detect_swipe, which is a separate call.
+        """
+
+        self.assertEqual(self.settle(two_finger_pointing()), "TWO_FINGER")
 
 
 # --- pose recognition ------------------------------------------------------
