@@ -1,9 +1,27 @@
 .venv/
-.venv-1/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Python/tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
 .vscode/
-.env
-logs/
-sarv_config.json
-sarv_calibration.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audio / generated analysis data
+*.wav
+*.mp3
+*.flac
+
+# Temporary files
+*.tmp
+*.log
