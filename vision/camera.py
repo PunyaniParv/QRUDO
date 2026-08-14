@@ -7,6 +7,8 @@ swipe direction depends on that.
 
 from __future__ import annotations
 
+import sys
+
 
 class CameraError(RuntimeError):
     """The camera could not be opened or read."""
@@ -20,9 +22,11 @@ class Camera:
     before it can be opened again.
     """
 
-    def __init__(self, index=0, mirror=True):
+    def __init__(self, index=0, mirror=True, width=640, height=480):
         self.index = index
         self.mirror = mirror
+        self.width = width
+        self.height = height
         self._capture = None
         self._cv2 = None
 
@@ -30,10 +34,28 @@ class Camera:
         import cv2
 
         self._cv2 = cv2
-        self._capture = cv2.VideoCapture(self.index)
+
+        # Windows defaults to the Media Foundation backend, which is slow
+        # to open and slow per frame on many webcams.  DirectShow is the
+        # one that behaves.
+        if sys.platform == "win32":
+            self._capture = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
+        else:
+            self._capture = cv2.VideoCapture(self.index)
 
         if not self._capture.isOpened():
             raise CameraError(f"could not open camera {self.index}")
+
+        # A webcam left to itself often hands over 1280x720 or more, and
+        # every one of those pixels goes through hand detection.  Nothing
+        # here needs the resolution: a hand is a hand at 640x480, and the
+        # frame rate is what the gestures actually depend on.
+        self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+
+        # Take the newest frame rather than the oldest queued one -- a
+        # backlog is felt directly as lag between moving and reacting.
+        self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         return self
 

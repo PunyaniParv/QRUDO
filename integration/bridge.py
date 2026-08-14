@@ -58,6 +58,14 @@ class GestureRouter:
             self._held = None
             return self.swipes[swipe]
 
+        # "UNKNOWN" is not a gesture, it is the vision side saying it is
+        # unsure -- which happens for a frame or two whenever the picture is
+        # poor, and constantly on a slow machine.  Treating it as a change
+        # re-arms the pose, so a fist flickering out and back fires twice:
+        # play, then pause, and nothing appears to have happened.
+        if gesture in (None, "UNKNOWN"):
+            return None
+
         if gesture == self._held:
             return None
 

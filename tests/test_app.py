@@ -55,8 +55,14 @@ class TestHeldPoses(unittest.TestCase):
             self.assertIsNone(self.router.update("FIST"))
 
     def test_making_the_pose_again_fires_again(self):
+        """Re-arming takes a real gesture in between, not an unsure frame.
+
+        This used to accept "UNKNOWN" as the gap, which is what made a fist
+        fire twice on a machine where the picture flickers.
+        """
+
         self.assertIsNotNone(self.router.update("FIST"))
-        self.router.update("UNKNOWN")
+        self.router.update("OPEN_PALM")
         self.assertIsNotNone(self.router.update("FIST"))
 
     def test_unmapped_poses_do_nothing(self):
@@ -114,3 +120,41 @@ class TestMapping(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestFlickerDoesNotDoubleFire(unittest.TestCase):
+    """Reported from a slower machine: a fist played and paused at once.
+
+    "UNKNOWN" is the vision side saying it is unsure, not a gesture.  It
+    happens for a frame or two whenever the picture is poor, and treating
+    it as a change re-arms the pose -- so a fist that flickers out and back
+    fires twice, and the video ends up exactly where it started.
+    """
+
+    def test_flicker_through_unknown_fires_once(self):
+        router = GestureRouter()
+        self.assertIsNotNone(router.update("FIST"))
+
+        for _ in range(5):
+            self.assertIsNone(router.update("UNKNOWN"))
+            self.assertIsNone(router.update("FIST"))
+
+    def test_a_frame_with_no_hand_does_not_re_arm(self):
+        router = GestureRouter()
+        self.assertIsNotNone(router.update("FIST"))
+        self.assertIsNone(router.update(None))
+        self.assertIsNone(router.update("FIST"))
+
+    def test_another_real_gesture_still_re_arms(self):
+        """Fist, open the hand, fist again is two deliberate gestures."""
+
+        router = GestureRouter()
+        self.assertIsNotNone(router.update("FIST"))
+        router.update("OPEN_PALM")
+        self.assertIsNotNone(router.update("FIST"))
+
+    def test_the_hand_leaving_re_arms(self):
+        router = GestureRouter()
+        self.assertIsNotNone(router.update("FIST"))
+        router.forget()
+        self.assertIsNotNone(router.update("FIST"))
