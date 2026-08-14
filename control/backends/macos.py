@@ -33,6 +33,7 @@ NX_KEYTYPE_PREVIOUS = 18
 
 # --- Virtual key codes for ordinary keys ------------------------------------
 KEY_K = 40          # YouTube's play/pause
+KEY_SPACE = 49      # most other players'
 KEY_LEFT_ARROW = 123
 KEY_RIGHT_ARROW = 124
 
@@ -230,8 +231,7 @@ class MacOSController(Controller):
             pid = self._target_pid(name)
 
             if pid is not None:
-                self._post_key(KEY_K, to_pid=pid)
-                return f"play/pause key to {name}"
+                return self._play_pause_key(name, pid)
 
         raise UnsupportedCommand(
             "nothing to play or pause -- open a player, or name one as "
@@ -286,9 +286,27 @@ class MacOSController(Controller):
         if pid is None:
             return None
 
-        self._post_key(KEY_K, to_pid=pid)
+        return self._play_pause_key(name, pid)
 
-        return f"play/pause key to {name}"
+    def _play_pause_key(self, name: str, pid: int) -> str:
+        """Send whichever key plays and pauses inside this browser.
+
+        Which key it is depends on the site rather than the browser: k is
+        YouTube's, most other players use the spacebar, and the keyboard's
+        own media key works wherever something is genuinely playing.
+        """
+
+        wanted = self.config.browser_play_key.strip().lower()
+
+        if wanted == "media":
+            self._post_media_key(NX_KEYTYPE_PLAY)
+            return "sent play/pause media key"
+
+        key = KEY_SPACE if wanted in ("space", "spacebar") else KEY_K
+
+        self._post_key(key, to_pid=pid)
+
+        return f"play/pause ({wanted}) to {name}"
 
     def rewind(self, seconds: int) -> str:
         return self._seek(seconds, forward=False)

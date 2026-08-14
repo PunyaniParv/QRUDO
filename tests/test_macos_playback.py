@@ -28,8 +28,9 @@ log.setup(console=False)
 class FakeMac(MacOSController):
     """The routing, with everything that needs macOS replaced."""
 
-    def __init__(self, running=(), target=""):
-        self.config = ControlConfig(target_app=target)
+    def __init__(self, running=(), target="", play_key="k"):
+        self.config = ControlConfig(target_app=target,
+                                    browser_play_key=play_key)
         self.log = log.get_logger("test")
         self.running = set(running)
         self.told = []          # apps spoken to by AppleScript
@@ -79,6 +80,44 @@ class TestNothingPlaying(unittest.TestCase):
 
         self.assertEqual(controller.media_keys, [])
         self.assertEqual(controller.keyed, [4242])
+
+
+class TestWhichKeyTheBrowserGets(unittest.TestCase):
+    """Which key plays and pauses depends on the site, not the browser.
+
+    Reported: a fist started skipping tracks instead of pausing.  It was
+    sending k, which is YouTube's, to whatever was playing -- and on
+    another player that key means something else.
+    """
+
+    def test_the_default_is_youtubes(self):
+        controller = FakeMac(running={"Google Chrome"})
+
+        self.assertIn("(k)", controller.play_pause())
+
+    def test_the_spacebar_for_players_that_use_it(self):
+        controller = FakeMac(running={"Google Chrome"}, play_key="space")
+
+        self.assertIn("(space)", controller.play_pause())
+        self.assertEqual(controller.media_keys, [])
+
+    def test_the_media_key_for_anyone_who_wants_it(self):
+        """Works wherever something really is playing, and opens Music if
+        nothing is -- so it is asked for rather than assumed."""
+
+        controller = FakeMac(running={"Google Chrome"}, play_key="media")
+        controller.play_pause()
+
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_a_scriptable_player_ignores_the_setting(self):
+        """Spotify is told in words; no key is involved."""
+
+        controller = FakeMac(running={"Spotify"}, play_key="space")
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [])
+        self.assertEqual(controller.media_keys, [])
 
 
 class TestWhichAppItReaches(unittest.TestCase):
