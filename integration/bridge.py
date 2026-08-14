@@ -16,13 +16,14 @@ POSE_COMMANDS = {
     "FIST": Command.PLAY_PAUSE,
 }
 
-#: Movements.  Two fingers facing the camera, wrist rotated left or right.
-#: These are already one-off events with their own cooldown.
+#: Movements, each on its own pose so that raising a hand mid-seek cannot
+#: be read as volume.  These are already one-off events with their own
+#: cooldown.
 SWIPE_COMMANDS = {
     "SWIPE_LEFT": Command.REWIND,
     "SWIPE_RIGHT": Command.FORWARD,
-    "SWIPE_UP": Command.VOLUME_UP,
-    "SWIPE_DOWN": Command.VOLUME_DOWN,
+    "PINCH_UP": Command.VOLUME_UP,
+    "PINCH_DOWN": Command.VOLUME_DOWN,
 }
 
 # Deliberately unmapped for now:

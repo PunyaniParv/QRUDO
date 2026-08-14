@@ -2,9 +2,12 @@
 
     detect_swipe(landmarks, handedness) -> "SWIPE_LEFT" | "SWIPE_RIGHT" | None
 
-The gesture is two fingers facing the camera -- an ordinary peace sign --
-with the wrist rotated left or right, the fingers staying toward the lens
-throughout.
+Two gestures, kept on separate poses so neither can be mistaken for the
+other:
+
+  * two fingers facing the camera -- an ordinary peace sign -- with the
+    wrist turned left or right, for seeking
+  * thumb and finger pinched together, raised or lowered, for volume
 
 That pose is deliberate.  Everything stays in the plane of the image,
 which is where MediaPipe is by far the most accurate, so nothing about
@@ -44,7 +47,7 @@ SWIPE_ALLOW_SLIDE = False
 SWIPE_SLIDE = 0.90        # palm widths the hand must cover
 SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 
-#: Raising and lowering the two fingers, for volume.  Up and down is a
+#: Raising and lowering a pinched hand, for volume.  Up and down is a
 #: movement of the whole hand rather than a turn of the wrist, because a
 #: wrist does not tilt up and down through anything like the range it
 #: swings sideways through.
@@ -166,7 +169,7 @@ def detect_swipe(hand, handedness=None):
         scale=hand_state.hand_scale(screen)
     )
 
-    kind = gestures.two_finger_pose_kind(hand)
+    kind = gestures.pose_kind(hand)
 
     _state.note_pose(moment, kind)
 
@@ -179,6 +182,7 @@ def detect_swipe(hand, handedness=None):
         ext=hand_state.finger_scores(shape),
         reach=hand_state.reach_scores(screen),
         scale=round(hand_state.hand_scale(screen), 4),
+        pinch=round(hand_state.pinch_gap(hand), 3),
         turn=0.0,
         slide=0.0,
         speed=0.0,
@@ -289,7 +293,8 @@ def detect_swipe(hand, handedness=None):
     )
 
     turned = (
-        abs(turn) >= SWIPE_TURN
+        _state.armed_kind in (gestures.POSE_GUN, gestures.POSE_PEACE)
+        and abs(turn) >= SWIPE_TURN
         and turn_speed >= SWIPE_TURN_SPEED
         and turn_agree >= SWIPE_CONSISTENCY
     )
@@ -313,7 +318,8 @@ def detect_swipe(hand, handedness=None):
         return None
 
     lifted = (
-        abs(lift) >= SWIPE_LIFT
+        _state.armed_kind == gestures.POSE_PINCH
+        and abs(lift) >= SWIPE_LIFT
         and lift_speed >= SWIPE_LIFT_SPEED
         and not _state.lifted
     )
@@ -340,4 +346,4 @@ def detect_swipe(hand, handedness=None):
     _state.still_since = None
     _state.cooldown_until = moment + SWIPE_COOLDOWN
 
-    return "SWIPE_UP" if lift > 0 else "SWIPE_DOWN"
+    return "PINCH_UP" if lift > 0 else "PINCH_DOWN"

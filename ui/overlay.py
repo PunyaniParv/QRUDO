@@ -121,8 +121,9 @@ def legend_lines(mapping):
         "TWO_FINGER": "two fingers",
         "SWIPE_LEFT": "2 fingers, turn wrist left",
         "SWIPE_RIGHT": "2 fingers, turn wrist right",
-        "SWIPE_UP": "2 fingers, raise hand",
-        "SWIPE_DOWN": "2 fingers, lower hand",
+        "PINCH_UP": "pinch, raise hand",
+        "PINCH_DOWN": "pinch, lower hand",
+        "PINCH": "pinch",
     }
 
     return [

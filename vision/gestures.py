@@ -18,6 +18,7 @@ from .state_machine import GestureStabiliser
 
 POSE_GUN = "gun"      # two fingers aimed at the camera
 POSE_PEACE = "peace"  # two fingers held up, palm toward the camera
+POSE_PINCH = "pinch"  # thumb and index finger together
 
 _stabiliser = GestureStabiliser()
 
@@ -41,6 +42,11 @@ def classify(hand, handedness=None):
     # made with the fingers aimed at the lens, where the palm faces
     # neither way.
     from_behind = hand_state.is_back_of_hand(screen, handedness)
+
+    # Before the fist: pinching curls the index finger in, so a pinch
+    # with the others closed reads as a fist if nothing looks first.
+    if hand_state.is_pinching(hand):
+        return "PINCH"
 
     fingers = hand_state.fingers_out(hand)
     extended = sum(fingers.values())
@@ -84,6 +90,21 @@ def detect_gesture(hand, handedness=None):
     """
 
     return _stabiliser.update(classify(hand, handedness))
+
+
+def pose_kind(hand):
+    """Which pose a movement could be made from, or None.
+
+    Two fingers for the sideways turn, a pinch for up and down.  Keeping
+    them apart means a hand raised while seeking cannot be read as volume,
+    and the two gestures no longer have to be told apart by direction
+    alone.
+    """
+
+    if hand_state.is_pinching(hand):
+        return POSE_PINCH
+
+    return two_finger_pose_kind(hand)
 
 
 def two_finger_pose_kind(hand):

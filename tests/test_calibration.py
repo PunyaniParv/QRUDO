@@ -18,16 +18,17 @@ from vision import hand_state, motion
 from vision.calibration import Calibration, between, current, from_samples
 
 
-def readings(ext, reach, scale=0.15, count=20):
+def readings(ext, reach, scale=0.15, count=20, pinch=0.8):
     """A pose held still, every finger reading the same."""
 
     return [{"ext": dict.fromkeys("imrp", ext),
              "reach": dict.fromkeys("imrp", reach),
-             "scale": scale}
+             "scale": scale,
+             "pinch": pinch}
             for _ in range(count)]
 
 
-DEFAULTS = Calibration(0.82, 1.15, 0.30, 0.80, 0.60, 1.20, 0.035)
+DEFAULTS = Calibration(0.82, 1.15, 0.30, 0.80, 0.60, 1.20, 0.035, 0.33)
 
 
 class TestWhereTheLineGoes(unittest.TestCase):
@@ -52,6 +53,7 @@ class TestFromSamples(unittest.TestCase):
             "open": readings(open_ext, 1.60, scale),
             "two": readings(open_ext, 1.55, scale),
             "rest": readings(0.75, rest_reach, scale),
+            "pinch": readings(0.75, 1.35, scale, pinch=0.20),
         }
 
     def test_finger_threshold_lands_between_the_two(self):
@@ -110,7 +112,7 @@ class TestApplying(unittest.TestCase):
         self.before.apply()
 
     def test_apply_moves_the_thresholds_the_detectors_read(self):
-        Calibration(0.7, 1.3, 0.2, 0.5, 0.4, 0.9, 0.02).apply()
+        Calibration(0.7, 1.3, 0.2, 0.5, 0.4, 0.9, 0.02, 0.3).apply()
 
         self.assertEqual(hand_state.EXTENDED_RATIO, 0.7)
         self.assertEqual(hand_state.FIST_REACH, 1.3)
@@ -155,7 +157,8 @@ class TestABotchedAttempt(unittest.TestCase):
 
     def poses(self):
         return {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
-                "two": readings(0.95, 1.55), "rest": readings(0.75, 1.40)}
+                "two": readings(0.95, 1.55), "rest": readings(0.75, 1.40),
+                "pinch": readings(0.75, 1.35, pinch=0.20)}
 
     def test_an_attempt_that_barely_moved_is_ignored(self):
         moves = {"turn": [(0.03, 0.19), (0.93, 3.85), (0.53, 2.40)]}
@@ -181,3 +184,27 @@ class TestABotchedAttempt(unittest.TestCase):
 
         self.assertGreaterEqual(measured.swipe_turn,
                                 DEFAULTS.swipe_turn * 0.4)
+
+
+class TestPinchThreshold(unittest.TestCase):
+    """Volume is made from a pinch, so that gets measured too."""
+
+    def poses(self, pinched=0.20):
+        return {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
+                "two": readings(0.95, 1.55), "rest": readings(0.75, 1.40),
+                "pinch": readings(0.75, 1.35, pinch=pinched)}
+
+    def test_lands_between_a_pinch_and_an_open_hand(self):
+        measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.pinch_gap, 0.20)
+        self.assertLess(measured.pinch_gap, 0.80)
+        self.assertFalse([w for w in warnings if "pinch" in w])
+
+    def test_a_pinch_that_never_closed_is_reported(self):
+        """Fingers held apart throughout tell us nothing to measure."""
+
+        measured, warnings = from_samples(self.poses(pinched=0.9), {}, DEFAULTS)
+
+        self.assertEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
+        self.assertTrue(any("pinch" in w for w in warnings))

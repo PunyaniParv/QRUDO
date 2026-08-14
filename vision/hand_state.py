@@ -21,6 +21,8 @@ import math
 # ---------------------------------------------------------
 
 WRIST = 0
+THUMB_TIP = 4
+INDEX_TIP = 8
 INDEX_MCP = 5
 MIDDLE_MCP = 9
 PINKY_MCP = 17
@@ -51,6 +53,12 @@ EXTENDED_RATIO = 0.82
 #: finger" does not -- and the knuckles and wrist stay well tracked even
 #: when a closed hand hides the fingers themselves.
 FIST_REACH = 1.15
+
+#: How close the thumb and fingertip must come to count as a pinch, as a
+#: fraction of the palm's length.  Measured on the synthetic hands:
+#: pinched 0.24, a closed fist 0.41, and anything open 0.81 -- so a third
+#: of a palm sits in the gap, with the fist test behind it as well.
+PINCH_GAP = 0.33
 
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
@@ -173,6 +181,41 @@ def hand_scale(hand_landmarks):
         distance_2d(hand_landmarks[WRIST], hand_landmarks[MIDDLE_MCP]),
         0.02
     )
+
+
+def pinch_gap(hand):
+    """How far apart the thumb and index finger are, in palm lengths.
+
+    In space rather than on screen.  On screen they collapse together
+    whenever the hand points at the camera, whatever the thumb is really
+    doing -- which had a hand aimed at the lens reading as a pinch.
+    """
+
+    shape = shape_of(hand)
+
+    palm = distance(shape[WRIST], shape[MIDDLE_MCP])
+
+    if palm == 0:
+        return 99.0
+
+    return distance(shape[THUMB_TIP], shape[INDEX_TIP]) / palm
+
+
+def is_pinching(hand):
+    """Thumb and index finger together, with the index still out in front.
+
+    The second half is what separates a pinch from a fist.  A closed hand
+    also has the thumb lying against the index finger, so proximity alone
+    calls every fist a pinch -- but a fist tucks the fingertip into the
+    palm, while a pinch holds it out where the thumb meets it.
+    """
+
+    screen = screen_of(hand)
+
+    if pinch_gap(hand) >= PINCH_GAP:
+        return False
+
+    return finger_reach(screen, INDEX_TIP, INDEX_MCP) >= FIST_REACH
 
 
 def is_prominent(hand):

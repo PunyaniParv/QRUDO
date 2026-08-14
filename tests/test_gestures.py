@@ -94,13 +94,25 @@ def rotate(points, pivot, yaw=0.0, pitch=0.0, roll=0.0):
 
 
 def make_hand(index=EXTENDED, middle=EXTENDED, ring=EXTENDED, pinky=EXTENDED,
-              cx=0.50, cy=0.50, yaw=0.0, pitch=0.0, roll=0.0):
+              cx=0.50, cy=0.50, yaw=0.0, pitch=0.0, roll=0.0, pinch=False):
     """Build 21 landmarks, then turn them to the requested viewpoint."""
 
     wrist = Point(cx, cy + 0.18, 0.0)
 
     points = [wrist]
-    points += [Point(cx - 0.10, cy + 0.12)] * 4  # thumb, unused here
+
+    # The thumb, which the pinch needs: out to the side of the palm when
+    # the hand is open, and tucked against the index fingertip when it is
+    # pinching.
+    if pinch:
+        thumb_tip = Point(cx - 0.06, cy - 0.048, -0.010)
+    else:
+        thumb_tip = Point(cx - 0.115, cy + 0.030)
+
+    points += [Point(cx - 0.085, cy + 0.140),
+               Point(cx - 0.100, cy + 0.100),
+               Point(cx - 0.110, cy + 0.065),
+               thumb_tip]
 
     states = {"index": index, "middle": middle, "ring": ring, "pinky": pinky}
 
@@ -161,6 +173,13 @@ def fist(**viewpoint):
 
 def pointing(**viewpoint):
     return make_hand(EXTENDED, CURLED, CURLED, CURLED, **viewpoint)
+
+
+def pinching(cx=0.50, cy=0.50, **viewpoint):
+    """Thumb and index finger together, the rest of the hand as it falls."""
+
+    return make_hand(LOOSE, LOOSE, LOOSE, LOOSE,
+                     cx=cx, cy=cy, pinch=True, **viewpoint)
 
 
 HAND = "Left"  # what MediaPipe calls a right hand in a mirrored frame
@@ -706,24 +725,22 @@ class TestVerticalSwipes(GestureTestCase):
         """Move the hand vertically, in fractions of the frame."""
 
         if hold:
-            self.hold_pose(
-                make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=start))
+            self.hold_pose(pinching(cy=start))
 
         result = None
         for i in range(frames):
             cy = start + (end - start) * (i / (frames - 1))
-            result = result or motion.detect_swipe(
-                make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy), HAND)
+            result = result or motion.detect_swipe(pinching(cy=cy), HAND)
             self.clock.tick(seconds / (frames - 1))
         return result
 
     def test_raising_the_hand(self):
         """Screen y grows downwards, so a lift is a fall in y."""
 
-        self.assertEqual(self.move(0.55, 0.30), "SWIPE_UP")
+        self.assertEqual(self.move(0.55, 0.30), "PINCH_UP")
 
     def test_lowering_the_hand(self):
-        self.assertEqual(self.move(0.30, 0.55), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.30, 0.55), "PINCH_DOWN")
 
     def test_a_small_lift_is_not_a_swipe(self):
         self.assertIsNone(self.move(0.50, 0.47))
@@ -734,7 +751,7 @@ class TestVerticalSwipes(GestureTestCase):
         self.assertIsNone(self.move(0.55, 0.30, seconds=4.0, frames=40))
 
     def test_the_hand_coming_back_down_is_not_a_second_swipe(self):
-        self.assertEqual(self.move(0.55, 0.30), "SWIPE_UP")
+        self.assertEqual(self.move(0.55, 0.30), "PINCH_UP")
         self.assertIsNone(self.move(0.30, 0.55, hold=False))
 
 
@@ -749,7 +766,7 @@ class TestVolumeBothWays(GestureTestCase):
     """
 
     def peace(self, cy):
-        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy)
+        return pinching(cy=cy)
 
     def move(self, start, end, seconds=0.30, frames=12):
         result = None
@@ -763,25 +780,25 @@ class TestVolumeBothWays(GestureTestCase):
         """Raise, come back, lower: two commands, opposite ways."""
 
         self.hold_pose(self.peace(0.50))
-        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+        self.assertEqual(self.move(0.50, 0.30), "PINCH_UP")
         self.move(0.30, 0.50)                      # back to the middle
-        self.assertEqual(self.move(0.50, 0.70), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.50, 0.70), "PINCH_DOWN")
 
     def test_down_then_up(self):
         self.hold_pose(self.peace(0.50))
-        self.assertEqual(self.move(0.50, 0.70), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.50, 0.70), "PINCH_DOWN")
         self.move(0.70, 0.50)
-        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+        self.assertEqual(self.move(0.50, 0.30), "PINCH_UP")
 
     def test_coming_back_does_not_fire(self):
         self.hold_pose(self.peace(0.50))
-        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+        self.assertEqual(self.move(0.50, 0.30), "PINCH_UP")
         self.assertIsNone(self.move(0.30, 0.50),
                           "the hand returning counted as a swipe down")
 
     def test_holding_it_up_fires_once(self):
         self.hold_pose(self.peace(0.50))
-        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+        self.assertEqual(self.move(0.50, 0.30), "PINCH_UP")
 
         for _ in range(30):
             self.assertIsNone(motion.detect_swipe(self.peace(0.30), HAND))
@@ -797,7 +814,7 @@ class TestRestingHeight(GestureTestCase):
     """
 
     def peace(self, cy):
-        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy)
+        return pinching(cy=cy)
 
     def move(self, start, end, seconds=0.30, frames=12):
         result = None
@@ -816,24 +833,24 @@ class TestRestingHeight(GestureTestCase):
         """Raise, hold a moment, lower: the second one is a swipe down."""
 
         self.hold_pose(self.peace(0.55))
-        self.assertEqual(self.move(0.55, 0.35), "SWIPE_UP")
+        self.assertEqual(self.move(0.55, 0.35), "PINCH_UP")
         self.rest(0.35)
-        self.assertEqual(self.move(0.35, 0.55), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.35, 0.55), "PINCH_DOWN")
 
     def test_raising_twice_over(self):
         """Volume up, up again: each raise counts from the new height."""
 
         self.hold_pose(self.peace(0.70))
-        self.assertEqual(self.move(0.70, 0.55), "SWIPE_UP")
+        self.assertEqual(self.move(0.70, 0.55), "PINCH_UP")
         self.rest(0.55)
-        self.assertEqual(self.move(0.55, 0.40), "SWIPE_UP")
+        self.assertEqual(self.move(0.55, 0.40), "PINCH_UP")
 
     def test_a_hand_brought_in_low_can_still_go_down(self):
         """The case from the report: the pose is first seen low."""
 
         self.hold_pose(self.peace(0.60))
         self.rest(0.60)
-        self.assertEqual(self.move(0.60, 0.78), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.60, 0.78), "PINCH_DOWN")
 
 
 class TestPuttingTheHandBack(GestureTestCase):
@@ -846,7 +863,7 @@ class TestPuttingTheHandBack(GestureTestCase):
     """
 
     def peace(self, cy):
-        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy)
+        return pinching(cy=cy)
 
     def move(self, start, end, seconds=0.30, frames=12):
         result = None
@@ -865,14 +882,14 @@ class TestPuttingTheHandBack(GestureTestCase):
 
     def test_raise_pause_and_put_it_back(self):
         self.hold_pose(self.peace(0.60))
-        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.assertEqual(self.move(0.60, 0.40), "PINCH_UP")
         self.pause(0.40)
         self.assertIsNone(self.move(0.40, 0.60),
                           "putting the hand back counted as a swipe down")
 
     def test_lower_pause_and_put_it_back(self):
         self.hold_pose(self.peace(0.45))
-        self.assertEqual(self.move(0.45, 0.65), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.45, 0.65), "PINCH_DOWN")
         self.pause(0.65)
         self.assertIsNone(self.move(0.65, 0.45),
                           "putting the hand back counted as a swipe up")
@@ -881,16 +898,74 @@ class TestPuttingTheHandBack(GestureTestCase):
         """Back where you started, so raising again is another swipe up."""
 
         self.hold_pose(self.peace(0.60))
-        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.assertEqual(self.move(0.60, 0.40), "PINCH_UP")
         self.pause(0.40)
         self.move(0.40, 0.60)
         self.pause(0.60)
-        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.assertEqual(self.move(0.60, 0.40), "PINCH_UP")
 
     def test_settling_at_a_new_height_does_move_the_reference(self):
         """Held there long enough, it becomes where the hand lives."""
 
         self.hold_pose(self.peace(0.60))
-        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.assertEqual(self.move(0.60, 0.40), "PINCH_UP")
         self.pause(0.40, seconds=1.40, frames=28)
-        self.assertEqual(self.move(0.40, 0.60), "SWIPE_DOWN")
+        self.assertEqual(self.move(0.40, 0.60), "PINCH_DOWN")
+
+
+class TestPinch(GestureTestCase):
+    """Thumb and finger together: the pose volume is made from.
+
+    On its own pose rather than sharing the two-finger one, so a hand
+    raised while seeking cannot be read as volume and the two no longer
+    have to be told apart by direction alone.
+    """
+
+    def test_a_pinch_is_recognised(self):
+        self.assertEqual(self.settle(pinching()), "PINCH")
+
+    def test_a_fist_is_not_a_pinch(self):
+        """A closed hand also lays the thumb against the index finger.
+
+        Proximity alone called every fist a pinch; a fist tucks the
+        fingertip into the palm, a pinch holds it out to meet the thumb.
+        """
+
+        self.assertEqual(self.settle(fist()), "FIST")
+
+    def test_an_open_hand_is_not_a_pinch(self):
+        self.assertEqual(self.settle(make_hand()), "OPEN_PALM")
+
+    def test_two_fingers_are_not_a_pinch(self):
+        self.assertEqual(self.settle(peace_sign()), "TWO_FINGER")
+
+    def test_a_hand_aimed_at_the_camera_is_not_a_pinch(self):
+        """Everything collapses together on screen at that angle.
+
+        Measuring the gap in space rather than on screen is what fixed it.
+        """
+
+        for yaw in (-20, 0, 20):
+            with self.subTest(yaw=yaw):
+                vision.reset_state()
+                aimed = make_hand(pitch=AT_CAMERA, yaw=math.radians(yaw))
+                self.assertFalse(hand_state.is_pinching(aimed))
+
+    def test_the_pinch_arms_the_vertical_gesture(self):
+        self.assertEqual(gestures.pose_kind(pinching()), gestures.POSE_PINCH)
+
+    def test_two_fingers_arm_the_sideways_one(self):
+        self.assertEqual(gestures.pose_kind(peace_sign()), gestures.POSE_PEACE)
+
+    def test_a_pinch_does_not_seek(self):
+        """Turning a pinched hand sideways must not rewind."""
+
+        self.hold_pose(pinching())
+
+        result = None
+        for i in range(12):
+            turned = pinching(cx=0.50)
+            result = result or motion.detect_swipe(turned, HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertIsNone(result)

@@ -34,6 +34,7 @@ class Calibration:
     swipe_lift: float
     swipe_lift_speed: float
     min_hand_on_screen: float
+    pinch_gap: float
 
     @classmethod
     def load(cls, path=None):
@@ -74,6 +75,7 @@ class Calibration:
         hand_state.EXTENDED_RATIO = self.extended_ratio
         hand_state.FIST_REACH = self.fist_reach
         hand_state.MIN_HAND_ON_SCREEN = self.min_hand_on_screen
+        hand_state.PINCH_GAP = self.pinch_gap
 
         motion.SWIPE_TURN = self.swipe_turn
         motion.SWIPE_TURN_SPEED = self.swipe_turn_speed
@@ -86,6 +88,7 @@ class Calibration:
             f"fist below            {self.fist_reach:.2f}",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
             f"hand lift             {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
+            f"pinch below           {self.pinch_gap:.2f}",
             f"smallest hand read    {self.min_hand_on_screen:.3f} of the frame",
         ]
 
@@ -172,6 +175,21 @@ def from_samples(poses, moves, current):
     elif missed:
         warnings.append("one of the hand raises barely moved, and was ignored")
 
+    # A pinch is below this.  The other side is an open hand, which is
+    # what a pinch is most likely to be confused with once the fist test
+    # has had its say.
+    pinched = [reading["pinch"] for reading in poses.get("pinch", [])]
+
+    apart = [reading["pinch"]
+             for name in ("open", "two")
+             for reading in poses.get(name, [])]
+
+    pinch, ok = between(max(pinched, default=0.0), min(apart, default=9.0),
+                        current.pinch_gap)
+
+    if not ok:
+        warnings.append("could not tell a pinch from an open hand")
+
     # How small a hand may look and still be read.  Set from how large
     # yours looked while calibrating, so calibrating at arm's length and
     # calibrating across the room both work.
@@ -189,6 +207,7 @@ def from_samples(poses, moves, current):
         swipe_lift=round(swipe_lift, 3),
         swipe_lift_speed=round(swipe_lift_speed, 3),
         min_hand_on_screen=round(min_hand, 4),
+        pinch_gap=round(pinch, 3),
     ), warnings
 
 
@@ -251,4 +270,5 @@ def current():
         swipe_lift=motion.SWIPE_LIFT,
         swipe_lift_speed=motion.SWIPE_LIFT_SPEED,
         min_hand_on_screen=hand_state.MIN_HAND_ON_SCREEN,
+        pinch_gap=hand_state.PINCH_GAP,
     )

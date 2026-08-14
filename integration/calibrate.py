@@ -20,7 +20,9 @@ POSES = [
     ("open", "Hold your hand OPEN, fingers spread",
      "held, this turns SARV on and off", 3.0),
     ("two", "Hold up TWO FINGERS",
-     "the pose for seeking and volume", 3.0),
+     "the pose for seeking", 3.0),
+    ("pinch", "PINCH your thumb and finger together",
+     "the pose for volume", 3.0),
     ("rest", "Let your hand REST naturally, however it falls",
      "so a hand doing nothing is left alone", 3.0),
 ]
@@ -29,7 +31,7 @@ POSES = [
 MOVES = [
     ("turn", "Two fingers up: TURN YOUR WRIST left, then back",
      "this rewinds and skips forward", 3),
-    ("lift", "Two fingers up: RAISE your hand, then lower it",
+    ("lift", "PINCH, then RAISE your hand and lower it again",
      "this is the volume", 3),
 ]
 
@@ -137,6 +139,7 @@ class _Session:
                     "ext": state["ext"],
                     "reach": state["reach"],
                     "scale": state.get("scale", 0.1),
+                    "pinch": state.get("pinch", 9.0),
                 })
 
         print(f"    {prompt}: {len(readings)} readings")
