@@ -79,14 +79,6 @@ def classify(hand, handedness=None):
         if from_behind:
             return "UNKNOWN"
 
-        # Sure it is not a pinch, rather than just past the line.  Pinching
-        # with the other fingers out leaves four fingers reading as
-        # extended, so a pinch that falls a little short of the pinch test
-        # lands here -- and this is the gesture that turns SARV off.
-        if hand_state.pinch_gap(hand) < (hand_state.PINCH_GAP
-                                         * hand_state.OPEN_HAND_GAP):
-            return "UNKNOWN"
-
         return "OPEN_PALM"
 
     return "UNKNOWN"

@@ -62,10 +62,6 @@ FIST_REACH = 1.15
 #: behind this one is what keeps a closed hand out.
 PINCH_GAP = 0.45
 
-#: An open hand has to be clearly clear of a pinch, not merely past the
-#: line.  A pinch misread as an open hand is worse than one misread as
-#: nothing: holding an open hand is what turns SARV off.
-OPEN_HAND_GAP = 1.5
 
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
@@ -222,12 +218,21 @@ def is_pinching(hand):
     if pinch_gap(hand) >= PINCH_GAP:
         return False
 
-    # The middle finger settles it against a peace sign.  A tucked thumb
-    # is half hidden behind the palm, so where its tip is has to be
-    # guessed, and the guess sometimes lands near the index finger -- at
-    # which point two fingers held up look pinched, and the pose that arms
-    # seeking never arms.  Nobody pinches with two fingers up.
-    if finger_is_extended(shape_of(hand), *FINGERS["middle"]):
+    # Against a peace sign, whose thumb is tucked behind the palm and so
+    # has to be guessed at -- the guess sometimes landing near the index
+    # finger, which made two fingers look pinched.
+    #
+    # The test is the index finger rather than the thumb, because reaching
+    # the thumb means bending the index to meet it: a pinch never has both
+    # index and middle straight, and a peace sign always does.  Asking for
+    # the middle finger alone was wrong -- plenty of people pinch with the
+    # others held out.
+    shape = shape_of(hand)
+
+    straight = (finger_is_extended(shape, *FINGERS["index"])
+                and finger_is_extended(shape, *FINGERS["middle"]))
+
+    if straight:
         return False
 
     return finger_reach(screen, INDEX_TIP, INDEX_MCP) >= FIST_REACH

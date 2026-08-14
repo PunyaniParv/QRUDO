@@ -1060,3 +1060,39 @@ class TestPeaceSignMistakenForPinch(GestureTestCase):
 
     def test_a_real_pinch_is_untouched(self):
         self.assertTrue(hand_state.is_pinching(pinching()))
+
+
+class TestPinchHoweverItIsHeld(GestureTestCase):
+    """A pinch counts whatever the other fingers are doing.
+
+    Written after breaking exactly this.  Ruling out a pinch when the
+    middle finger was out did fix two fingers being misread, and threw
+    away every pinch made with the other fingers held out -- which is how
+    a good many people pinch.  Nothing in the suite covered that, so
+    nothing objected.
+    """
+
+    def curled(self):
+        return pinching()
+
+    def fingers_out(self):
+        return make_hand(LOOSE, EXTENDED, EXTENDED, EXTENDED, pinch=True)
+
+    def test_pinching_with_the_others_curled(self):
+        self.assertEqual(self.settle(self.curled()), "PINCH")
+
+    def test_pinching_with_the_others_held_out(self):
+        self.assertEqual(self.settle(self.fingers_out()), "PINCH")
+
+    def test_both_arm_the_volume_gesture(self):
+        for hand in (self.curled(), self.fingers_out()):
+            self.assertEqual(gestures.pose_kind(hand), gestures.POSE_PINCH)
+
+    def test_an_open_hand_is_still_an_open_hand(self):
+        """The other half of the same mistake: an open hand went missing
+        behind a margin meant to protect it from pinches."""
+
+        self.assertEqual(self.settle(make_hand()), "OPEN_PALM")
+
+    def test_and_two_fingers_are_still_not_a_pinch(self):
+        self.assertFalse(hand_state.is_pinching(peace_sign()))
