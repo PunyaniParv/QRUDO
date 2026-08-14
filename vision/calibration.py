@@ -28,6 +28,7 @@ class Calibration:
     """One set of measured thresholds."""
 
     extended_ratio: float
+    open_ratio: float
     fist_reach: float
     swipe_turn: float
     swipe_turn_speed: float
@@ -73,6 +74,7 @@ class Calibration:
         from . import hand_state, motion
 
         hand_state.EXTENDED_RATIO = self.extended_ratio
+        hand_state.OPEN_RATIO = self.open_ratio
         hand_state.FIST_REACH = self.fist_reach
         hand_state.MIN_HAND_ON_SCREEN = self.min_hand_on_screen
         hand_state.PINCH_GAP = self.pinch_gap
@@ -85,6 +87,7 @@ class Calibration:
     def describe(self):
         return [
             f"finger out above      {self.extended_ratio:.2f}",
+            f"hand open above       {self.open_ratio:.2f}",
             f"fist below            {self.fist_reach:.2f}",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
             f"hand lift             {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
@@ -139,6 +142,22 @@ def from_samples(poses, moves, current):
 
     if not ok:
         warnings.append("could not tell a straight finger from a curled one")
+
+    # A hand is open above this, which is a different question: the other
+    # side is not a fist but a hand at rest, whose fingers are straighter
+    # than a fist and slacker than a spread hand.  With only the line
+    # above to fall on, a resting hand landed on "open" and asked for
+    # something.
+    slack = [score
+             for reading in poses.get("rest", [])
+             for score in reading["ext"].values()]
+
+    open_ratio, ok = between(
+        max(slack, default=0.0), min(straight, default=1.0),
+        current.open_ratio)
+
+    if not ok:
+        warnings.append("could not tell an open hand from a resting one")
 
     # A fist is below this.  The other side is a hand at rest, which is
     # the case that matters: it is what the camera sees most of the time.
@@ -201,6 +220,7 @@ def from_samples(poses, moves, current):
 
     return Calibration(
         extended_ratio=round(extended_ratio, 3),
+        open_ratio=round(open_ratio, 3),
         fist_reach=round(fist_reach, 3),
         swipe_turn=round(swipe_turn, 3),
         swipe_turn_speed=round(swipe_turn_speed, 3),
@@ -264,6 +284,7 @@ def current():
 
     return Calibration(
         extended_ratio=hand_state.EXTENDED_RATIO,
+        open_ratio=hand_state.OPEN_RATIO,
         fist_reach=hand_state.FIST_REACH,
         swipe_turn=motion.SWIPE_TURN,
         swipe_turn_speed=motion.SWIPE_TURN_SPEED,

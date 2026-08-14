@@ -76,7 +76,10 @@ def classify(hand, handedness=None):
         return "TWO_FINGER"
 
     if extended == 4:
-        if from_behind:
+        # Properly open, not merely not-closed: a hand at rest has fingers
+        # straighter than a fist and slacker than a spread hand, and it was
+        # landing here.
+        if from_behind or not hand_state.is_open(hand_state.shape_of(hand)):
             return "UNKNOWN"
 
         return "OPEN_PALM"

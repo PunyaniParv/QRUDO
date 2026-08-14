@@ -1096,3 +1096,35 @@ class TestPinchHoweverItIsHeld(GestureTestCase):
 
     def test_and_two_fingers_are_still_not_a_pinch(self):
         self.assertFalse(hand_state.is_pinching(peace_sign()))
+
+
+class TestRestingHandAsksForNothing(GestureTestCase):
+    """A hand doing nothing must read as nothing.
+
+    Reported after the pose recorded during setup -- the hand at rest --
+    started firing gestures.  A resting hand has fingers straighter than a
+    fist and slacker than a spread one, and with a single line to fall on
+    it landed on "open", which is the gesture that turns SARV off.
+    """
+
+    def resting(self, **viewpoint):
+        return make_hand(LOOSE, LOOSE, LOOSE, LOOSE, **viewpoint)
+
+    def test_a_resting_hand_is_not_an_open_hand(self):
+        self.assertEqual(self.settle(self.resting()), "UNKNOWN")
+
+    def test_a_resting_hand_is_not_a_fist_either(self):
+        """The other line it has to fall between."""
+
+        self.assertNotEqual(self.settle(self.resting()), "FIST")
+
+    def test_a_properly_open_hand_still_counts(self):
+        self.assertEqual(self.settle(make_hand()), "OPEN_PALM")
+
+    def test_at_rest_from_several_angles(self):
+        for yaw in (-45, -20, 0, 20, 45):
+            with self.subTest(yaw=yaw):
+                vision.reset_state()
+                self.assertEqual(
+                    self.settle(self.resting(yaw=math.radians(yaw))),
+                    "UNKNOWN")

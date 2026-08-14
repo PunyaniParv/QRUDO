@@ -28,7 +28,8 @@ def readings(ext, reach, scale=0.15, count=20, pinch=0.8):
             for _ in range(count)]
 
 
-DEFAULTS = Calibration(0.82, 1.15, 0.30, 0.80, 0.60, 1.20, 0.035, 0.33)
+DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20,
+                       0.035, 0.33)
 
 
 class TestWhereTheLineGoes(unittest.TestCase):
@@ -112,7 +113,7 @@ class TestApplying(unittest.TestCase):
         self.before.apply()
 
     def test_apply_moves_the_thresholds_the_detectors_read(self):
-        Calibration(0.7, 1.3, 0.2, 0.5, 0.4, 0.9, 0.02, 0.3).apply()
+        Calibration(0.7, 0.88, 1.3, 0.2, 0.5, 0.4, 0.9, 0.02, 0.3).apply()
 
         self.assertEqual(hand_state.EXTENDED_RATIO, 0.7)
         self.assertEqual(hand_state.FIST_REACH, 1.3)
@@ -208,3 +209,32 @@ class TestPinchThreshold(unittest.TestCase):
 
         self.assertEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
         self.assertTrue(any("pinch" in w for w in warnings))
+
+
+class TestOpenHandThreshold(unittest.TestCase):
+    """The line that keeps a resting hand from counting as an open one."""
+
+    def poses(self, rest_ext=0.75):
+        return {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
+                "two": readings(0.95, 1.55), "rest": readings(rest_ext, 1.40),
+                "pinch": readings(0.75, 1.35, pinch=0.20)}
+
+    def test_lands_between_resting_and_open(self):
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.open_ratio, 0.75)
+        self.assertLess(measured.open_ratio, 0.95)
+
+    def test_sits_above_the_line_for_a_finger_being_out(self):
+        """Open is a stronger claim than not-curled, so it asks for more."""
+
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.open_ratio, measured.extended_ratio)
+
+    def test_a_slack_hand_that_looks_open_is_reported(self):
+        measured, warnings = from_samples(self.poses(rest_ext=0.99), {},
+                                          DEFAULTS)
+
+        self.assertEqual(measured.open_ratio, DEFAULTS.open_ratio)
+        self.assertTrue(any("resting" in w for w in warnings))

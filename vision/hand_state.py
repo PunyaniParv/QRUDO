@@ -63,6 +63,17 @@ FIST_REACH = 1.15
 PINCH_GAP = 0.45
 
 
+#: How much further the middle finger must reach than the index, for a
+#: pinch made with the other fingers held out.  A peace sign holds both
+#: level; pinching pulls the index down to the thumb.
+PINCH_BEHIND = 0.15
+
+#: An open hand has to be properly open, not merely not-closed.  A hand at
+#: rest has fingers straighter than a fist and slacker than a spread hand,
+#: and with only one line to fall on it landed on "open" -- so a hand
+#: doing nothing asked for something.  This is the second line.
+OPEN_RATIO = 0.90
+
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
 #: sixty degrees off it.
@@ -222,17 +233,22 @@ def is_pinching(hand):
     # has to be guessed at -- the guess sometimes landing near the index
     # finger, which made two fingers look pinched.
     #
-    # The test is the index finger rather than the thumb, because reaching
-    # the thumb means bending the index to meet it: a pinch never has both
-    # index and middle straight, and a peace sign always does.  Asking for
-    # the middle finger alone was wrong -- plenty of people pinch with the
-    # others held out.
+    # Whichever way the hand is held, pinching pulls the index finger back
+    # from where its neighbour is: with the others out it is drawn down to
+    # the thumb while they stay up, and with the others closed the middle
+    # finger is closed too.  A peace sign has both up and level, which is
+    # neither.
+    #
+    # Asking whether the index was bent did not work: a pinch keeps it
+    # nearly straight and the bend is mostly in the last joint.
     shape = shape_of(hand)
 
-    straight = (finger_is_extended(shape, *FINGERS["index"])
-                and finger_is_extended(shape, *FINGERS["middle"]))
+    middle_out = finger_is_extended(shape, *FINGERS["middle"])
 
-    if straight:
+    index_behind = (finger_reach(screen, INDEX_TIP, INDEX_MCP)
+                    < finger_reach(screen, 12, MIDDLE_MCP) - PINCH_BEHIND)
+
+    if middle_out and not index_behind:
         return False
 
     return finger_reach(screen, INDEX_TIP, INDEX_MCP) >= FIST_REACH
@@ -378,6 +394,15 @@ def fingers_out(hand):
     screen = detect_fingers(screen_of(hand))
 
     return {name: shape[name] or screen[name] for name in FINGERS}
+
+
+def is_open(hand_landmarks):
+    """Whether every finger is properly out, not merely un-curled."""
+
+    return all(
+        finger_extension(hand_landmarks, tip, pip, mcp) > OPEN_RATIO
+        for tip, pip, mcp in FINGERS.values()
+    )
 
 
 def is_clenched(hand_landmarks):
