@@ -27,8 +27,10 @@ POSES = [
 
 #: name, what to ask for, what it is for, how many times
 MOVES = [
-    ("turn", "Two fingers up: TURN YOUR WRIST left, then back",
-     "this rewinds and skips forward", 3),
+    ("turn left", "Two fingers up: TURN YOUR WRIST left, then back",
+     "this rewinds", 2),
+    ("turn right", "Two fingers up: TURN YOUR WRIST right, then back",
+     "this skips forward", 2),
 ]
 
 READY_SECONDS = 2.0
@@ -214,7 +216,7 @@ def banner():
         "",
         "  SARV setup",
         "",
-        "  Four poses to hold, then one movement to repeat.  Stand where",
+        "  Four poses to hold, then two movements to repeat.  Stand where",
         "  you actually intend to use it -- the numbers depend on how big",
         "  your hand looks, so calibrating close up will not suit a demo",
         "  from across the room.",

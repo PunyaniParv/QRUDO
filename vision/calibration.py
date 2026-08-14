@@ -265,10 +265,20 @@ def from_samples(poses, moves, current):
 
     # Movements: take the weakest repetition and sit comfortably under it,
     # so the gentlest gesture you actually made still counts.
-    swipe_turn, swipe_turn_speed, missed = _movement(
-        moves.get("turn", []), current.swipe_turn, current.swipe_turn_speed)
+    #
+    # Both directions go in together, because a wrist does not turn as far
+    # one way as the other.  Measuring only the easy direction sets a bar
+    # the hard one never clears, which reads as "swipe right does not
+    # work" -- it was working, and being asked for more than the joint had.
+    turns = [peak
+             for name, peaks in moves.items()
+             if name.startswith("turn")
+             for peak in peaks]
 
-    if not moves.get("turn"):
+    swipe_turn, swipe_turn_speed, missed = _movement(
+        turns, current.swipe_turn, current.swipe_turn_speed)
+
+    if not turns:
         warnings.append("no wrist turn was recorded")
     elif missed:
         warnings.append("one of the wrist turns barely moved, and was ignored")

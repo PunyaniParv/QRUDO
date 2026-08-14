@@ -18,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from control import ControlConfig, log
 from control.backends import windows
 from control.backends.windows import (
+    VK_J,
+    VK_L,
     VK_LEFT,
     VK_MEDIA_NEXT_TRACK,
     VK_MEDIA_PLAY_PAUSE,
@@ -51,6 +53,35 @@ class FakeWindowsController(WindowsController):
         self.scripts.append(script)
         # The two scripts return different shapes: "old|new|ok" vs "level|ok".
         return self.reply if "WmiSetBrightness" in script else self.read_reply
+
+
+class TestWhichKeySeeks(unittest.TestCase):
+    """Reported on macOS, but the cause is the site, not the platform.
+
+    Arrow keys seek on YouTube and not on YouTube Music, and both are the
+    same browser -- so which key to send has to be a setting on both.
+    """
+
+    def test_arrows_by_default(self):
+        controller = FakeWindowsController()
+        detail = controller.forward(10)
+
+        self.assertEqual(controller.pressed, [(VK_RIGHT, True)] * 2)
+        self.assertIn("2x arrow", detail)
+
+    def test_the_ten_second_keys_for_players_that_use_them(self):
+        controller = FakeWindowsController(
+            ControlConfig(browser_seek_keys="jl"))
+
+        self.assertIn("1x j/l", controller.forward(10))
+        self.assertEqual(controller.pressed, [(VK_L, False)])
+
+    def test_back_is_the_other_one(self):
+        controller = FakeWindowsController(
+            ControlConfig(browser_seek_keys="jl"))
+        controller.rewind(20)
+
+        self.assertEqual(controller.pressed, [(VK_J, False)] * 2)
 
 
 class TestVolume(unittest.TestCase):

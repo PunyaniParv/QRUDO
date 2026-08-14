@@ -34,7 +34,9 @@ VK_VOLUME_UP = 0xAF
 VK_MEDIA_NEXT_TRACK = 0xB0
 VK_MEDIA_PREV_TRACK = 0xB1
 VK_MEDIA_PLAY_PAUSE = 0xB3
+VK_J = 0x4A      # YouTube's back ten seconds
 VK_K = 0x4B      # YouTube's play/pause
+VK_L = 0x4C      # YouTube's forward ten seconds
 VK_LEFT = 0x25
 VK_RIGHT = 0x27
 
@@ -341,20 +343,36 @@ class WindowsController(Controller):
             self._press(VK_MEDIA_NEXT_TRACK if forward else VK_MEDIA_PREV_TRACK)
             return f"{'next' if forward else 'previous'} track"
 
-        # Same approach as macOS: repeat the player's own arrow-key shortcut.
-        presses = self.config.seek_presses
-        key = VK_RIGHT if forward else VK_LEFT
+        # Same approach as macOS: repeat the player's own seek shortcut,
+        # whichever one the site in question listens for.
+        key, name, step = self._seek_key(forward)
+        presses = max(1, round(seconds / step))
         window = self._target_window()
         for _ in range(presses):
             if window:
                 self._post_key_to_window(window, key)
             else:
-                self._press(key, extended=True)  # arrows are extended keys
-        covered = presses * self.config.seek_step_seconds
+                # arrows are extended keys; letters are not
+                self._press(key, extended=name == "arrow")
         direction = "forward" if forward else "back"
         where = f" to {self.config.app}" if window else ""
-        return (f"seek {direction} ~{covered}s{where} "
-                f"({presses}x arrow, {seconds}s requested)")
+        return (f"seek {direction} ~{presses * step}s{where} "
+                f"({presses}x {name}, {seconds}s requested)")
+
+    def _seek_key(self, forward: bool) -> tuple[int, str, int]:
+        """Which key seeks, what to call it, and how far one press moves.
+
+        Sites do not agree.  Arrow keys move five seconds on YouTube; j and
+        l move ten.  A key that does not seek on a given site is rarely
+        idle there -- it usually does something else -- which is why this
+        is a setting rather than a guess.
+        """
+
+        if self.config.browser_seek_keys.strip().lower() == "jl":
+            return (VK_L if forward else VK_J), "j/l", 10
+
+        return ((VK_RIGHT if forward else VK_LEFT), "arrow",
+                max(1, self.config.seek_step_seconds))
 
     # -------------------------------------------------- targeting a window
 

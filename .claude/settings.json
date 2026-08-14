@@ -69,7 +69,10 @@
       "Bash(git commit -q -m 'Narrow the optional in the calibration test *)",
       "Bash(git commit -q -m 'Show the pinch gap while tuning *)",
       "Bash(git checkout *)",
-      "Bash(awk '{print \"  pid\", $2, \"cpu\", $3\"%\", \"started\", $9, \"  \", substr\\($0, index\\($0,$11\\), 60\\)}')"
+      "Bash(awk '{print \"  pid\", $2, \"cpu\", $3\"%\", \"started\", $9, \"  \", substr\\($0, index\\($0,$11\\), 60\\)}')",
+      "Bash(.venv/bin/python main.py --command FORWARD)",
+      "Bash(.venv/bin/python -m pyright .)",
+      "Bash(git commit -q -m ' *)"
     ]
   }
 }

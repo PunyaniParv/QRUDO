@@ -47,11 +47,12 @@ SWIPE_LIFT_SPEED = 1.20   # per second
 LIFT_STILL = 0.50         # below this speed the hand counts as at rest
 REST_DWELL = 1.00         # and must stay so this long to become the rest
 
-#: How much smaller the other movement must be.  Seeking and volume share
-#: a pose, so each frame has to say which of the two a movement was -- and
-#: a turn raises the hand a little while a raise turns it a little.  Only a
-#: movement that is clearly one of them counts; anything in between is a
-#: diagonal nobody meant, and firing either would be a guess.
+#: How much of a turn a raise may contain and still count as a raise.
+#: Seeking and volume share a pose, so something has to say which of the
+#: two a movement was.  It is asked of the raise only: a wrist turned
+#: sideways lifts the hand a little in the doing, while raising a hand
+#: turns it a good deal more, so the turn is the one that survives being
+#: asked plainly.
 CROSSTALK = 0.60
 
 #: Both scripts mirror the frame before detection, so x increases to the
@@ -293,12 +294,15 @@ def detect_swipe(hand, handedness=None):
         and not _state.raised
     )
 
-    # Which of the two it was.  Each is only itself if the other barely
-    # happened; a movement that is half of each is a diagonal nobody meant.
+    # Which of the two it was.  The turn is asked first and on its own
+    # terms: it is the more distinctive measurement -- which way the
+    # fingers point, rather than where the hand is -- and a wrist turned
+    # sideways lifts the hand a little in the doing, which should not cost
+    # the gesture.  Volume is the one that has to be clean, because
+    # raising a hand turns it far more than turning one raises it.
     sideways = abs(turn) / SWIPE_TURN
-    upright = abs(lift) / SWIPE_LIFT
 
-    if turned and upright < CROSSTALK:
+    if turned:
         moving_right = turn > 0
 
         if not FRAME_IS_MIRRORED:

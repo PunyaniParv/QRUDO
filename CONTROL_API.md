@@ -75,8 +75,9 @@ the terminal, so the terminal is focused and swallows the arrows.
 This is worth setting for a second reason: `PLAY_PAUSE` otherwise sends the
 keyboard's media key, and macOS answers a media key with nothing playing by
 **opening Music** — so the first gesture of a demo launches the wrong app. With
-a target named, play/pause goes to that app instead (a scriptable player like
-Spotify is told directly; a browser is sent YouTube's `k` shortcut).
+a target named, play/pause goes to that app instead: a scriptable player like
+Spotify is told directly, and a browser is sent the keyboard's own play/pause
+key, which reaches whatever is actually playing.
 
 macOS matches the app name; Windows matches any part of the window title (so
 `"YouTube"` works). The keys are then delivered to that app whether or not it
@@ -92,6 +93,29 @@ python main.py --command FORWARD --delay 5
 
 For the real app, setting `seek_target_app` is the robust choice: it keeps
 seeking working even if your camera preview window takes focus.
+
+### If seeking works on one site and not another
+
+It is the site, not the browser. Seeking has no system-wide key, so it is a
+keyboard shortcut sent to the page — and pages do not agree on which one.
+Arrow keys move five seconds on YouTube; YouTube Music ignores them and uses
+`j` and `l` for ten seconds each.
+
+```json
+{ "browser_seek_keys": "jl" }
+```
+
+`"arrows"` is the default. A key that does not seek on a given site is rarely
+idle there — it usually does something else — which is why this is a setting
+rather than something to guess at.
+
+For music, rewind and forward usually mean the previous and next track rather
+than a jump inside one. That is a different setting, and it needs no shortcut
+at all:
+
+```json
+{ "seek_mode": "track" }
+```
 
 ## If 200 ms is too slow for your frame loop
 
@@ -164,6 +188,8 @@ to `main.py`:
   "seek_seconds": 10,
   "seek_step_seconds": 5,
   "target_app": "Google Chrome",
+  "browser_play_key": "media",
+  "browser_seek_keys": "arrows",
   "cooldown_seconds": 0.6,
   "dry_run": false
 }

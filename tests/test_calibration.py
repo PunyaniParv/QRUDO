@@ -86,6 +86,32 @@ class TestFromSamples(unittest.TestCase):
         self.assertLess(measured.swipe_turn, 0.50)
         self.assertLess(measured.swipe_turn_speed, 2.0)
 
+    def test_the_harder_direction_sets_the_bar(self):
+        """A wrist does not turn as far one way as the other.
+
+        Reported as "swipe right is not detected".  It was being detected
+        -- the threshold had been measured from a leftward turn, which goes
+        further, and the rightward one was being asked for more than the
+        joint had.
+        """
+
+        moves = {"turn left": [(0.90, 3.0), (0.85, 2.9)],
+                 "turn right": [(0.45, 1.6), (0.50, 1.8)]}
+        measured, warnings = from_samples(self.poses(), moves, DEFAULTS)
+
+        self.assertLess(measured.swipe_turn, 0.45)
+        self.assertLess(measured.swipe_turn_speed, 1.6)
+        self.assertFalse([w for w in warnings if "wrist turn" in w])
+
+    def test_one_direction_alone_is_still_measured(self):
+        """An older calibration recorded a single "turn", and still counts."""
+
+        moves = {"turn": [(0.60, 2.0), (0.60, 2.0)]}
+        measured, warnings = from_samples(self.poses(), moves, DEFAULTS)
+
+        self.assertLess(measured.swipe_turn, 0.60)
+        self.assertFalse([w for w in warnings if "wrist turn" in w])
+
     def test_no_movement_recorded_is_reported(self):
         measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
 

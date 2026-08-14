@@ -32,7 +32,9 @@ NX_KEYTYPE_NEXT = 17
 NX_KEYTYPE_PREVIOUS = 18
 
 # --- Virtual key codes for ordinary keys ------------------------------------
+KEY_J = 38          # YouTube's back ten seconds
 KEY_K = 40          # YouTube's play/pause
+KEY_L = 37          # YouTube's forward ten seconds
 KEY_SPACE = 49      # most other players'
 KEY_LEFT_ARROW = 123
 KEY_RIGHT_ARROW = 124
@@ -324,15 +326,32 @@ class MacOSController(Controller):
         # Seek within the current track by repeating the player's own arrow-key
         # shortcut.  seek_step_seconds says how far one press moves; the config
         # turns that into "about `seconds` seconds".
-        presses = self.config.seek_presses
-        key = KEY_RIGHT_ARROW if forward else KEY_LEFT_ARROW
+        key, name, step = self._seek_key(forward)
+        presses = max(1, round(seconds / step))
         pid = self._target_pid()
+
         for _ in range(presses):
             self._post_key(key, to_pid=pid)
-        covered = presses * self.config.seek_step_seconds
+
         where = f" to {self.config.app}" if pid else ""
-        return (f"seek {direction} ~{covered}s{where} "
-                f"({presses}x arrow, {seconds}s requested)")
+
+        return (f"seek {direction} ~{presses * step}s{where} "
+                f"({presses}x {name}, {seconds}s requested)")
+
+    def _seek_key(self, forward: bool) -> tuple[int, str, int]:
+        """Which key seeks, what to call it, and how far one press moves.
+
+        Sites do not agree.  Arrow keys move five seconds on YouTube; j and
+        l move ten.  A key that does not seek on a given site is rarely
+        idle there -- it usually does something else -- which is why this
+        is a setting rather than a guess.
+        """
+
+        if self.config.browser_seek_keys.strip().lower() == "jl":
+            return (KEY_L if forward else KEY_J), "j/l", 10
+
+        return ((KEY_RIGHT_ARROW if forward else KEY_LEFT_ARROW), "arrow",
+                max(1, self.config.seek_step_seconds))
 
     def _target_pid(self, name: str | None = None) -> int | None:
         """The process to aim keys at, or None to use the focused window."""

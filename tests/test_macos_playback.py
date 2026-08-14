@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from control import ControlConfig, log
-from control.backends.macos import MacOSController
+from control.backends.macos import (KEY_J, KEY_L, KEY_RIGHT_ARROW,
+                                    MacOSController)
 from control.executor import UnsupportedCommand
 
 log.setup(console=False)
@@ -28,13 +29,16 @@ log.setup(console=False)
 class FakeMac(MacOSController):
     """The routing, with everything that needs macOS replaced."""
 
-    def __init__(self, running=(), target="", play_key="media"):
+    def __init__(self, running=(), target="", play_key="media",
+                 seek_keys="arrows"):
         self.config = ControlConfig(target_app=target,
-                                    browser_play_key=play_key)
+                                    browser_play_key=play_key,
+                                    browser_seek_keys=seek_keys)
         self.log = log.get_logger("test")
         self.running = set(running)
         self.told = []          # apps spoken to by AppleScript
         self.keyed = []         # apps sent a keystroke
+        self.codes = []         # the keys themselves
         self.media_keys = []    # system-wide media keys, which must stay empty
         self._quartz = object()
         self._workspace = None
@@ -52,6 +56,7 @@ class FakeMac(MacOSController):
 
     def _post_key(self, key_code, *, to_pid=None):
         self.keyed.append(to_pid)
+        self.codes.append(key_code)
 
     def _post_media_key(self, key):
         self.media_keys.append(key)
@@ -122,6 +127,53 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
 
         self.assertEqual(controller.keyed, [])
         self.assertEqual(controller.media_keys, [])
+
+
+class TestWhichKeySeeks(unittest.TestCase):
+    """Reported: seeking worked on YouTube in Chrome but not YouTube Music.
+
+    Both are Chrome, so the browser was never the difference -- the site
+    was.  Arrow keys seek on one and not the other, and there is no key
+    that seeks on all of them, so which key to send is a setting.
+    """
+
+    def test_arrows_by_default(self):
+        controller = FakeMac(running={"Google Chrome"}, target="Google Chrome")
+        detail = controller.forward(10)
+
+        self.assertEqual(controller.codes, [KEY_RIGHT_ARROW, KEY_RIGHT_ARROW])
+        self.assertIn("2x arrow", detail)
+
+    def test_the_ten_second_keys_for_players_that_use_them(self):
+        controller = FakeMac(running={"Google Chrome"}, target="Google Chrome",
+                             seek_keys="jl")
+
+        self.assertIn("1x j/l", controller.forward(10))
+        self.assertEqual(controller.codes, [KEY_L])
+
+    def test_back_is_the_other_one(self):
+        controller = FakeMac(running={"Google Chrome"}, target="Google Chrome",
+                             seek_keys="jl")
+        controller.rewind(10)
+
+        self.assertEqual(controller.codes, [KEY_J])
+
+    def test_it_still_covers_the_distance_asked_for(self):
+        """Ten seconds is ten seconds, whichever key is doing it."""
+
+        for keys, presses in (("arrows", 4), ("jl", 2)):
+            controller = FakeMac(running={"Google Chrome"},
+                                 target="Google Chrome", seek_keys=keys)
+            controller.forward(20)
+
+            self.assertEqual(len(controller.codes), presses, keys)
+
+    def test_an_unknown_setting_falls_back_rather_than_failing(self):
+        controller = FakeMac(running={"Google Chrome"}, target="Google Chrome",
+                             seek_keys="whatever")
+        controller.forward(10)
+
+        self.assertEqual(controller.codes, [KEY_RIGHT_ARROW, KEY_RIGHT_ARROW])
 
 
 class TestWhichAppItReaches(unittest.TestCase):

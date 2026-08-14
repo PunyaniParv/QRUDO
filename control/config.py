@@ -79,6 +79,20 @@ class ControlConfig:
     "k" or "space" force a particular key for anyone who wants one.
     """
 
+    browser_seek_keys: str = "arrows"
+    """Which keys seek inside a browser.
+
+    "arrows" is left and right, which YouTube reads as five seconds each.
+    "jl" is j and l, ten seconds each, which some players use instead.
+
+    Sites differ, and a key that does not seek somewhere usually does
+    something else there -- so if seeking works on one site and not
+    another, this is the setting, not the gesture.
+
+    For music, ``seek_mode`` set to "track" skips whole tracks instead,
+    which is generally what rewind and forward mean there.
+    """
+
     seek_mode: str = "seek"
     """``"seek"`` = move within the current track (arrow keys).
     ``"track"`` = previous/next track (HID media keys)."""
