@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gesture_detection import (
     SWIPE_CONSISTENCY,
-    SWIPE_SPEED,
-    SWIPE_TRAVEL,
+    SWIPE_TURN,
+    SWIPE_TURN_SPEED,
     debug_state,
     detect_gesture,
     detect_swipe,
@@ -169,12 +169,11 @@ while True:
         state = debug_state()
 
         readout = [
-            f"pose   {state.get('pose')}   armed {state.get('armed')}",
-            f"travel {state.get('travel', 0):.2f} / {SWIPE_TRAVEL}"
-            f"   (palm widths)",
-            f"speed  {state.get('speed', 0):.2f} / {SWIPE_SPEED}",
-            f"agree  {state.get('agree', 0):.2f} / {SWIPE_CONSISTENCY}",
-            f"palm   {state.get('palm', 0):.2f}",
+            f"pose  {state.get('pose')}   armed {state.get('armed')}",
+            f"aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
+            f"turn  {state.get('turn', 0):.2f} / {SWIPE_TURN}",
+            f"speed {state.get('speed', 0):.2f} / {SWIPE_TURN_SPEED}",
+            f"agree {state.get('agree', 0):.2f} / {SWIPE_CONSISTENCY}",
         ]
 
         for line_number, line in enumerate(readout):

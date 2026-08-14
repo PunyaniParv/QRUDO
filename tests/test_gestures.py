@@ -52,8 +52,14 @@ POINTING = "pointing"      # straight, aimed at the camera
 
 
 def make_hand(index=EXTENDED, middle=EXTENDED, ring=EXTENDED, pinky=EXTENDED,
-              cx=0.50, cy=0.50):
-    """Build 21 landmarks for a hand with the given finger states."""
+              cx=0.50, cy=0.50, yaw=0.0):
+    """Build 21 landmarks for a hand with the given finger states.
+
+    ``yaw`` turns pointing fingers about the wrist, -1 (hard left) to +1
+    (hard right).  The fingertips swing sideways and lose some of their
+    depth as they go, which is what a real hand does when it turns away
+    from the camera.
+    """
 
     points = [Point(cx, cy + 0.18)] * 1          # wrist
     points = [Point(cx, cy + 0.18)]
@@ -77,10 +83,12 @@ def make_hand(index=EXTENDED, middle=EXTENDED, ring=EXTENDED, pinky=EXTENDED,
 
         elif state == POINTING:
             # Foreshortened: barely moves on screen, but each joint is
-            # measurably nearer the camera than the last.
-            points.append(Point(mx, my - 0.010, -0.035))
-            points.append(Point(mx, my - 0.015, -0.070))
-            points.append(Point(mx, my - 0.020, -0.105))
+            # measurably nearer the camera than the last.  Turning the
+            # wrist swings the far joints sideways the most.
+            depth = 1.0 - 0.4 * abs(yaw)
+            points.append(Point(mx + yaw * 0.040, my - 0.010, -0.035 * depth))
+            points.append(Point(mx + yaw * 0.080, my - 0.015, -0.070 * depth))
+            points.append(Point(mx + yaw * 0.120, my - 0.020, -0.105 * depth))
 
         else:  # CURLED
             points.append(Point(mx, my - 0.045, 0.000))
@@ -91,7 +99,7 @@ def make_hand(index=EXTENDED, middle=EXTENDED, ring=EXTENDED, pinky=EXTENDED,
     return points
 
 
-def two_finger_pointing(cx=0.50, cy=0.50):
+def two_finger_pointing(cx=0.50, cy=0.50, yaw=0.0):
     """The swipe pose: index and middle aimed at the camera.
 
     Aiming the fingers at the lens turns the whole hand, not just the
@@ -102,7 +110,7 @@ def two_finger_pointing(cx=0.50, cy=0.50):
     """
 
     hand = make_hand(index=POINTING, middle=POINTING,
-                     ring=CURLED, pinky=CURLED, cx=cx, cy=cy)
+                     ring=CURLED, pinky=CURLED, cx=cx, cy=cy, yaw=yaw)
     hand[gd.WRIST] = Point(cx, cy + 0.01, 0.10)
     return hand
 
@@ -197,15 +205,17 @@ class TestTwoFingerPose(GestureTestCase):
 # --- swipes ----------------------------------------------------------------
 
 class TestSwipe(GestureTestCase):
-    def sweep(self, start, end, seconds, frames=12, pose=True, hand=None):
-        """Move the hand from start to end, returning any swipe detected."""
+    """The gesture: wrist held still, two fingers turning left or right."""
+
+    def turn(self, start, end, seconds, frames=12, pose=True, cx=0.50):
+        """Rotate the wrist from one aim to another, at a fixed position."""
 
         result = None
         for i in range(frames):
             fraction = i / (frames - 1)
-            cx = start + (end - start) * fraction
-            landmarks = hand(cx) if hand else (
-                two_finger_pointing(cx) if pose
+            yaw = start + (end - start) * fraction
+            landmarks = (
+                two_finger_pointing(cx=cx, yaw=yaw) if pose
                 else make_hand(CURLED, CURLED, CURLED, CURLED, cx=cx))
             found = gd.detect_swipe(landmarks, HAND)
             result = result or found
@@ -213,73 +223,98 @@ class TestSwipe(GestureTestCase):
         return result
 
     def test_swipe_right(self):
-        self.assertEqual(self.sweep(0.40, 0.58, 0.30), "SWIPE_RIGHT")
+        self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
 
     def test_swipe_left(self):
-        self.assertEqual(self.sweep(0.58, 0.40, 0.30), "SWIPE_LEFT")
+        self.assertEqual(self.turn(0.6, -0.6, 0.30), "SWIPE_LEFT")
 
-    def test_slow_drift_is_not_a_swipe(self):
-        """Resting a hand and moving it across the desk must do nothing."""
+    def test_turning_from_centre_is_enough(self):
+        """You should not have to wind up first."""
 
-        self.assertIsNone(self.sweep(0.40, 0.58, 4.0, frames=40))
+        self.assertEqual(self.turn(0.0, 0.7, 0.30), "SWIPE_RIGHT")
 
-    def test_tiny_movement_is_not_a_swipe(self):
-        self.assertIsNone(self.sweep(0.50, 0.52, 0.30))
+    def test_slow_turn_is_not_a_swipe(self):
+        """Lowering your hand slowly must not seek the video."""
+
+        self.assertIsNone(self.turn(-0.6, 0.6, 4.0, frames=40))
+
+    def test_small_turn_is_not_a_swipe(self):
+        self.assertIsNone(self.turn(0.0, 0.1, 0.30))
 
     def test_wrong_pose_is_not_a_swipe(self):
-        self.assertIsNone(self.sweep(0.40, 0.58, 0.30, pose=False))
+        self.assertIsNone(self.turn(-0.6, 0.6, 0.30, pose=False))
 
     def test_wobble_is_not_a_swipe(self):
-        """Shaking a hand covers distance without going anywhere."""
+        """A shaking hand turns a lot without turning anywhere."""
 
         result = None
         for i in range(14):
-            cx = 0.50 + (0.05 if i % 2 else -0.05)
-            result = result or gd.detect_swipe(two_finger_pointing(cx), HAND)
+            yaw = 0.5 if i % 2 else -0.5
+            result = result or gd.detect_swipe(
+                two_finger_pointing(yaw=yaw), HAND)
             self.clock.tick(0.025)
+        self.assertIsNone(result)
+
+    def test_moving_the_whole_hand_is_not_a_swipe(self):
+        """The wrist is meant to stay put.
+
+        Aim is measured relative to the wrist, so carrying the hand across
+        the frame without turning it reads as no movement at all -- which
+        is what stops reaching for the keyboard from seeking the video.
+        """
+
+        result = None
+        for i in range(12):
+            cx = 0.30 + 0.40 * (i / 11)
+            result = result or gd.detect_swipe(
+                two_finger_pointing(cx=cx, yaw=0.0), HAND)
+            self.clock.tick(0.30 / 11)
         self.assertIsNone(result)
 
     def test_a_bad_frame_does_not_lose_the_swipe(self):
         """The regression that made swipes feel broken.
 
-        Position is recorded every frame, so one misclassified frame in the
-        middle costs a sample, not the gesture.
+        Aim is recorded every frame, so one misclassified frame in the
+        middle costs a sample, not the gesture.  This matters more for a
+        turn than a slide: a hand rotating away from the camera passes
+        through angles that are genuinely hard to classify.
         """
 
         result = None
         for i in range(12):
-            cx = 0.40 + 0.18 * (i / 11)
+            yaw = -0.6 + 1.2 * (i / 11)
             # Frame 6 comes back as an open hand.
-            landmarks = (make_hand(cx=cx) if i == 6
-                         else two_finger_pointing(cx))
+            landmarks = (make_hand(cx=0.50) if i == 6
+                         else two_finger_pointing(yaw=yaw))
             result = result or gd.detect_swipe(landmarks, HAND)
             self.clock.tick(0.30 / 11)
         self.assertEqual(result, "SWIPE_RIGHT")
 
     def test_cooldown_blocks_an_immediate_second_swipe(self):
-        self.assertEqual(self.sweep(0.40, 0.58, 0.30), "SWIPE_RIGHT")
-        self.assertIsNone(self.sweep(0.40, 0.58, 0.30))
+        self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
+        self.assertIsNone(self.turn(-0.6, 0.6, 0.30))
 
     def test_swipe_allowed_again_after_cooldown(self):
-        self.assertEqual(self.sweep(0.40, 0.58, 0.30), "SWIPE_RIGHT")
+        self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
         self.clock.tick(gd.SWIPE_COOLDOWN + 0.1)
-        self.assertEqual(self.sweep(0.40, 0.58, 0.30), "SWIPE_RIGHT")
+        self.assertEqual(self.turn(-0.6, 0.6, 0.30), "SWIPE_RIGHT")
 
-    def test_distance_from_camera_does_not_matter(self):
-        """Thresholds are in palm widths, so a smaller hand needs less travel."""
+    def test_position_in_frame_does_not_matter(self):
+        """The same turn works wherever you hold your hand."""
 
-        def small(cx):
-            return two_finger_pointing(cx=cx)
-
-        far = self.sweep(0.40, 0.58, 0.30, hand=small)
-        self.assertEqual(far, "SWIPE_RIGHT")
+        for cx in (0.25, 0.50, 0.75):
+            with self.subTest(cx=cx):
+                gd.reset_state()
+                gd.swipe_cooldown_until = 0.0
+                self.assertEqual(
+                    self.turn(-0.6, 0.6, 0.30, cx=cx), "SWIPE_RIGHT")
 
     def test_debug_state_is_populated(self):
         """The tuning overlay needs these every frame."""
 
         gd.detect_swipe(two_finger_pointing(), HAND)
         state = gd.debug_state()
-        for key in ("pose", "armed", "travel", "speed", "agree"):
+        for key in ("pose", "armed", "aim", "turn", "speed", "agree"):
             self.assertIn(key, state)
 
 

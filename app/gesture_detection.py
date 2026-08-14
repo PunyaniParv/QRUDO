@@ -78,12 +78,18 @@ POINT_DEPTH = 0.30
 CURLED_DEPTH = 0.15
 
 # Swipes: the motion itself.
-SWIPE_WINDOW = 0.50       # seconds of movement considered
-SWIPE_TRAVEL = 0.90       # palm widths the hand must cover
-SWIPE_SPEED = 1.60        # palm widths per second
-SWIPE_CONSISTENCY = 0.65  # fraction of frames moving the same way
+#
+# The gesture is a wrist rotation, not a hand movement: the wrist stays
+# put and the two fingers swing left or right like a pointer.  So what is
+# measured is which way the fingers aim, from -1 (hard left) through 0
+# (straight at the camera) to +1 (hard right).  Turning far enough, fast
+# enough, in one direction is a swipe.
+SWIPE_WINDOW = 0.60       # seconds of movement considered
+SWIPE_TURN = 0.30         # how far the aim must swing
+SWIPE_TURN_SPEED = 0.80   # per second
+SWIPE_CONSISTENCY = 0.65  # fraction of frames turning the same way
 SWIPE_MIN_SAMPLES = 4
-ARM_HOLD = 0.35           # how long the pose keeps a swipe allowed
+ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
 
 
@@ -302,6 +308,41 @@ def finger_is_curled(hand_landmarks, tip, mcp, scale):
 
 
 # ---------------------------------------------------------
+# Where the fingers aim
+# ---------------------------------------------------------
+
+def pointing_direction(hand_landmarks):
+    """Which way the two fingers point: -1 left, 0 at the camera, +1 right.
+
+    This is the sideways part of the wrist-to-fingertip vector divided by
+    that vector's full 3D length, so it measures how far the hand has
+    turned and nothing else.
+
+    Two things follow, both wanted.  Sliding the whole hand across the
+    frame does not change it, so drifting your arm cannot look like a
+    swipe.  And it does not care how far away you sit, because it is a
+    ratio rather than a distance.
+    """
+
+    wrist = hand_landmarks[WRIST]
+
+    tip_x = (hand_landmarks[8].x + hand_landmarks[12].x) / 2
+    tip_y = (hand_landmarks[8].y + hand_landmarks[12].y) / 2
+    tip_z = (hand_landmarks[8].z + hand_landmarks[12].z) / 2
+
+    reach = math.sqrt(
+        (tip_x - wrist.x) ** 2 +
+        (tip_y - wrist.y) ** 2 +
+        (tip_z - wrist.z) ** 2
+    )
+
+    if reach < 1e-6:
+        return 0.0
+
+    return (tip_x - wrist.x) / reach
+
+
+# ---------------------------------------------------------
 # Two-finger pose
 # ---------------------------------------------------------
 
@@ -344,22 +385,22 @@ def detect_swipe(hand_landmarks, handedness):
 
     Returns "SWIPE_LEFT", "SWIPE_RIGHT" or None.
 
-    The hand's position is recorded on every frame, whatever the pose;
+    The gesture is a wrist rotation: hold two fingers toward the camera
+    and turn them left or right, keeping the wrist where it is.
+
+    Where the fingers aim is recorded on every frame, whatever the pose;
     the pose only decides whether a swipe is currently allowed.  A frame
     or two of misclassification therefore costs a sample rather than the
-    whole gesture.
+    whole gesture -- which matters here, because a hand turning away from
+    the camera passes through angles that are awkward to classify.
     """
 
     global swipe_armed_until
     global swipe_cooldown_until
 
     now = time.time()
-    scale = hand_scale(hand_landmarks)
 
-    # Track the middle knuckle rather than the fingertips: it is the
-    # centre of the hand, and it does not wander when the fingers are
-    # foreshortened.
-    motion_history.append((now, hand_landmarks[MIDDLE_MCP].x, scale))
+    motion_history.append((now, pointing_direction(hand_landmarks)))
 
     posed = is_two_finger_pose(hand_landmarks)
 
@@ -371,8 +412,8 @@ def detect_swipe(hand_landmarks, handedness):
     _debug.update(
         pose=posed,
         armed=armed,
-        palm=round(palm_facing_strength(hand_landmarks, handedness), 2),
-        travel=0.0,
+        aim=round(motion_history[-1][1], 2),
+        turn=0.0,
         speed=0.0,
         agree=0.0
     )
@@ -393,36 +434,38 @@ def detect_swipe(hand_landmarks, handedness):
     if elapsed <= 0:
         return None
 
-    # Measure in palm widths so distance from the camera does not matter.
-    mean_scale = sum(sample[2] for sample in window) / len(window)
-    displacement = (window[-1][1] - window[0][1]) / mean_scale
+    swing = window[-1][1] - window[0][1]
 
-    travel = abs(displacement)
-    speed = travel / elapsed
+    turn = abs(swing)
+    speed = turn / elapsed
 
-    # A swipe goes one way.  A wobble does not.
+    # A swipe turns one way.  A wobble does not.
+    #
+    # Compare how far the aim actually ended up from where it started
+    # against how far it travelled getting there.  A clean turn scores
+    # near 1; a hand shaking between two angles covers a lot of ground and
+    # arrives nowhere, so it scores low however fast it shakes.  Counting
+    # which frames moved the right way is not enough: alternating samples
+    # can reach two-thirds agreement by luck.
     steps = [
         window[i + 1][1] - window[i][1]
         for i in range(len(window) - 1)
     ]
 
-    forward = sum(
-        1 for step in steps
-        if step * displacement > 0
-    )
+    path = sum(abs(step) for step in steps)
 
-    agreement = forward / len(steps) if steps else 0.0
+    agreement = turn / path if path > 0 else 0.0
 
     _debug.update(
-        travel=round(travel, 2),
+        turn=round(turn, 2),
         speed=round(speed, 2),
         agree=round(agreement, 2)
     )
 
-    if travel < SWIPE_TRAVEL:
+    if turn < SWIPE_TURN:
         return None
 
-    if speed < SWIPE_SPEED:
+    if speed < SWIPE_TURN_SPEED:
         return None
 
     if agreement < SWIPE_CONSISTENCY:
@@ -432,7 +475,7 @@ def detect_swipe(hand_landmarks, handedness):
     # Direction
     # -------------------------------------------------
 
-    moving_right = displacement > 0
+    moving_right = swing > 0
 
     if not FRAME_IS_MIRRORED:
         moving_right = not moving_right
