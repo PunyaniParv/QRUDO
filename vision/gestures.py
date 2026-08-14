@@ -88,6 +88,54 @@ def classify(hand, handedness=None):
     return "UNKNOWN"
 
 
+def explain(hand, handedness=None):
+    """Why this frame reads as it does, in a few words.
+
+    Written because "it does not recognise my fist" is not something a
+    threshold can be adjusted from, and three attempts at guessing which
+    one was wrong all missed.  This says which test refused, and what it
+    measured, so the answer is read rather than deduced.
+    """
+
+    screen = hand_state.screen_of(hand)
+    shape = hand_state.shape_of(hand)
+    handedness = getattr(hand, "handedness", handedness)
+
+    fingers = hand_state.fingers_out(hand)
+    out = [name for name, is_out in fingers.items() if is_out]
+
+    reaches = hand_state.reach_scores(screen)
+    gap = hand_state.pinch_gap(hand)
+
+    if hand_state.is_back_of_hand(screen, handedness):
+        return "back of hand -- fist and open hand are not read from behind"
+
+    if hand_state.is_clenched(screen):
+        return "shut -> FIST"
+
+    if hand_state.is_pinching(hand):
+        return f"thumb and finger {gap:.2f} apart -> PINCH"
+
+    closed = [name for name, reach in reaches.items()
+              if reach < hand_state.FIST_REACH]
+
+    if not out:
+        if gap < hand_state.PINCH_GAP:
+            return (f"thumb and finger {gap:.2f} apart, but the index is not "
+                    f"out in front ({reaches['index']:.2f}, needs "
+                    f"{hand_state.FIST_REACH}) -- neither pinch nor fist")
+
+        return (f"half closed: {len(closed)} of 4 fingers in, need the index "
+                f"and two others for a fist")
+
+    if len(out) == 4 and not hand_state.is_open(shape):
+        weakest = min(hand_state.finger_scores(shape).values())
+        return (f"open but slack: weakest finger {weakest:.2f}, "
+                f"needs {hand_state.OPEN_RATIO} to count as an open hand")
+
+    return f"fingers out: {', '.join(out) or 'none'}   thumb gap {gap:.2f}"
+
+
 def detect_gesture(hand, handedness=None):
     """The settled gesture, once it has held for a few frames.
 

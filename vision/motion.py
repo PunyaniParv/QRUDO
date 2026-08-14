@@ -171,6 +171,7 @@ def detect_swipe(hand, handedness=None):
         aim=round(hand_state.pointing_direction(hand), 2),
         ext=hand_state.finger_scores(shape),
         reach=hand_state.reach_scores(screen),
+        why=gestures.explain(hand),
         scale=round(hand_state.hand_scale(screen), 4),
         pinch=round(hand_state.pinch_gap(hand), 3),
         turn=0.0,

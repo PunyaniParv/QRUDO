@@ -67,7 +67,8 @@
       "Bash(git check-ignore *)",
       "Bash(.venv/bin/python -m pip uninstall -q -y pyright)",
       "Bash(git commit -q -m 'Narrow the optional in the calibration test *)",
-      "Bash(git commit -q -m 'Show the pinch gap while tuning *)"
+      "Bash(git commit -q -m 'Show the pinch gap while tuning *)",
+      "Bash(git checkout *)"
     ]
   }
 }

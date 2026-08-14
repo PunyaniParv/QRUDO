@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+logs/
+.DS_Store
+sarv_config.json

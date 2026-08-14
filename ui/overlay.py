@@ -147,6 +147,7 @@ def tuning_lines(state, motion, hand_state):
             f"{name[0]}{score:.2f}"
             for name, score in state.get("reach", {}).items()
         ) + f"   (fist below {hand_state.FIST_REACH})",
+        "   why   " + str(state.get("why", "")),
         f"   pinch {state.get('pinch', 0):.2f}"
         f"   (pinch below {hand_state.PINCH_GAP},"
         f" open above {hand_state.OPEN_RATIO})",

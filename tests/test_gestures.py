@@ -909,3 +909,47 @@ class TestRestingHandAsksForNothing(GestureTestCase):
                 self.assertEqual(
                     self.settle(self.resting(yaw=math.radians(yaw))),
                     "UNKNOWN")
+
+
+class TestItSaysWhy(GestureTestCase):
+    """Every pose gets an explanation, and the right one.
+
+    Written after three attempts at guessing which test was refusing a
+    gesture, all of which missed.  "It does not recognise my fist" is not
+    something a threshold can be adjusted from; a line saying which check
+    said no, and what it measured, is.
+    """
+
+    def test_a_fist_says_so(self):
+        self.assertIn("FIST", gestures.explain(fist(), HAND))
+
+    def test_a_pinch_says_so(self):
+        self.assertIn("PINCH", gestures.explain(pinching(), HAND))
+
+    def test_a_resting_hand_says_what_it_is_short_of(self):
+        resting = make_hand(LOOSE, LOOSE, LOOSE, LOOSE)
+
+        self.assertIn("fist", gestures.explain(resting, HAND))
+
+    def test_a_slack_open_hand_says_which_finger_let_it_down(self):
+        """Four fingers out but none of them straight enough."""
+
+        slack = make_hand()
+
+        for tip, pip, mcp in hand_state.FINGERS.values():
+            slack[tip] = Point(slack[pip].x, slack[pip].y - 0.02,
+                               slack[pip].z + 0.02)
+
+        said = gestures.explain(slack, HAND)
+
+        self.assertTrue("slack" in said or "fist" in said, said)
+
+    def test_the_back_of_a_hand_says_so(self):
+        said = gestures.explain(fist(yaw=math.radians(180)), HAND)
+
+        self.assertIn("back of hand", said)
+
+    def test_every_pose_gets_some_answer(self):
+        for hand in (fist(), pinching(), peace_sign(), pointing(),
+                     make_hand(), make_hand(LOOSE, LOOSE, LOOSE, LOOSE)):
+            self.assertTrue(gestures.explain(hand, HAND).strip())
