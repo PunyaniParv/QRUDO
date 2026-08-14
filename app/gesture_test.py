@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gesture_detection import (
+    EXTENDED_RATIO,
     SWIPE_CONSISTENCY,
     SWIPE_SLIDE,
     SWIPE_TURN,
@@ -177,6 +178,10 @@ while True:
             f"   (peace sign only)",
             f"speed {state.get('speed', 0):.2f} / {SWIPE_TURN_SPEED}",
             f"agree {state.get('agree', 0):.2f} / {SWIPE_CONSISTENCY}",
+            "ext   " + "  ".join(
+                f"{name[0]}{score:.2f}"
+                for name, score in state.get("ext", {}).items()
+            ) + f"   (out above {EXTENDED_RATIO})",
         ]
 
         for line_number, line in enumerate(readout):

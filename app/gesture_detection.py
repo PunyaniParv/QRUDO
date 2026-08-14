@@ -62,20 +62,20 @@ FINGERS = {
 
 FRAME_IS_MIRRORED = True
 
-# Static gestures: joint angles for a straight finger.  Loosened from
-# 155/150, which only held for a perfectly still hand.
-PIP_STRAIGHT = 148
-DIP_STRAIGHT = 142
+# A finger is out when the straight line from its knuckle to its tip is
+# nearly as long as the finger itself.  Curling a finger shortens that
+# line; turning the hand does not.
+EXTENDED_RATIO = 0.82
+
+# How squarely the fingers must aim at the camera to count as the gun
+# pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
+# sixty degrees off it.
+AIM_AT_CAMERA = 0.50
 
 # A palm seen edge-on gives a normal with almost no depth component, and
 # its sign is then decided by noise.  Below this the answer is "cannot
 # tell" rather than a coin flip.
 PALM_CERTAINTY = 0.12
-
-# Swipes: how much nearer the camera a fingertip must be than its knuckle
-# before the finger counts as pointing at the lens.
-POINT_DEPTH = 0.30
-CURLED_DEPTH = 0.15
 
 # Swipes: the motion itself.
 #
@@ -191,18 +191,21 @@ def calculate_angle(a, b, c):
 
 
 def hand_scale(hand_landmarks):
-    """Palm width on screen, used to make thresholds distance-independent.
+    """How big the hand looks on screen, for measuring movement across it.
 
-    The knuckle row is the one measurement that survives both poses: when
-    the fingers point at the camera the hand is foreshortened along its
-    length, but its width still faces the lens.
+    Only the sideways slide uses this, and a slide is a screen distance,
+    so a screen measurement is the right one.  Nothing that has to survive
+    the hand turning is scaled by it -- turn the hand side-on and the
+    knuckle row collapses to almost nothing, which is what made side
+    profile misbehave.
+
+    Both the palm's width and its length are considered, because a turn
+    that flattens one leaves the other.
     """
 
     return max(
-        distance_2d(
-            hand_landmarks[INDEX_MCP],
-            hand_landmarks[PINKY_MCP]
-        ),
+        distance_2d(hand_landmarks[INDEX_MCP], hand_landmarks[PINKY_MCP]),
+        distance_2d(hand_landmarks[WRIST], hand_landmarks[MIDDLE_MCP]),
         0.02
     )
 
@@ -247,31 +250,52 @@ def is_palm_facing(hand_landmarks, handedness):
 
 
 # ---------------------------------------------------------
-# Finger state -- palm toward camera
+# Finger state
 # ---------------------------------------------------------
 
-def finger_is_extended(hand_landmarks, tip, pip, mcp):
-    """Straight-finger test, for a hand held flat to the camera."""
+def finger_extension(hand_landmarks, tip, pip, mcp):
+    """How straight a finger is: about 1.0 straight, about 0.5 curled.
+
+    The straight-line distance from knuckle to tip, divided by the length
+    of the finger itself.  Both are measured in 3D, which is what makes
+    this hold from any viewpoint: turning the hand changes how long the
+    finger *looks*, but not how long it *is*.
+
+    It also shrugs off MediaPipe's shaky depth.  If every z is off by the
+    same factor, both distances are off by roughly that factor too, and
+    the ratio between them barely moves.
+
+    This replaced joint angles, which are only trustworthy when the hand
+    lies flat to the camera -- a finger aimed at the lens collapses into a
+    short cluster of landmarks and reads as bent however straight it is.
+    """
 
     dip = pip + 1
 
-    pip_angle = calculate_angle(
-        hand_landmarks[mcp],
-        hand_landmarks[pip],
-        hand_landmarks[dip]
+    span = distance(hand_landmarks[mcp], hand_landmarks[tip])
+
+    length = (
+        distance(hand_landmarks[mcp], hand_landmarks[pip]) +
+        distance(hand_landmarks[pip], hand_landmarks[dip]) +
+        distance(hand_landmarks[dip], hand_landmarks[tip])
     )
 
-    dip_angle = calculate_angle(
-        hand_landmarks[pip],
-        hand_landmarks[dip],
-        hand_landmarks[tip]
-    )
+    if length == 0:
+        return 0.0
 
-    return pip_angle > PIP_STRAIGHT and dip_angle > DIP_STRAIGHT
+    return span / length
+
+
+def finger_is_extended(hand_landmarks, tip, pip, mcp):
+    """Whether a finger is out, seen from any angle."""
+
+    return finger_extension(
+        hand_landmarks, tip, pip, mcp
+    ) > EXTENDED_RATIO
 
 
 def detect_fingers(hand_landmarks):
-    """Which fingers are extended, for a hand held flat to the camera."""
+    """Which fingers are out."""
 
     return {
         name: finger_is_extended(hand_landmarks, tip, pip, mcp)
@@ -279,63 +303,42 @@ def detect_fingers(hand_landmarks):
     }
 
 
+#: Kept as a name: extension no longer depends on which way the hand
+#: faces, so there is nothing extra to ask.
+detect_fingers_out = detect_fingers
+
+
 # ---------------------------------------------------------
 # Finger state -- fingers toward camera
 # ---------------------------------------------------------
 
-def finger_points_at_camera(hand_landmarks, tip, pip, mcp, scale):
-    """Depth-order test, for a finger aimed at the lens.
+def finger_aim(hand_landmarks, tip, mcp):
+    """How squarely a finger points at the camera: 1.0 down the lens, 0 across.
 
-    MediaPipe's z grows with distance from the camera, so a finger
-    pointing at it has tip nearer than knuckle.  A curled finger folds
-    back toward the palm and shows no such gap.
+    A direction rather than a distance, so it needs no scaling -- which
+    matters, because every screen-based scale collapses when the hand
+    turns side-on.
     """
 
-    depth_gap = hand_landmarks[mcp].z - hand_landmarks[tip].z
+    span = distance(hand_landmarks[mcp], hand_landmarks[tip])
 
-    # The middle joint should sit between the two, which rules out a
-    # fingertip that is only near the camera because the whole hand is
-    # tilted.
-    ordered = hand_landmarks[pip].z >= hand_landmarks[tip].z
+    if span == 0:
+        return 0.0
 
-    return depth_gap > POINT_DEPTH * scale and ordered
+    return (hand_landmarks[mcp].z - hand_landmarks[tip].z) / span
 
 
-def detect_pointing_fingers(hand_landmarks):
-    """Which fingers are aimed at the camera."""
+def fingers_aimed_at_camera(hand_landmarks):
+    """Whether the index and middle fingers point at the lens.
 
-    scale = hand_scale(hand_landmarks)
-
-    return {
-        name: finger_points_at_camera(hand_landmarks, tip, pip, mcp, scale)
-        for name, (tip, pip, mcp) in FINGERS.items()
-    }
-
-
-def detect_fingers_out(hand_landmarks):
-    """Which fingers are out, whichever way the hand is turned.
-
-    A finger counts as out if it is straight across the image or aimed at
-    the camera.  Asking only the first question means a finger pointing at
-    the lens reads as curled, so pointing at the camera never registered;
-    asking only the second means a hand held flat never registers at all.
+    Only asked once a pose is already known to have those two fingers
+    out, so it decides which pose it is, never whether there is one.
     """
 
-    flat = detect_fingers(hand_landmarks)
-    pointing = detect_pointing_fingers(hand_landmarks)
-
-    return {
-        name: flat[name] or pointing[name]
-        for name in FINGERS
-    }
-
-
-def finger_is_curled(hand_landmarks, tip, mcp, scale):
-    """True when a finger is clearly not aimed at the camera."""
-
-    depth_gap = hand_landmarks[mcp].z - hand_landmarks[tip].z
-
-    return depth_gap < CURLED_DEPTH * scale
+    return (
+        finger_aim(hand_landmarks, 8, 5) > AIM_AT_CAMERA
+        and finger_aim(hand_landmarks, 12, 9) > AIM_AT_CAMERA
+    )
 
 
 # ---------------------------------------------------------
@@ -384,33 +387,29 @@ POSE_PEACE = "peace"  # two fingers held up, palm toward the camera
 def two_finger_pose_kind(hand_landmarks):
     """Which two-finger pose this is, or None.
 
-    Both are index and middle out with ring and pinky in; they differ in
-    which way the hand faces, and therefore in how you swipe with them.
+    Both are index and middle out with ring and pinky in; they differ only
+    in which way the hand faces, and therefore in how you swipe with them.
+    Establishing the fingers first and the direction second matters: the
+    finger test holds at any angle, so the pose is never missed because
+    the hand happened to be turned.
     """
 
-    scale = hand_scale(hand_landmarks)
+    fingers = detect_fingers(hand_landmarks)
 
-    pointing = detect_pointing_fingers(hand_landmarks)
+    two_out = (
+        fingers["index"]
+        and fingers["middle"]
+        and not fingers["ring"]
+        and not fingers["pinky"]
+    )
 
-    if (
-        pointing["index"]
-        and pointing["middle"]
-        and finger_is_curled(hand_landmarks, 16, 13, scale)
-        and finger_is_curled(hand_landmarks, 20, 17, scale)
-    ):
+    if not two_out:
+        return None
+
+    if fingers_aimed_at_camera(hand_landmarks):
         return POSE_GUN
 
-    flat = detect_fingers(hand_landmarks)
-
-    if (
-        flat["index"]
-        and flat["middle"]
-        and not flat["ring"]
-        and not flat["pinky"]
-    ):
-        return POSE_PEACE
-
-    return None
+    return POSE_PEACE
 
 
 def is_two_finger_pose(hand_landmarks):
@@ -585,6 +584,15 @@ def detect_gesture(hand_landmarks, handedness):
 
     fingers = detect_fingers_out(hand_landmarks)
     extended_count = sum(fingers.values())
+
+    # Per-finger scores for the tuning overlay.  If a gesture is misread at
+    # some angle, this says which finger the camera disagrees about and by
+    # how much, which is the difference between adjusting one threshold and
+    # guessing.
+    _debug["ext"] = {
+        name: round(finger_extension(hand_landmarks, tip, pip, mcp), 2)
+        for name, (tip, pip, mcp) in FINGERS.items()
+    }
 
     if extended_count == 0:
         raw_gesture = "FIST"
