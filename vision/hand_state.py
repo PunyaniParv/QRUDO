@@ -280,32 +280,34 @@ def fingers_aimed_at_camera(hand_landmarks):
     )
 
 
-def pointing_direction(hand_landmarks):
-    """Which way the two fingers point: -1 left, 0 at the camera, +1 right.
+def pointing_direction(hand):
+    """Which way the two fingers lean: -1 hard left, 0 upright, +1 hard right.
 
-    The sideways part of the wrist-to-fingertip vector divided by that
-    vector's full 3D length, so it measures how far the hand has turned
-    and nothing else.
+    Measured purely on screen, in x and y, with no depth at all.  The
+    gesture is a wrist rotation with the fingers staying toward the camera,
+    so the whole of it happens in the plane of the image -- which is the
+    part MediaPipe reports accurately.  Bringing depth into it would put
+    the measurement back on the axis a single camera can only estimate,
+    which is what made the earlier version unreliable.
 
-    Two things follow, both wanted.  Sliding the whole hand across the
-    frame does not change it, so drifting your arm cannot look like a
-    swipe.  And it does not care how far away you sit, because it is a
-    ratio rather than a distance.
+    It stays relative to the wrist, so carrying the hand across the frame
+    without turning it reads as nothing, and it is a ratio, so how far away
+    you sit does not matter.
     """
 
-    wrist = hand_landmarks[WRIST]
+    screen = screen_of(hand)
 
-    tip_x = (hand_landmarks[8].x + hand_landmarks[12].x) / 2
-    tip_y = (hand_landmarks[8].y + hand_landmarks[12].y) / 2
-    tip_z = (hand_landmarks[8].z + hand_landmarks[12].z) / 2
+    wrist = screen[WRIST]
 
-    reach = math.sqrt(
-        (tip_x - wrist.x) ** 2 +
-        (tip_y - wrist.y) ** 2 +
-        (tip_z - wrist.z) ** 2
-    )
+    tip_x = (screen[8].x + screen[12].x) / 2
+    tip_y = (screen[8].y + screen[12].y) / 2
 
-    if reach < 1e-6:
-        return 0.0
+    sideways = tip_x - wrist.x
+    reach = math.hypot(sideways, tip_y - wrist.y)
 
-    return (tip_x - wrist.x) / reach
+    # Fingers aimed at the camera collapse toward the wrist on screen, so
+    # the reach shrinks and dividing by it would make small movements read
+    # as huge -- enough that slowly lowering the hand counted as a swipe.
+    # A hand and a half is the floor: comfortably under the reach of an
+    # upright peace sign, so that gesture is measured as it stands.
+    return sideways / max(reach, hand_scale(screen) * 1.5)

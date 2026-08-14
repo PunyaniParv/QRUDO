@@ -114,7 +114,7 @@ def detect_swipe(hand, handedness=None):
 
     _state.history.add(
         moment,
-        aim=hand_state.pointing_direction(shape),
+        aim=hand_state.pointing_direction(hand),
         x=screen[hand_state.MIDDLE_MCP].x,
         scale=hand_state.hand_scale(screen)
     )
@@ -129,7 +129,7 @@ def detect_swipe(hand, handedness=None):
     _debug.update(
         pose=kind,
         armed=armed,
-        aim=round(hand_state.pointing_direction(shape), 2),
+        aim=round(hand_state.pointing_direction(hand), 2),
         ext=hand_state.finger_scores(shape),
         turn=0.0,
         slide=0.0,
