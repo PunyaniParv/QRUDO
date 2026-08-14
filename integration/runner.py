@@ -155,7 +155,7 @@ def banner(engine, router, args, tuning):
     lines = [
         "",
         f"  SARV  --  {engine.controller.name}"
-        f"{'  [TUNING, nothing will run]' if tuning else ''}"
+        f"{'  [TUNING: gestures shown, NO commands run]' if tuning else ''}"
         f"{'  [DRY RUN]' if engine.config.dry_run and not tuning else ''}",
         "",
     ]
@@ -163,6 +163,10 @@ def banner(engine, router, args, tuning):
     if not tuning:
         for gesture, command in router.mapping().items():
             lines.append(f"    {gesture:<12} {command}")
+        lines.append("")
+
+    if tuning:
+        lines.append("  nothing will be controlled -- run without --tune for that")
         lines.append("")
 
     lines += [

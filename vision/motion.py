@@ -48,8 +48,13 @@ SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 #: movement of the whole hand rather than a turn of the wrist, because a
 #: wrist does not tilt up and down through anything like the range it
 #: swings sideways through.
-SWIPE_LIFT = 1.10         # palm widths the hand must cover
-SWIPE_LIFT_SPEED = 1.80   # palm widths per second
+#:
+#: Kept small on purpose.  The unit is the larger of the hand's width and
+#: its length, so it is bigger than "a palm width" suggests -- at 1.1 this
+#: wanted a third of the frame, which is why it only triggered at the very
+#: top and bottom.
+SWIPE_LIFT = 0.60         # palm widths the hand must cover
+SWIPE_LIFT_SPEED = 1.20   # palm widths per second
 
 #: Both scripts mirror the frame before detection, so x increases to the
 #: user's right and a rightward swipe is a rise in x.
