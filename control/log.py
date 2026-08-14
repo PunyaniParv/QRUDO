@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -72,7 +73,14 @@ def log_event(result) -> None:
     setup()
     if _event_path is None:
         return
-    payload = asdict(result) if is_dataclass(result) else dict(result)
+    if is_dataclass(result) and not isinstance(result, type):
+        payload = asdict(result)
+    elif isinstance(result, Mapping):
+        payload = dict(result)
+    else:
+        # Whatever this is, a line in the log beats an exception: this is
+        # called from the command path, which must not be able to fail.
+        payload = {"result": str(result)}
     try:
         with _event_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, default=str) + "\n")

@@ -41,7 +41,8 @@ class FakeWindowsController(WindowsController):
         self.scripts: list[str] = []
         self.reply = reply            # what the setting script returns
         self.read_reply = read_reply  # what the read-only script returns
-        self._worker = None           # no resident PowerShell in tests
+        # Typed as the real thing, because some tests put a stand-in here.
+        self._worker: windows._PowerShellWorker | None = None
 
     def _press(self, key, *, extended=False):
         self.pressed.append((key, extended))
@@ -139,13 +140,13 @@ class TestSeekTargeting(unittest.TestCase):
     def test_missing_window_falls_back_to_key_presses(self):
         """A configured app that is not open must not break seeking."""
         controller = FakeWindowsController(ControlConfig(seek_target_app="YouTube"))
-        controller._target_window = lambda: None
+        controller._target_window = lambda title=None: None
         controller.forward(10)
         self.assertEqual(controller.pressed, [(VK_RIGHT, True)] * 2)
 
     def test_found_window_receives_posted_keys(self):
         controller = FakeWindowsController(ControlConfig(seek_target_app="YouTube"))
-        controller._target_window = lambda: 4242
+        controller._target_window = lambda title=None: 4242
         posted = []
         controller._post_key_to_window = lambda hwnd, key: posted.append((hwnd, key))
         detail = controller.forward(10)
@@ -179,11 +180,18 @@ class TestState(unittest.TestCase):
 class TestPersistentPowerShell(unittest.TestCase):
     """The resident helper must never be able to break brightness control."""
 
-    class DeadWorker:
+    # Stand-ins for the resident helper.  They subclass the real thing so
+    # that they still fit where it fits, and so a change to its interface
+    # shows up here rather than passing silently.
+
+    class DeadWorker(windows._PowerShellWorker):
+        def __init__(self):
+            pass  # no process, no thread pool, nothing to clean up
+
         def exchange(self, line, timeout=6.0):
             return None  # unavailable, however it failed
 
-    class LiveWorker:
+    class LiveWorker(windows._PowerShellWorker):
         def __init__(self):
             self.lines = []
 
@@ -198,17 +206,19 @@ class TestPersistentPowerShell(unittest.TestCase):
         self.assertEqual(len(controller.scripts), 1)  # the one-shot path ran
 
     def test_uses_the_worker_when_it_answers(self):
+        worker = self.LiveWorker()
         controller = FakeWindowsController()
-        controller._worker = self.LiveWorker()
+        controller._worker = worker
         self.assertEqual(controller.brightness_up(8), "brightness 40% -> 48%")
         self.assertEqual(controller.scripts, [])      # no process was launched
-        self.assertEqual(controller._worker.lines, ["8"])
+        self.assertEqual(worker.lines, ["8"])
 
     def test_reads_go_through_the_worker_too(self):
+        worker = self.LiveWorker()
         controller = FakeWindowsController()
-        controller._worker = self.LiveWorker()
+        controller._worker = worker
         self.assertEqual(controller.read_state(), {"brightness": 0.40})
-        self.assertEqual(controller._worker.lines, ["read"])
+        self.assertEqual(worker.lines, ["read"])
 
 
 class TestResidentLoopScript(unittest.TestCase):

@@ -24,6 +24,7 @@ class GestureStabiliser:
     """Believes a gesture only once it has stopped changing."""
 
     def __init__(self, frames=STABLE_FRAMES, agreement=STABLE_AGREEMENT):
+        self.frames = frames
         self.agreement = agreement
         self.history = deque(maxlen=frames)
 
@@ -32,7 +33,7 @@ class GestureStabiliser:
 
         self.history.append(raw_gesture)
 
-        if len(self.history) < self.history.maxlen:
+        if len(self.history) < self.frames:
             return "UNKNOWN"
 
         gesture, count = Counter(self.history).most_common(1)[0]

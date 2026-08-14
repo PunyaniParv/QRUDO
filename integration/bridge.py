@@ -52,7 +52,7 @@ class GestureRouter:
         """Return the command this frame should run, or None."""
 
         # A swipe is a movement that already happened, so it always counts.
-        if swipe in self.swipes:
+        if swipe is not None and swipe in self.swipes:
             # Whatever pose was being held was part of the swipe; make it
             # ask again rather than firing as the hand settles.
             self._held = None

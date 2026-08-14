@@ -62,6 +62,9 @@ class Camera:
     def read(self):
         """The next frame, mirrored.  Raises when the camera goes away."""
 
+        if self._capture is None or self._cv2 is None:
+            raise CameraError("camera used before it was opened")
+
         ok, frame = self._capture.read()
 
         if not ok:

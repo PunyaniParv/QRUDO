@@ -102,14 +102,16 @@ class TestFailureHandling(unittest.TestCase):
         engine = ControlEngine(controller=self.Exploding(config), config=config)
         result = engine.execute(Command.VOLUME_UP)
         self.assertEqual(result.status, Status.ERROR)
-        self.assertIn("audio device went away", result.error)
+        self.assertIsNotNone(result.error)
+        self.assertIn("audio device went away", result.error or "")
 
     def test_unexpected_exception_is_contained(self):
         config = ControlConfig(cooldown_seconds=0.0)
         engine = ControlEngine(controller=self.Exploding(config), config=config)
         result = engine.execute(Command.PLAY_PAUSE)
         self.assertEqual(result.status, Status.ERROR)
-        self.assertIn("RuntimeError", result.error)
+        self.assertIsNotNone(result.error)
+        self.assertIn("RuntimeError", result.error or "")
         # the engine still works afterwards
         self.assertTrue(engine.execute(Command.VOLUME_DOWN).ok)
 

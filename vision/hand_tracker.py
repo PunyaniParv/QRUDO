@@ -30,7 +30,7 @@ class Hand:
     """
 
     landmarks: list
-    world: list
+    world: list | None
     handedness: str
 
 
@@ -70,6 +70,9 @@ class HandTracker:
         """Find a hand in a BGR frame, or return None."""
 
         import cv2
+
+        if self._landmarker is None or self._mp is None:
+            raise TrackerError("tracker used before it was opened")
 
         image = self._mp.Image(
             image_format=self._mp.ImageFormat.SRGB,

@@ -44,7 +44,16 @@
       "Bash(.venv/bin/python -m py_compile app/gesture_test.py)",
       "Bash(git mv *)",
       "Bash(.venv/bin/python main.py --command PLAY_PAUSE)",
-      "Bash(.venv/bin/python main.py --command PLAY_PAUSE --dry-run)"
+      "Bash(.venv/bin/python main.py --command PLAY_PAUSE --dry-run)",
+      "Bash(.venv/bin/python -m pip install -q pyright)",
+      "Bash(.venv/bin/pyright --version)",
+      "Bash(.venv/bin/pyright tests/test_windows_backend.py)",
+      "Bash(.venv/bin/pyright tests/)",
+      "Bash(.venv/bin/pyright control/ vision/ integration/ ui/ main.py)",
+      "Bash(awk -F: '{print $1}')",
+      "Bash(.venv/bin/pyright vision/ integration/ ui/ control/log.py control/simulator.py)",
+      "Bash(.venv/bin/pyright vision/ integration/ ui/ control/log.py)",
+      "Bash(.venv/bin/pyright tests/ vision/ integration/ ui/ control/log.py control/commands.py control/config.py control/executor.py main.py)"
     ]
   }
 }
