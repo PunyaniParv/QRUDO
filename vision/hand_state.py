@@ -74,11 +74,6 @@ PINCH_BEHIND = 0.15
 #: doing nothing asked for something.  This is the second line.
 OPEN_RATIO = 0.90
 
-#: How squarely the fingers must aim at the camera to count as the gun
-#: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
-#: sixty degrees off it.
-AIM_AT_CAMERA = 0.50
-
 #: A palm seen edge-on gives a normal with almost no depth component, and
 #: its sign is then decided by noise.  Below this the answer is "cannot
 #: tell" rather than a coin flip.
@@ -151,32 +146,6 @@ def distance_2d(point1, point2):
         point1.x - point2.x,
         point1.y - point2.y
     )
-
-
-def calculate_angle(a, b, c):
-    """Angle ABC in degrees."""
-
-    ba = (a.x - b.x, a.y - b.y, a.z - b.z)
-    bc = (c.x - b.x, c.y - b.y, c.z - b.z)
-
-    dot_product = (
-        ba[0] * bc[0] +
-        ba[1] * bc[1] +
-        ba[2] * bc[2]
-    )
-
-    magnitude_ba = math.sqrt(ba[0] ** 2 + ba[1] ** 2 + ba[2] ** 2)
-    magnitude_bc = math.sqrt(bc[0] ** 2 + bc[1] ** 2 + bc[2] ** 2)
-
-    if magnitude_ba == 0 or magnitude_bc == 0:
-        return 0
-
-    cosine = dot_product / (magnitude_ba * magnitude_bc)
-
-    # Prevent floating-point errors
-    cosine = max(-1.0, min(1.0, cosine))
-
-    return math.degrees(math.acos(cosine))
 
 
 def hand_scale(hand_landmarks):
@@ -298,15 +267,6 @@ def palm_facing_strength(hand_landmarks, handedness):
         return -normal_z
 
     return normal_z
-
-
-def is_palm_facing(hand_landmarks, handedness):
-    """True only when the palm clearly faces the camera."""
-
-    return palm_facing_strength(
-        hand_landmarks,
-        handedness
-    ) > PALM_CERTAINTY
 
 
 def is_back_of_hand(hand_landmarks, handedness):
@@ -450,31 +410,6 @@ def finger_scores(hand_landmarks):
         name: round(finger_extension(hand_landmarks, tip, pip, mcp), 2)
         for name, (tip, pip, mcp) in FINGERS.items()
     }
-
-
-def finger_aim(hand_landmarks, tip, mcp):
-    """How squarely a finger points at the camera: 1.0 down the lens, 0 across.
-
-    A direction rather than a distance, so it needs no scaling -- which
-    matters, because every screen-based scale collapses when the hand
-    turns side-on.
-    """
-
-    span = distance(hand_landmarks[mcp], hand_landmarks[tip])
-
-    if span == 0:
-        return 0.0
-
-    return (hand_landmarks[mcp].z - hand_landmarks[tip].z) / span
-
-
-def fingers_aimed_at_camera(hand_landmarks):
-    """Whether the index and middle fingers point at the lens."""
-
-    return (
-        finger_aim(hand_landmarks, 8, 5) > AIM_AT_CAMERA
-        and finger_aim(hand_landmarks, 12, 9) > AIM_AT_CAMERA
-    )
 
 
 def pointing_direction(hand):

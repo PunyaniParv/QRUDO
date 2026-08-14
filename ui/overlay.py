@@ -138,7 +138,6 @@ def tuning_lines(state, motion, hand_state):
         f"   pose  {state.get('pose')}   armed {state.get('armed')}",
         f"   aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
         line("turn ", "turn", motion.SWIPE_TURN),
-        line("slide", "slide", motion.SWIPE_SLIDE, "  (peace sign only)"),
         line("speed", "speed", motion.SWIPE_TURN_SPEED),
         line("agree", "agree", motion.SWIPE_CONSISTENCY),
         "   ext   " + "  ".join(

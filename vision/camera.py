@@ -61,21 +61,27 @@ class Camera:
 
         return self
 
+    #: A camera drops the odd frame -- just after opening, or under load --
+    #: and one bad read is not the camera going away.  Only a run of them
+    #: is.
+    MISSES_ALLOWED = 30
+
     def read(self):
-        """The next frame, mirrored.  Raises when the camera goes away."""
+        """The next frame, mirrored.  Raises when the camera really goes."""
 
         if self._capture is None or self._cv2 is None:
             raise CameraError("camera used before it was opened")
 
-        ok, frame = self._capture.read()
+        for _ in range(self.MISSES_ALLOWED):
+            ok, frame = self._capture.read()
 
-        if not ok:
-            raise CameraError("lost the camera")
+            if ok:
+                return self._cv2.flip(frame, 1) if self.mirror else frame
 
-        if self.mirror:
-            frame = self._cv2.flip(frame, 1)
-
-        return frame
+        raise CameraError(
+            f"lost the camera: {self.MISSES_ALLOWED} frames in a row came "
+            f"back empty. Another program may have taken it, or it may have "
+            f"been unplugged.")
 
     def frames(self):
         """Every frame until the camera stops."""

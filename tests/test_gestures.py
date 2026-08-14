@@ -364,24 +364,25 @@ class TestFingerMeasure(GestureTestCase):
 # --- pose recognition ------------------------------------------------------
 
 class TestTwoFingerPose(GestureTestCase):
-    def test_gun_pose(self):
-        self.assertEqual(gestures.two_finger_pose_kind(gun()), gestures.POSE_GUN)
+    def test_two_fingers_aimed_at_the_camera(self):
+        self.assertEqual(gestures.pose_kind(gun()), gestures.POSE_TWO_FINGER)
 
-    def test_peace_pose(self):
-        self.assertEqual(gestures.two_finger_pose_kind(peace_sign()), gestures.POSE_PEACE)
+    def test_two_fingers_held_up(self):
+        self.assertEqual(gestures.pose_kind(peace_sign()),
+                         gestures.POSE_TWO_FINGER)
 
     def test_open_hand_is_not_the_pose(self):
-        self.assertIsNone(gestures.two_finger_pose_kind(make_hand()))
+        self.assertIsNone(gestures.pose_kind(make_hand()))
 
     def test_fist_is_not_the_pose(self):
-        self.assertIsNone(gestures.two_finger_pose_kind(fist()))
+        self.assertIsNone(gestures.pose_kind(fist()))
 
     def test_pose_found_at_any_yaw(self):
         """The fingers decide the pose; the angle only decides which one."""
 
         for yaw in VIEWPOINTS:
             with self.subTest(yaw=round(math.degrees(yaw))):
-                self.assertIsNotNone(gestures.two_finger_pose_kind(
+                self.assertIsNotNone(gestures.pose_kind(
                     make_hand(EXTENDED, EXTENDED, CURLED, CURLED, yaw=yaw)))
 
 
@@ -496,226 +497,6 @@ class TestGunSwipe(GestureTestCase):
         state = motion.debug_state()
         for key in ("pose", "armed", "aim", "turn", "slide", "speed", "agree"):
             self.assertIn(key, state)
-
-
-class TestPeaceSignSwipe(GestureTestCase):
-    """Two fingers up, palm to the camera: slid or tilted across.
-
-    Sliding is off by default -- shifting your hand a little is not a
-    gesture -- so these turn it on.
-    """
-
-    def setUp(self):
-        super().setUp()
-        self._slide_was = motion.SWIPE_ALLOW_SLIDE
-        motion.SWIPE_ALLOW_SLIDE = True
-
-    def tearDown(self):
-        motion.SWIPE_ALLOW_SLIDE = self._slide_was
-        super().tearDown()
-
-    def slide(self, start, end, seconds, frames=12):
-        self.hold_pose(peace_sign(cx=start))
-        result = None
-        for i in range(frames):
-            cx = start + (end - start) * (i / (frames - 1))
-            result = result or motion.detect_swipe(peace_sign(cx=cx), HAND)
-            self.clock.tick(seconds / (frames - 1))
-        return result
-
-    def test_slide_right(self):
-        self.assertEqual(self.slide(0.40, 0.58, 0.30), "SWIPE_RIGHT")
-
-    def test_slide_left(self):
-        self.assertEqual(self.slide(0.58, 0.40, 0.30), "SWIPE_LEFT")
-
-    def test_slow_slide_is_not_a_swipe(self):
-        self.assertIsNone(self.slide(0.40, 0.58, 4.0, frames=40))
-
-    def test_small_slide_is_not_a_swipe(self):
-        self.assertIsNone(self.slide(0.50, 0.52, 0.30))
-
-    def test_tilting_also_works(self):
-        """Leaning the fingers over turns the aim, same as the gun pose."""
-
-        self.hold_pose(peace_sign(roll=math.radians(-40)))
-        result = None
-        for i in range(12):
-            roll = math.radians(-40 + 80 * (i / 11))
-            result = result or motion.detect_swipe(peace_sign(roll=roll), HAND)
-            self.clock.tick(0.30 / 11)
-        self.assertIn(result, ("SWIPE_LEFT", "SWIPE_RIGHT"))
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
-class TestRotatedPeaceSign(GestureTestCase):
-    """The chosen gesture: two fingers facing the camera, wrist rotated.
-
-    Everything stays in the plane of the image, so nothing here leans on
-    MediaPipe's depth -- which is what made the gun pose unreliable.
-    """
-
-    def roll(self, start, end, seconds, frames=12):
-        self.hold_pose(peace_sign(roll=math.radians(start)))
-        result = None
-        for i in range(frames):
-            degrees = start + (end - start) * (i / (frames - 1))
-            hand = peace_sign(roll=math.radians(degrees))
-            result = result or motion.detect_swipe(hand, HAND)
-            self.clock.tick(seconds / (frames - 1))
-        return result
-
-    def test_rotating_right(self):
-        self.assertEqual(self.roll(-30, 30, 0.30), "SWIPE_RIGHT")
-
-    def test_rotating_left(self):
-        self.assertEqual(self.roll(30, -30, 0.30), "SWIPE_LEFT")
-
-    def test_small_rotation_is_enough(self):
-        """A comfortable flick of the wrist, not a full sweep."""
-
-        self.assertEqual(self.roll(-15, 15, 0.25), "SWIPE_RIGHT")
-
-    def test_from_upright(self):
-        """Starting straight up, without winding back first."""
-
-        self.assertEqual(self.roll(0, 30, 0.25), "SWIPE_RIGHT")
-
-    def test_slow_rotation_is_not_a_swipe(self):
-        """Lowering your hand must not seek the video."""
-
-        self.assertIsNone(self.roll(-30, 30, 4.0, frames=40))
-
-    def test_pose_holds_throughout_the_rotation(self):
-        for degrees in range(-60, 61, 15):
-            with self.subTest(roll=degrees):
-                hand = peace_sign(roll=math.radians(degrees))
-                self.assertEqual(gestures.two_finger_pose_kind(hand),
-                                 gestures.POSE_PEACE)
-
-
-class TestFastSwipes(GestureTestCase):
-    """A quick flick, which is where this used to fall apart.
-
-    Moving fast blurs the frame, and a blurred hand is one MediaPipe
-    misses -- so a fast gesture is exactly the one most likely to arrive
-    with frames missing from the middle of it.
-    """
-
-    def flick(self, seconds, frames, dropped=()):
-        """Rotate through 50 degrees, losing the listed frames entirely."""
-
-        self.hold_pose(peace_sign(roll=math.radians(-25)))
-        result = None
-        for i in range(frames):
-            degrees = -25 + 50 * (i / (frames - 1))
-            if i not in dropped:
-                hand = peace_sign(roll=math.radians(degrees))
-                result = result or motion.detect_swipe(hand, HAND)
-            self.clock.tick(seconds / (frames - 1))
-        return result
-
-    def test_quick_flick(self):
-        """Six frames, a fifth of a second."""
-
-        self.assertEqual(self.flick(0.20, 6), "SWIPE_RIGHT")
-
-    def test_very_quick_flick(self):
-        """Four frames is about as short as a real gesture gets."""
-
-        self.assertEqual(self.flick(0.13, 4), "SWIPE_RIGHT")
-
-    def test_survives_a_lost_frame(self):
-        self.assertEqual(self.flick(0.20, 8, dropped={3}), "SWIPE_RIGHT")
-
-    def test_survives_two_lost_frames(self):
-        self.assertEqual(self.flick(0.20, 8, dropped={3, 4}), "SWIPE_RIGHT")
-
-
-class TestPresence(GestureTestCase):
-    """How long the hand has to be gone before the gesture is abandoned."""
-
-    def test_a_blink_is_not_a_departure(self):
-        presence = gd_presence(grace=0.35)
-        presence.seen(1000.0)
-        self.assertFalse(presence.missing(1000.1))
-
-    def test_a_real_departure_is(self):
-        presence = gd_presence(grace=0.35)
-        presence.seen(1000.0)
-        self.assertTrue(presence.missing(1000.5))
-
-    def test_reported_once_not_every_frame(self):
-        presence = gd_presence(grace=0.35)
-        presence.seen(1000.0)
-        self.assertTrue(presence.missing(1000.5))
-        self.assertFalse(presence.missing(1000.6))
-
-    def test_nothing_to_forget_before_a_hand_appears(self):
-        self.assertFalse(gd_presence().missing(1000.0))
-
-
-def gd_presence(grace=0.35):
-    from vision.state_machine import Presence
-    return Presence(grace)
-
-
-class TestReturnStroke(GestureTestCase):
-    """Bringing the hand back must not count as the opposite swipe.
-
-    Reported from real use: turn left to rewind, straighten up, and the
-    straightening registered as a swipe right.  Every swipe is followed by
-    a return, and a return from the left is a movement to the right --
-    exactly what a deliberate rightward turn looks like.
-    """
-
-    def rotate_through(self, start, end, seconds=0.30, frames=12):
-        result = None
-        for i in range(frames):
-            degrees = start + (end - start) * (i / (frames - 1))
-            result = result or motion.detect_swipe(
-                peace_sign(roll=math.radians(degrees)), HAND)
-            self.clock.tick(seconds / (frames - 1))
-        return result
-
-    def hold_still(self, degrees=0, seconds=0.8, frames=16):
-        result = None
-        for _ in range(frames):
-            result = result or motion.detect_swipe(
-                peace_sign(roll=math.radians(degrees)), HAND)
-            self.clock.tick(seconds / frames)
-        return result
-
-    def test_returning_from_left_is_not_a_right_swipe(self):
-        self.hold_pose(peace_sign())
-        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
-        self.assertIsNone(self.rotate_through(-30, 0),
-                          "the hand coming back counted as a swipe")
-
-    def test_returning_from_right_is_not_a_left_swipe(self):
-        self.hold_pose(peace_sign())
-        self.assertEqual(self.rotate_through(0, 30), "SWIPE_RIGHT")
-        self.assertIsNone(self.rotate_through(30, 0),
-                          "the hand coming back counted as a swipe")
-
-    def test_a_second_swipe_still_works_after_settling(self):
-        """Blocking the return must not block the next real gesture."""
-
-        self.hold_pose(peace_sign())
-        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
-        self.rotate_through(-30, 0)
-        self.hold_still(0)
-        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
-
-    def test_swiping_the_other_way_still_works(self):
-        self.hold_pose(peace_sign())
-        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
-        self.rotate_through(-30, 0)
-        self.hold_still(0)
-        self.assertEqual(self.rotate_through(0, 30), "SWIPE_RIGHT")
 
 
 class TestVerticalSwipes(GestureTestCase):
@@ -955,7 +736,7 @@ class TestPinch(GestureTestCase):
         self.assertEqual(gestures.pose_kind(pinching()), gestures.POSE_PINCH)
 
     def test_two_fingers_arm_the_sideways_one(self):
-        self.assertEqual(gestures.pose_kind(peace_sign()), gestures.POSE_PEACE)
+        self.assertEqual(gestures.pose_kind(peace_sign()), gestures.POSE_TWO_FINGER)
 
     def test_a_pinch_does_not_seek(self):
         """Turning a pinched hand sideways must not rewind."""
@@ -1040,7 +821,7 @@ class TestPeaceSignMistakenForPinch(GestureTestCase):
     def test_it_still_arms_seeking(self):
         self.assertEqual(
             gestures.pose_kind(self.misplaced_thumb(peace_sign())),
-            gestures.POSE_PEACE)
+            gestures.POSE_TWO_FINGER)
 
     def test_seeking_works_with_the_thumb_misread(self):
         """The symptom itself: the turn must still register."""

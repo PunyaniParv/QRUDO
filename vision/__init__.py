@@ -9,13 +9,7 @@ integration/bridge.py.
 
 from .calibration import Calibration, load_and_apply
 from .camera import Camera, CameraError
-from .gestures import (
-    POSE_GUN,
-    POSE_PEACE,
-    detect_gesture,
-    is_two_finger_pose,
-    two_finger_pose_kind,
-)
+from .gestures import POSE_PINCH, POSE_TWO_FINGER, detect_gesture, pose_kind
 from .hand_tracker import Hand, HandTracker, TrackerError
 from .state_machine import Presence, now
 from .motion import debug_state, detect_swipe
@@ -28,16 +22,15 @@ __all__ = [
     "HandTracker",
     "Presence",
     "now",
-    "POSE_GUN",
-    "POSE_PEACE",
+    "POSE_PINCH",
+    "POSE_TWO_FINGER",
     "TrackerError",
     "debug_state",
     "detect_gesture",
     "detect_swipe",
-    "is_two_finger_pose",
     "load_and_apply",
     "reset_state",
-    "two_finger_pose_kind",
+    "pose_kind",
 ]
 
 

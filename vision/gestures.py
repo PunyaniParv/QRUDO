@@ -16,9 +16,8 @@ from __future__ import annotations
 from . import hand_state
 from .state_machine import GestureStabiliser
 
-POSE_GUN = "gun"      # two fingers aimed at the camera
-POSE_PEACE = "peace"  # two fingers held up, palm toward the camera
-POSE_PINCH = "pinch"  # thumb and index finger together
+POSE_TWO_FINGER = "two_finger"  # index and middle out: the seeking pose
+POSE_PINCH = "pinch"            # thumb and index together: the volume pose
 
 _stabiliser = GestureStabiliser()
 
@@ -105,25 +104,16 @@ def pose_kind(hand):
 
     Two fingers for the sideways turn, a pinch for up and down.  Keeping
     them apart means a hand raised while seeking cannot be read as volume,
-    and the two gestures no longer have to be told apart by direction
-    alone.
+    and the two gestures do not have to be told apart by direction alone.
+
+    Which way the two fingers face does not matter.  It used to, when the
+    hand facing the camera could be swiped by sliding it as well as by
+    turning it -- but sliding is gone, both are turned, and telling the
+    orientations apart earned nothing.
     """
 
     if hand_state.is_pinching(hand):
         return POSE_PINCH
-
-    return two_finger_pose_kind(hand)
-
-
-def two_finger_pose_kind(hand):
-    """Which two-finger pose this is, or None.
-
-    Both are index and middle out with ring and pinky in; they differ only
-    in which way the hand faces, and therefore in how you swipe with them.
-    Establishing the fingers first and the direction second matters: the
-    finger test holds at any angle, so the pose is never missed because
-    the hand happened to be turned.
-    """
 
     fingers = hand_state.fingers_out(hand)
 
@@ -134,16 +124,4 @@ def two_finger_pose_kind(hand):
         and not fingers["pinky"]
     )
 
-    if not two_out:
-        return None
-
-    if hand_state.fingers_aimed_at_camera(hand_state.shape_of(hand)):
-        return POSE_GUN
-
-    return POSE_PEACE
-
-
-def is_two_finger_pose(hand):
-    """Index and middle out, ring and pinky in -- in either orientation."""
-
-    return two_finger_pose_kind(hand) is not None
+    return POSE_TWO_FINGER if two_out else None

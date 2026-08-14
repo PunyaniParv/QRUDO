@@ -17,7 +17,7 @@ and loaded at startup.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "sarv_calibration.json"
@@ -37,10 +37,14 @@ class Calibration:
     min_hand_on_screen: float
     pinch_gap: float
 
-    #: Thresholds a loaded file did not have, filled in from the defaults.
-    #: Set after loading rather than declared as one of them, so it is not
-    #: itself saved, compared, or looked for in the file.
-    incomplete = ()
+    #: Notes about the loading rather than thresholds, so they are kept
+    #: out of the file and out of any comparison between two calibrations.
+    #:
+    #: ``incomplete`` is what the file did not have and took from the
+    #: defaults; ``pulled`` is what it did have and was implausible.  Both
+    #: mean those thresholds were not really measured.
+    incomplete: tuple = field(default=(), compare=False, repr=False)
+    pulled: tuple = field(default=(), compare=False, repr=False)
 
     @classmethod
     def load(cls, path=None):
@@ -63,7 +67,7 @@ class Calibration:
         except (OSError, ValueError):
             return None
 
-        known = {f.name for f in fields(cls)}
+        known = cls.thresholds()
         given = {k: v for k, v in data.items() if k in known}
 
         if not given:
@@ -76,13 +80,24 @@ class Calibration:
             given.update({name: getattr(defaults, name) for name in missing})
 
         calibration = cls(**given)
-        calibration.incomplete = sorted(missing)
+        calibration.incomplete = tuple(sorted(missing))
 
         return calibration
 
+    @classmethod
+    def thresholds(cls):
+        """The names that are actually thresholds."""
+
+        return {f.name for f in fields(cls) if f.compare}
+
     def save(self, path=None):
         path = Path(path) if path else DEFAULT_PATH
-        path.write_text(json.dumps(asdict(self), indent=2) + "\n")
+
+        kept = {name: value for name, value in asdict(self).items()
+                if name in self.thresholds()}
+
+        path.write_text(json.dumps(kept, indent=2) + "\n")
+
         return path
 
     #: What each threshold may sensibly be, whatever was measured.  A
@@ -114,7 +129,7 @@ class Calibration:
                 setattr(self, name, now)
                 pulled.append(f"{name} was {was:.2f}, kept to {now:.2f}")
 
-        return self, pulled
+        return self, tuple(pulled)
 
     def apply(self):
         """Put these numbers where the detectors read them from.
@@ -337,7 +352,7 @@ def load_and_apply(path=None):
         return None
 
     calibration, pulled = calibration.sensible()
-    calibration.pulled = pulled
+    calibration.pulled = tuple(pulled)
     calibration.apply()
 
     return calibration

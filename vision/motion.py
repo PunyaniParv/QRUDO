@@ -14,10 +14,8 @@ which is where MediaPipe is by far the most accurate, so nothing about
 recognising it leans on depth.  Aiming the fingers at the camera instead
 puts the whole gesture along the one axis a single camera guesses at.
 
-Also accepted, since they cost nothing and are what some people reach for:
-
-  * the same rotation with the fingers aimed at the camera
-  * moving the peace sign bodily across, rather than rotating it
+The turn is read the same whichever way the two fingers face -- held up,
+or aimed at the camera.
 """
 
 from __future__ import annotations
@@ -38,14 +36,6 @@ ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
 SWIPE_QUIET = 0.12        # how still the hand must go before the next one
 POSE_HOLD = 0.15          # the pose must be held this long before it counts
-
-#: Moving the peace sign bodily across used to count as a swipe too.  It
-#: is off by default: shifting your hand a little is not a gesture, and
-#: while it was on, it was.  The wrist turn is the gesture.
-SWIPE_ALLOW_SLIDE = False
-
-SWIPE_SLIDE = 0.90        # palm widths the hand must cover
-SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 
 #: Raising and lowering a pinched hand, for volume.  Up and down is a
 #: movement of the whole hand rather than a turn of the wrist, because a
@@ -210,12 +200,7 @@ def detect_swipe(hand, handedness=None):
     turn, turn_speed, turn_agree = measure(
         times, [sample[1]["aim"] for sample in window])
 
-    # Moving the hand across: only the peace sign, and measured in palm
-    # widths so distance from the camera does not matter.
     mean_scale = sum(sample[1]["scale"] for sample in window) / len(window)
-
-    slide, slide_speed, slide_agree = measure(
-        times, [sample[1]["x"] / mean_scale for sample in window])
 
     # Raising or lowering the hand, measured against where it was when the
     # pose began rather than against where it was a moment ago.
@@ -281,30 +266,20 @@ def detect_swipe(hand, handedness=None):
     _debug.update(
         settling=False,
         turn=round(abs(turn), 2),
-        slide=round(abs(slide), 2),
         lift=round(lift, 2),
         lift_speed=round(lift_speed, 2),
         speed=round(turn_speed, 2),
         agree=round(turn_agree, 2),
         peak_turn=round(_peak("turn", abs(turn), moment), 2),
-        peak_slide=round(_peak("slide", abs(slide), moment), 2),
         peak_speed=round(_peak("speed", turn_speed, moment), 2),
         peak_agree=round(_peak("agree", turn_agree, moment), 2),
     )
 
     turned = (
-        _state.armed_kind in (gestures.POSE_GUN, gestures.POSE_PEACE)
+        _state.armed_kind == gestures.POSE_TWO_FINGER
         and abs(turn) >= SWIPE_TURN
         and turn_speed >= SWIPE_TURN_SPEED
         and turn_agree >= SWIPE_CONSISTENCY
-    )
-
-    slid = (
-        SWIPE_ALLOW_SLIDE
-        and _state.armed_kind == gestures.POSE_PEACE
-        and abs(slide) >= SWIPE_SLIDE
-        and slide_speed >= SWIPE_SLIDE_SPEED
-        and slide_agree >= SWIPE_CONSISTENCY
     )
 
     # Back near where it started: ready to count again, in either
@@ -324,13 +299,13 @@ def detect_swipe(hand, handedness=None):
         and not _state.lifted
     )
 
-    if not turned and not slid and not lifted:
+    if not turned and not lifted:
         return None
 
     # Sideways first: a turn of the wrist barely moves the hand up or
     # down, while raising it can wobble the fingers a little.
-    if turned or slid:
-        moving_right = (turn if turned else slide) > 0
+    if turned:
+        moving_right = turn > 0
 
         if not FRAME_IS_MIRRORED:
             moving_right = not moving_right

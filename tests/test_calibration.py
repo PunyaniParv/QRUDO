@@ -309,4 +309,4 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
         kept, pulled = fine.sensible()
 
         self.assertEqual(kept.pinch_gap, 0.35)
-        self.assertEqual(pulled, [])
+        self.assertEqual(pulled, ())
