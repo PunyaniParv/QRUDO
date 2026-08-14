@@ -83,6 +83,8 @@ def legend_lines(mapping):
         "TWO_FINGER": "two fingers",
         "SWIPE_LEFT": "2 fingers, turn wrist left",
         "SWIPE_RIGHT": "2 fingers, turn wrist right",
+        "SWIPE_UP": "2 fingers, raise hand",
+        "SWIPE_DOWN": "2 fingers, lower hand",
     }
 
     return [
@@ -135,6 +137,7 @@ def tuning_lines(state, motion, hand_state):
         f"   pose  {state.get('pose')}   armed {state.get('armed')}",
         f"   aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
         line("turn ", "turn", motion.SWIPE_TURN),
+        line("lift ", "lift", motion.SWIPE_LIFT),
         line("speed", "speed", motion.SWIPE_TURN_SPEED),
         line("agree", "agree", motion.SWIPE_CONSISTENCY),
         "   ext   " + "  ".join(

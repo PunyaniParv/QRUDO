@@ -38,6 +38,22 @@ SWIPE_COOLDOWN = 0.60
 SWIPE_QUIET = 0.12        # how still the hand must go before the next one
 POSE_HOLD = 0.15          # the pose must be held this long before it counts
 
+# Raising and lowering the same two fingers, for volume.  Height is judged
+# against where the hand is resting rather than against where it was a
+# moment ago: the way back from a raised hand is a lowered hand, and
+# nobody rests their hand at the bottom of its range.
+SWIPE_LIFT = 0.60         # hand-sizes it must cover
+SWIPE_LIFT_SPEED = 1.20   # per second
+LIFT_STILL = 0.50         # below this speed the hand counts as at rest
+REST_DWELL = 1.00         # and must stay so this long to become the rest
+
+#: How much smaller the other movement must be.  Seeking and volume share
+#: a pose, so each frame has to say which of the two a movement was -- and
+#: a turn raises the hand a little while a raise turns it a little.  Only a
+#: movement that is clearly one of them counts; anything in between is a
+#: diagonal nobody meant, and firing either would be a guess.
+CROSSTALK = 0.60
+
 #: Both scripts mirror the frame before detection, so x increases to the
 #: user's right and a rightward swipe is a rise in x.
 FRAME_IS_MIRRORED = True
@@ -127,6 +143,50 @@ def measure(times, values):
     return change, speed, directness
 
 
+def _height(window, screen, mean_scale, moment):
+    """How far the hand is above or below where it is resting, and how fast.
+
+    Wherever it is held still becomes the height to judge against.  A fixed
+    starting point does not work: a hand comes into view from below, so the
+    pose is first seen near the bottom of its range, and from there up is
+    easy while down would mean leaving the picture.
+
+    Settling somewhere takes a full second, because there is a pause at the
+    top of every raise -- and a shorter dwell made the raised position the
+    new resting height, so putting the hand back down counted as lowering
+    it.
+    """
+
+    if _state.neutral_y is None:
+        _state.neutral_y = window[0][1]["y"]
+
+    latest = window[-3:]
+
+    if len(latest) >= 2:
+        span = latest[-1][0] - latest[0][0]
+        heights = [sample[1]["y"] for sample in latest]
+        drift = (max(heights) - min(heights)) / mean_scale
+
+        if span > 0 and drift / span < LIFT_STILL:
+            if _state.still_since is None:
+                _state.still_since = moment
+
+            if moment - _state.still_since >= REST_DWELL:
+                _state.neutral_y = heights[-1]
+        else:
+            _state.still_since = None
+
+    lift = (_state.neutral_y - screen[hand_state.MIDDLE_MCP].y) / mean_scale
+
+    # How briskly it got there: position alone would let a hand lowered
+    # slowly to the desk turn the volume down on its way.
+    _, speed, _ = measure(
+        [sample[0] for sample in window],
+        [-sample[1]["y"] / mean_scale for sample in window])
+
+    return lift, speed
+
+
 def detect_swipe(hand, handedness=None):
     """Detect a two-finger swipe.  ``handedness`` is accepted and ignored."""
 
@@ -142,6 +202,7 @@ def detect_swipe(hand, handedness=None):
         moment,
         aim=hand_state.pointing_direction(hand),
         x=screen[hand_state.MIDDLE_MCP].x,
+        y=screen[hand_state.MIDDLE_MCP].y,
         scale=hand_state.hand_scale(screen)
     )
 
@@ -188,6 +249,8 @@ def detect_swipe(hand, handedness=None):
 
     mean_scale = sum(sample[1]["scale"] for sample in window) / len(window)
 
+    lift, lift_speed = _height(window, screen, mean_scale, moment)
+
     # Bringing the hand back is the same movement as swiping the other
     # way, so after a swipe nothing counts until it has gone quiet.
     if _state.settling:
@@ -201,6 +264,7 @@ def detect_swipe(hand, handedness=None):
     _debug.update(
         settling=False,
         turn=round(abs(turn), 2),
+        lift=round(lift, 2),
         speed=round(turn_speed, 2),
         agree=round(turn_agree, 2),
         peak_turn=round(_peak("turn", abs(turn), moment), 2),
@@ -218,14 +282,39 @@ def detect_swipe(hand, handedness=None):
     if _state.is_cooling(moment):
         return None
 
-    if not turned:
-        return None
+    # Back near the resting height: ready to count again, either way.
+    # Before the cooldown check, because the hand comes back during it.
+    if abs(lift) < SWIPE_LIFT * 0.5:
+        _state.raised = False
 
-    moving_right = turn > 0
+    raised = (
+        abs(lift) >= SWIPE_LIFT
+        and lift_speed >= SWIPE_LIFT_SPEED
+        and not _state.raised
+    )
 
-    if not FRAME_IS_MIRRORED:
-        moving_right = not moving_right
+    # Which of the two it was.  Each is only itself if the other barely
+    # happened; a movement that is half of each is a diagonal nobody meant.
+    sideways = abs(turn) / SWIPE_TURN
+    upright = abs(lift) / SWIPE_LIFT
 
-    _state.fired(moment)
+    if turned and upright < CROSSTALK:
+        moving_right = turn > 0
 
-    return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
+        if not FRAME_IS_MIRRORED:
+            moving_right = not moving_right
+
+        _state.fired(moment)
+
+        return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
+
+    if raised and sideways < CROSSTALK:
+        # Not fired(): that waits for the hand to stop, and a hand held up
+        # is not going to.  Coming back down is what readies the next one.
+        _state.raised = True
+        _state.still_since = None
+        _state.cooldown_until = moment + SWIPE_COOLDOWN
+
+        return "SWIPE_UP" if lift > 0 else "SWIPE_DOWN"
+
+    return None

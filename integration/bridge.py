@@ -31,6 +31,8 @@ POSE_COMMANDS = {
 SWIPE_COMMANDS = {
     "SWIPE_LEFT": Command.REWIND,
     "SWIPE_RIGHT": Command.FORWARD,
+    "SWIPE_UP": Command.VOLUME_UP,
+    "SWIPE_DOWN": Command.VOLUME_DOWN,
 }
 
 # Deliberately unmapped for now:

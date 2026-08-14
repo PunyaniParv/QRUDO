@@ -563,3 +563,91 @@ class TestItSaysWhy(GestureTestCase):
         for hand in (fist(), peace_sign(), pointing(),
                      make_hand(), make_hand(LOOSE, LOOSE, LOOSE, LOOSE)):
             self.assertTrue(gestures.explain(hand, HAND).strip())
+
+
+class TestVolumeOnTwoFingers(GestureTestCase):
+    """Raising and lowering the same two fingers that seek.
+
+    Sharing one pose is what this was moved off once already: a turn
+    raises the hand a little and a raise turns it a little, so every
+    movement has to be told apart from the other one.  It is back by
+    request, with the rule that a movement must be clearly one of them.
+    """
+
+    def peace(self, cy=0.50, roll=0.0):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy, roll=roll)
+
+    def move(self, start, end, seconds=0.30, frames=12, roll=0.0, hold=True):
+        if hold:
+            self.hold_pose(self.peace(cy=start, roll=roll))
+
+        result = None
+        for i in range(frames):
+            cy = start + (end - start) * (i / (frames - 1))
+            result = result or motion.detect_swipe(
+                self.peace(cy=cy, roll=roll), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def rest(self, cy, seconds=1.30, frames=26):
+        for _ in range(frames):
+            motion.detect_swipe(self.peace(cy=cy), HAND)
+            self.clock.tick(seconds / frames)
+
+    def test_raising_turns_it_up(self):
+        self.assertEqual(self.move(0.55, 0.35), "SWIPE_UP")
+
+    def test_lowering_turns_it_down(self):
+        self.assertEqual(self.move(0.45, 0.65), "SWIPE_DOWN")
+
+    def test_putting_the_hand_back_does_nothing(self):
+        self.assertEqual(self.move(0.55, 0.35), "SWIPE_UP")
+        self.assertIsNone(self.move(0.35, 0.55, hold=False))
+
+    def test_lowering_after_settling_at_a_new_height(self):
+        self.assertEqual(self.move(0.55, 0.35), "SWIPE_UP")
+        self.rest(0.35)
+        self.assertEqual(self.move(0.35, 0.55, hold=False), "SWIPE_DOWN")
+
+    def test_a_slow_raise_is_not_a_gesture(self):
+        self.assertIsNone(self.move(0.55, 0.35, seconds=4.0, frames=40))
+
+    def test_turning_still_seeks(self):
+        """The other half of the pose has to keep working."""
+
+        result = None
+        self.hold_pose(self.peace(roll=math.radians(-25)))
+
+        for i in range(12):
+            result = result or motion.detect_swipe(
+                self.peace(roll=math.radians(-25 + 50 * (i / 11))), HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertEqual(result, "SWIPE_RIGHT")
+
+    def test_a_turn_does_not_change_the_volume(self):
+        result = None
+        self.hold_pose(self.peace(roll=math.radians(-25)))
+
+        for i in range(12):
+            result = result or motion.detect_swipe(
+                self.peace(roll=math.radians(-25 + 50 * (i / 11))), HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertNotIn(result, ("SWIPE_UP", "SWIPE_DOWN"))
+
+    def test_half_one_and_half_the_other_fires_nothing(self):
+        """A diagonal is not a gesture, and guessing which it was is worse
+        than doing nothing."""
+
+        self.hold_pose(self.peace(cy=0.55, roll=math.radians(-20)))
+
+        result = None
+        for i in range(12):
+            share = i / 11
+            result = result or motion.detect_swipe(
+                self.peace(cy=0.55 - 0.14 * share,
+                           roll=math.radians(-20 + 34 * share)), HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertIsNone(result)

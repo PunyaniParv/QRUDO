@@ -1,0 +1,8 @@
+{
+  "extended_ratio": 0.82,
+  "open_ratio": 0.9,
+  "fist_reach": 1.15,
+  "swipe_turn": 0.407,
+  "swipe_turn_speed": 2.041,
+  "min_hand_on_screen": 0.1008
+}

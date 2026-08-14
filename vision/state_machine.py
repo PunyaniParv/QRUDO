@@ -96,6 +96,12 @@ class SwipeState:
         self.cooldown_until = 0.0
         self.armed_since = 0.0
         self.settling = False
+
+        # For the vertical gesture: the height the hand is judged against,
+        # and how long it has been still enough to move it there.
+        self.neutral_y: float | None = None
+        self.still_since: float | None = None
+        self.raised = False
         self._seen_kind = None
         self._seen_since = 0.0
         self._last_pose_at = 0.0
@@ -135,6 +141,7 @@ class SwipeState:
                 # movement made since -- not whatever the hand was doing on
                 # its way into shot.
                 self.armed_since = now
+                self.neutral_y = None
 
             self.armed_until = now + self.arm_hold
             self.armed_kind = kind
@@ -167,6 +174,9 @@ class SwipeState:
         self.armed_until = 0.0
         self.armed_kind = None
         self.settling = False
+        self.neutral_y = None
+        self.still_since = None
+        self.raised = False
         self._seen_kind = None
 
 
