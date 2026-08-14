@@ -26,17 +26,30 @@ def reset():
     _stabiliser.clear()
 
 
-def classify(hand):
+def classify(hand, handedness=None):
     """The shape this single frame shows, before stabilising."""
+
+    screen = hand_state.screen_of(hand)
+    handedness = getattr(hand, "handedness", handedness)
+
+    # A fist and an open hand are only those when the palm is toward the
+    # camera.  From behind they are a hand doing something else -- resting
+    # on a desk, reaching for the keyboard -- and counting those is a
+    # command nobody asked for.  The two-finger poses are exempt: the
+    # swipe can be made with the fingers aimed at the lens, where the palm
+    # faces neither way.
+    palm_toward_us = hand_state.is_palm_facing(screen, handedness)
 
     fingers = hand_state.fingers_out(hand)
     extended = sum(fingers.values())
 
     if extended == 0:
         # Nothing straight is not enough: a hand at rest has nothing
-        # straight either.  It has to be shut.
-        return ("FIST" if hand_state.is_clenched(hand_state.screen_of(hand))
-                else "UNKNOWN")
+        # straight either.  It has to be shut, and facing us.
+        if not hand_state.is_clenched(screen) or not palm_toward_us:
+            return "UNKNOWN"
+
+        return "FIST"
 
     if (
         fingers["index"]
@@ -55,7 +68,7 @@ def classify(hand):
         return "TWO_FINGER"
 
     if extended == 4:
-        return "OPEN_PALM"
+        return "OPEN_PALM" if palm_toward_us else "UNKNOWN"
 
     return "UNKNOWN"
 
@@ -63,11 +76,12 @@ def classify(hand):
 def detect_gesture(hand, handedness=None):
     """The settled gesture, once it has held for a few frames.
 
-    ``handedness`` is accepted and ignored; nothing here depends on which
-    hand it is any more.  It is kept so callers do not have to change.
+    ``handedness`` is needed to tell a palm from the back of a hand: the
+    two are mirror images, so which hand it is decides which is which.
+    It is read from the hand itself when there is one.
     """
 
-    return _stabiliser.update(classify(hand))
+    return _stabiliser.update(classify(hand, handedness))
 
 
 def two_finger_pose_kind(hand):
