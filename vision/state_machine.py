@@ -95,6 +95,7 @@ class SwipeState:
         self.armed_kind = None
         self.cooldown_until = 0.0
         self.armed_since = 0.0
+        self.settling = False
         self._seen_kind = None
         self._seen_since = 0.0
         self._last_pose_at = 0.0
@@ -145,8 +146,16 @@ class SwipeState:
         return now < self.cooldown_until
 
     def fired(self, now):
-        """A swipe just happened: start fresh so its tail cannot fire again."""
+        """A swipe just happened: start fresh so its tail cannot fire again.
 
+        ``settling`` is the important half.  Every swipe is followed by the
+        hand coming back, and coming back from a leftward turn is a
+        rightward turn -- the same movement a deliberate one makes.  Time
+        alone cannot separate them, so nothing counts again until the hand
+        has actually stopped moving.
+        """
+
+        self.settling = True
         self.history.clear()
         self.armed_until = 0.0
         self.armed_kind = None
@@ -157,6 +166,7 @@ class SwipeState:
         self.history.clear()
         self.armed_until = 0.0
         self.armed_kind = None
+        self.settling = False
         self._seen_kind = None
 
 

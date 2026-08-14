@@ -33,6 +33,7 @@ SWIPE_CONSISTENCY = 0.65  # how directly the motion got where it ended up
 SWIPE_MIN_SAMPLES = 3     # a fast flick is only a few frames long
 ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
+SWIPE_QUIET = 0.12        # how still the hand must go before the next one
 POSE_HOLD = 0.15          # the pose must be held this long before it counts
 
 #: Moving the peace sign bodily across used to count as a swipe too.  It
@@ -82,7 +83,7 @@ def debug_state():
     return dict(_debug)
 
 
-def measure(values, elapsed):
+def measure(times, values):
     """Summarise one signal over the window: (change, speed, directness).
 
     Directness compares where the signal ended up against how far it
@@ -91,6 +92,12 @@ def measure(values, elapsed):
     scores low however fast it shakes.  Counting which frames moved the
     right way is not enough -- alternating samples can reach two thirds
     agreement by luck, which is exactly how a wobble used to fire a swipe.
+
+    Speed is measured across the movement rather than across the window.
+    The window is a fixed half second and a gesture is usually shorter, so
+    dividing by the whole of it charges the movement for the time the hand
+    spent sitting still beforehand -- enough, measured, to drag a brisk
+    turn down to exactly the threshold and lose it.
     """
 
     change = values[-1] - values[0]
@@ -104,7 +111,26 @@ def measure(values, elapsed):
 
     directness = abs(change) / path if path > 0 else 0.0
 
-    return change, abs(change) / elapsed, directness
+    # Trim the still parts off each end.  A hand that never moved has
+    # nothing to trim, so it keeps the whole window and stays slow.
+    edge = abs(change) * 0.1
+    first, last = 0, len(values) - 1
+
+    for i, value in enumerate(values):
+        if abs(value - values[0]) > edge:
+            first = max(0, i - 1)
+            break
+
+    for i in range(len(values) - 1, -1, -1):
+        if abs(values[-1] - values[i]) > edge:
+            last = min(len(values) - 1, i + 1)
+            break
+
+    elapsed = times[last] - times[first]
+
+    speed = abs(change) / elapsed if elapsed > 0 else 0.0
+
+    return change, speed, directness
 
 
 def detect_swipe(hand, handedness=None):
@@ -154,23 +180,34 @@ def detect_swipe(hand, handedness=None):
     if len(window) < SWIPE_MIN_SAMPLES:
         return None
 
-    elapsed = window[-1][0] - window[0][0]
-
-    if elapsed <= 0:
+    if window[-1][0] - window[0][0] <= 0:
         return None
+
+    times = [sample[0] for sample in window]
 
     # Turning the wrist: works with either pose.
     turn, turn_speed, turn_agree = measure(
-        [sample[1]["aim"] for sample in window], elapsed)
+        times, [sample[1]["aim"] for sample in window])
 
     # Moving the hand across: only the peace sign, and measured in palm
     # widths so distance from the camera does not matter.
     mean_scale = sum(sample[1]["scale"] for sample in window) / len(window)
 
     slide, slide_speed, slide_agree = measure(
-        [sample[1]["x"] / mean_scale for sample in window], elapsed)
+        times, [sample[1]["x"] / mean_scale for sample in window])
+
+    # Bringing the hand back is the same movement as swiping the other
+    # way, so after a swipe nothing counts until it has gone quiet.
+    if _state.settling:
+        if abs(turn) < SWIPE_QUIET:
+            _state.settling = False
+
+        _debug.update(turn=round(abs(turn), 2), settling=True)
+
+        return None
 
     _debug.update(
+        settling=False,
         turn=round(abs(turn), 2),
         slide=round(abs(slide), 2),
         speed=round(turn_speed, 2),

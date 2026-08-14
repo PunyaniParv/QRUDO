@@ -610,3 +610,58 @@ class TestPresence(GestureTestCase):
 def gd_presence(grace=0.35):
     from vision.state_machine import Presence
     return Presence(grace)
+
+
+class TestReturnStroke(GestureTestCase):
+    """Bringing the hand back must not count as the opposite swipe.
+
+    Reported from real use: turn left to rewind, straighten up, and the
+    straightening registered as a swipe right.  Every swipe is followed by
+    a return, and a return from the left is a movement to the right --
+    exactly what a deliberate rightward turn looks like.
+    """
+
+    def rotate_through(self, start, end, seconds=0.30, frames=12):
+        result = None
+        for i in range(frames):
+            degrees = start + (end - start) * (i / (frames - 1))
+            result = result or motion.detect_swipe(
+                peace_sign(roll=math.radians(degrees)), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def hold_still(self, degrees=0, seconds=0.8, frames=16):
+        result = None
+        for _ in range(frames):
+            result = result or motion.detect_swipe(
+                peace_sign(roll=math.radians(degrees)), HAND)
+            self.clock.tick(seconds / frames)
+        return result
+
+    def test_returning_from_left_is_not_a_right_swipe(self):
+        self.hold_pose(peace_sign())
+        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
+        self.assertIsNone(self.rotate_through(-30, 0),
+                          "the hand coming back counted as a swipe")
+
+    def test_returning_from_right_is_not_a_left_swipe(self):
+        self.hold_pose(peace_sign())
+        self.assertEqual(self.rotate_through(0, 30), "SWIPE_RIGHT")
+        self.assertIsNone(self.rotate_through(30, 0),
+                          "the hand coming back counted as a swipe")
+
+    def test_a_second_swipe_still_works_after_settling(self):
+        """Blocking the return must not block the next real gesture."""
+
+        self.hold_pose(peace_sign())
+        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
+        self.rotate_through(-30, 0)
+        self.hold_still(0)
+        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
+
+    def test_swiping_the_other_way_still_works(self):
+        self.hold_pose(peace_sign())
+        self.assertEqual(self.rotate_through(0, -30), "SWIPE_LEFT")
+        self.rotate_through(-30, 0)
+        self.hold_still(0)
+        self.assertEqual(self.rotate_through(0, 30), "SWIPE_RIGHT")
