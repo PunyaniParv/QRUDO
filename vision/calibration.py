@@ -32,10 +32,7 @@ class Calibration:
     fist_reach: float
     swipe_turn: float
     swipe_turn_speed: float
-    swipe_lift: float
-    swipe_lift_speed: float
     min_hand_on_screen: float
-    pinch_gap: float
 
     #: Notes about the loading rather than thresholds, so they are kept
     #: out of the file and out of any comparison between two calibrations.
@@ -108,7 +105,6 @@ class Calibration:
         "extended_ratio": (0.60, 0.95),
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
-        "pinch_gap": (0.20, 0.55),
         "min_hand_on_screen": (0.02, 0.12),
     }
 
@@ -145,12 +141,9 @@ class Calibration:
         hand_state.OPEN_RATIO = self.open_ratio
         hand_state.FIST_REACH = self.fist_reach
         hand_state.MIN_HAND_ON_SCREEN = self.min_hand_on_screen
-        hand_state.PINCH_GAP = self.pinch_gap
 
         motion.SWIPE_TURN = self.swipe_turn
         motion.SWIPE_TURN_SPEED = self.swipe_turn_speed
-        motion.SWIPE_LIFT = self.swipe_lift
-        motion.SWIPE_LIFT_SPEED = self.swipe_lift_speed
 
     def describe(self):
         return [
@@ -158,10 +151,27 @@ class Calibration:
             f"hand open above       {self.open_ratio:.2f}",
             f"fist below            {self.fist_reach:.2f}",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
-            f"hand lift             {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
-            f"pinch below           {self.pinch_gap:.2f}",
             f"smallest hand read    {self.min_hand_on_screen:.3f} of the frame",
         ]
+
+
+def edge(values, share, default):
+    """A value near the edge of a set, ignoring the last few.
+
+    Not the very lowest or highest.  A calibration run of a hundred frames
+    holds a few where the hand was arriving, leaving, or half read, and
+    one of those is enough to put the edge somewhere absurd -- a fist
+    measured 0.10 for "how straight is a straight finger" this way, when
+    every real frame said about 0.9.
+    """
+
+    if not values:
+        return default
+
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round(share * (len(ordered) - 1))))
+
+    return ordered[index]
 
 
 def between(low, high, defaults_to, fraction=0.5, least=0.08):
@@ -172,11 +182,11 @@ def between(low, high, defaults_to, fraction=0.5, least=0.08):
     gap to sit in -- the two cases were not distinguishable on this camera
     -- so the existing value is kept rather than inventing one.
 
-    A gap too narrow to be meant is treated the same way.  Measured a
-    pinch at 0.70 and an open hand at 0.80, this used to answer 0.75 and
-    sound confident: a threshold with no margin on either side, which then
-    read very nearly everything as a pinch.  Barely separable is not
-    separable.
+    A gap too narrow to be meant is treated the same way.  Given two poses
+    measured a tenth apart, this used to answer with the midpoint and sound
+    confident -- a threshold with no margin on either side, which on a hand
+    that moves at all puts both cases on the wrong side of it about half
+    the time.  Barely separable is not separable.
     """
 
     if high - low < least:
@@ -211,10 +221,10 @@ def from_samples(poses, moves, current):
                 for score in reading["ext"].values()]
 
     # Each of these has its own scale, so what counts as a usable gap
-    # differs: finger extension runs from about 0.4 to 1.0, the pinch from
-    # 0.2 to 0.85, the fist reach from 1.0 to 1.6.
+    # differs: finger extension runs from about 0.4 to 1.0, and the fist
+    # reach from 1.0 to 1.6.
     extended_ratio, ok = between(
-        max(curled, default=0.0), min(straight, default=1.0),
+        edge(curled, 0.90, 0.0), edge(straight, 0.10, 1.0),
         current.extended_ratio, least=0.10)
 
     if not ok:
@@ -230,7 +240,7 @@ def from_samples(poses, moves, current):
              for score in reading["ext"].values()]
 
     open_ratio, ok = between(
-        max(slack, default=0.0), min(straight, default=1.0),
+        edge(slack, 0.90, 0.0), edge(straight, 0.10, 1.0),
         current.open_ratio, least=0.06)
 
     if not ok:
@@ -247,7 +257,7 @@ def from_samples(poses, moves, current):
                for score in reading["reach"].values()]
 
     fist_reach, ok = between(
-        max(fist, default=0.0), min(resting, default=99.0),
+        edge(fist, 0.90, 0.0), edge(resting, 0.10, 99.0),
         current.fist_reach, least=0.12)
 
     if not ok:
@@ -263,29 +273,6 @@ def from_samples(poses, moves, current):
     elif missed:
         warnings.append("one of the wrist turns barely moved, and was ignored")
 
-    swipe_lift, swipe_lift_speed, missed = _movement(
-        moves.get("lift", []), current.swipe_lift, current.swipe_lift_speed)
-
-    if not moves.get("lift"):
-        warnings.append("no hand raise was recorded")
-    elif missed:
-        warnings.append("one of the hand raises barely moved, and was ignored")
-
-    # A pinch is below this.  The other side is an open hand, which is
-    # what a pinch is most likely to be confused with once the fist test
-    # has had its say.
-    pinched = [reading["pinch"] for reading in poses.get("pinch", [])]
-
-    apart = [reading["pinch"]
-             for name in ("open", "two")
-             for reading in poses.get(name, [])]
-
-    pinch, ok = between(max(pinched, default=0.0), min(apart, default=9.0),
-                        current.pinch_gap, least=0.20)
-
-    if not ok:
-        warnings.append("could not tell a pinch from an open hand")
-
     # How small a hand may look and still be read.  Set from how large
     # yours looked while calibrating, so calibrating at arm's length and
     # calibrating across the room both work.
@@ -293,7 +280,8 @@ def from_samples(poses, moves, current):
              for readings in poses.values()
              for reading in readings]
 
-    min_hand = (min(sizes) * 0.6 if sizes else current.min_hand_on_screen)
+    min_hand = (edge(sizes, 0.10, 0.1) * 0.6 if sizes
+                else current.min_hand_on_screen)
 
     return Calibration(
         extended_ratio=round(extended_ratio, 3),
@@ -301,10 +289,7 @@ def from_samples(poses, moves, current):
         fist_reach=round(fist_reach, 3),
         swipe_turn=round(swipe_turn, 3),
         swipe_turn_speed=round(swipe_turn_speed, 3),
-        swipe_lift=round(swipe_lift, 3),
-        swipe_lift_speed=round(swipe_lift_speed, 3),
         min_hand_on_screen=round(min_hand, 4),
-        pinch_gap=round(pinch, 3),
     ), warnings
 
 
@@ -369,8 +354,5 @@ def current():
         fist_reach=hand_state.FIST_REACH,
         swipe_turn=motion.SWIPE_TURN,
         swipe_turn_speed=motion.SWIPE_TURN_SPEED,
-        swipe_lift=motion.SWIPE_LIFT,
-        swipe_lift_speed=motion.SWIPE_LIFT_SPEED,
         min_hand_on_screen=hand_state.MIN_HAND_ON_SCREEN,
-        pinch_gap=hand_state.PINCH_GAP,
     )

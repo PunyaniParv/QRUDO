@@ -18,11 +18,9 @@ POSES = [
     ("fist", "Make a FIST, palm toward the camera",
      "this plays and pauses", 3.0),
     ("open", "Hold your hand OPEN, fingers spread",
-     "so an open hand is told from a pinch", 3.0),
+     "so a hand doing nothing is not read as one", 3.0),
     ("two", "Hold up TWO FINGERS",
-     "the pose for seeking", 3.0),
-    ("pinch", "PINCH your thumb and finger together",
-     "the pose for volume", 3.0),
+     "the pose you swipe with", 3.0),
     ("rest", "Let your hand REST naturally, however it falls",
      "so a hand doing nothing is left alone", 3.0),
 ]
@@ -31,8 +29,6 @@ POSES = [
 MOVES = [
     ("turn", "Two fingers up: TURN YOUR WRIST left, then back",
      "this rewinds and skips forward", 3),
-    ("lift", "PINCH, then RAISE your hand and lower it again",
-     "this is the volume", 3),
 ]
 
 READY_SECONDS = 2.0
@@ -139,7 +135,6 @@ class _Session:
                     "ext": state["ext"],
                     "reach": state["reach"],
                     "scale": state.get("scale", 0.1),
-                    "pinch": state.get("pinch", 9.0),
                 })
 
         print(f"    {prompt}: {len(readings)} readings")
@@ -209,10 +204,7 @@ class _Session:
 def _bigger(biggest, state, prompt):
     """The larger of what we have and what this frame shows."""
 
-    if prompt.lower().find("turn") >= 0:
-        size, speed = abs(state.get("turn", 0)), state.get("speed", 0)
-    else:
-        size, speed = abs(state.get("lift", 0)), state.get("lift_speed", 0)
+    size, speed = abs(state.get("turn", 0)), state.get("speed", 0)
 
     return (max(biggest[0], size), max(biggest[1], speed))
 
@@ -222,7 +214,7 @@ def banner():
         "",
         "  SARV setup",
         "",
-        "  Four poses to hold, then two movements to repeat.  Stand where",
+        "  Four poses to hold, then one movement to repeat.  Stand where",
         "  you actually intend to use it -- the numbers depend on how big",
         "  your hand looks, so calibrating close up will not suit a demo",
         "  from across the room.",

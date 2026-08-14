@@ -21,7 +21,6 @@ import math
 # ---------------------------------------------------------
 
 WRIST = 0
-THUMB_TIP = 4
 INDEX_TIP = 8
 INDEX_MCP = 5
 MIDDLE_MCP = 9
@@ -164,71 +163,6 @@ def hand_scale(hand_landmarks):
         distance_2d(hand_landmarks[WRIST], hand_landmarks[MIDDLE_MCP]),
         0.02
     )
-
-
-def pinch_gap(hand):
-    """How far apart the thumb and index finger are, in palm lengths.
-
-    In space rather than on screen.  On screen they collapse together
-    whenever the hand points at the camera, whatever the thumb is really
-    doing -- which had a hand aimed at the lens reading as a pinch.
-    """
-
-    shape = shape_of(hand)
-
-    palm = distance(shape[WRIST], shape[MIDDLE_MCP])
-
-    if palm == 0:
-        return 99.0
-
-    return distance(shape[THUMB_TIP], shape[INDEX_TIP]) / palm
-
-
-def is_pinching(hand):
-    """Thumb and index finger together, with the index still out in front.
-
-    The second half is what separates a pinch from a fist.  A closed hand
-    also has the thumb lying against the index finger, so proximity alone
-    calls every fist a pinch -- but a fist tucks the fingertip into the
-    palm, while a pinch holds it out where the thumb meets it.
-    """
-
-    screen = screen_of(hand)
-
-    # A shut hand is never a pinch, whatever the thumb is doing.  It lies
-    # against the curled index finger, so the gap between them is nearly
-    # as small as a real pinch -- close enough that a fist flickered
-    # between the two, which both lost the fist half the time and fired
-    # play and pause together when the flicker went and came back.
-    if is_clenched(screen):
-        return False
-
-    if pinch_gap(hand) >= PINCH_GAP:
-        return False
-
-    # Against a peace sign, whose thumb is tucked behind the palm and so
-    # has to be guessed at -- the guess sometimes landing near the index
-    # finger, which made two fingers look pinched.
-    #
-    # Whichever way the hand is held, pinching pulls the index finger back
-    # from where its neighbour is: with the others out it is drawn down to
-    # the thumb while they stay up, and with the others closed the middle
-    # finger is closed too.  A peace sign has both up and level, which is
-    # neither.
-    #
-    # Asking whether the index was bent did not work: a pinch keeps it
-    # nearly straight and the bend is mostly in the last joint.
-    shape = shape_of(hand)
-
-    middle_out = finger_is_extended(shape, *FINGERS["middle"])
-
-    index_behind = (finger_reach(screen, INDEX_TIP, INDEX_MCP)
-                    < finger_reach(screen, 12, MIDDLE_MCP) - PINCH_BEHIND)
-
-    if middle_out and not index_behind:
-        return False
-
-    return finger_reach(screen, INDEX_TIP, INDEX_MCP) >= FIST_REACH
 
 
 def is_prominent(hand):

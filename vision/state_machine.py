@@ -95,9 +95,6 @@ class SwipeState:
         self.armed_kind = None
         self.cooldown_until = 0.0
         self.armed_since = 0.0
-        self.neutral_y = None
-        self.still_since: float | None = None
-        self.lifted = False
         self.settling = False
         self._seen_kind = None
         self._seen_since = 0.0
@@ -138,7 +135,6 @@ class SwipeState:
                 # movement made since -- not whatever the hand was doing on
                 # its way into shot.
                 self.armed_since = now
-                self.neutral_y = None
 
             self.armed_until = now + self.arm_hold
             self.armed_kind = kind
@@ -170,9 +166,6 @@ class SwipeState:
         self.history.clear()
         self.armed_until = 0.0
         self.armed_kind = None
-        self.neutral_y = None
-        self.still_since: float | None = None
-        self.lifted = False
         self.settling = False
         self._seen_kind = None
 

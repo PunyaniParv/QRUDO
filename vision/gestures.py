@@ -16,8 +16,7 @@ from __future__ import annotations
 from . import hand_state
 from .state_machine import GestureStabiliser
 
-POSE_TWO_FINGER = "two_finger"  # index and middle out: the seeking pose
-POSE_PINCH = "pinch"            # thumb and index together: the volume pose
+POSE_TWO_FINGER = "two_finger"  # index and middle out: the pose a swipe is made from
 
 _stabiliser = GestureStabiliser()
 
@@ -42,16 +41,10 @@ def classify(hand, handedness=None):
     # neither way.
     from_behind = hand_state.is_back_of_hand(screen, handedness)
 
-    # The fist first.  A shut hand lays the thumb against the curled index
-    # finger, which looks much like a pinch, so whichever is asked second
-    # never gets a look at a genuine one of the other.  A fist is the less
-    # ambiguous of the two -- every finger shut -- so it answers first, and
-    # a real pinch is unaffected because its index finger is out.
+    # The fist first: every finger shut is the least ambiguous thing a
+    # hand can be, so nothing else has to work around it.
     if hand_state.is_clenched(screen):
         return "UNKNOWN" if from_behind else "FIST"
-
-    if hand_state.is_pinching(hand):
-        return "PINCH"
 
     fingers = hand_state.fingers_out(hand)
     extended = sum(fingers.values())
@@ -105,7 +98,6 @@ def explain(hand, handedness=None):
     out = [name for name, is_out in fingers.items() if is_out]
 
     reaches = hand_state.reach_scores(screen)
-    gap = hand_state.pinch_gap(hand)
 
     if hand_state.is_back_of_hand(screen, handedness):
         return "back of hand -- fist and open hand are not read from behind"
@@ -113,18 +105,10 @@ def explain(hand, handedness=None):
     if hand_state.is_clenched(screen):
         return "shut -> FIST"
 
-    if hand_state.is_pinching(hand):
-        return f"thumb and finger {gap:.2f} apart -> PINCH"
-
     closed = [name for name, reach in reaches.items()
               if reach < hand_state.FIST_REACH]
 
     if not out:
-        if gap < hand_state.PINCH_GAP:
-            return (f"thumb and finger {gap:.2f} apart, but the index is not "
-                    f"out in front ({reaches['index']:.2f}, needs "
-                    f"{hand_state.FIST_REACH}) -- neither pinch nor fist")
-
         return (f"half closed: {len(closed)} of 4 fingers in, need the index "
                 f"and two others for a fist")
 
@@ -133,7 +117,7 @@ def explain(hand, handedness=None):
         return (f"open but slack: weakest finger {weakest:.2f}, "
                 f"needs {hand_state.OPEN_RATIO} to count as an open hand")
 
-    return f"fingers out: {', '.join(out) or 'none'}   thumb gap {gap:.2f}"
+    return f"fingers out: {', '.join(out) or 'none'}"
 
 
 def detect_gesture(hand, handedness=None):
@@ -150,18 +134,15 @@ def detect_gesture(hand, handedness=None):
 def pose_kind(hand):
     """Which pose a movement could be made from, or None.
 
-    Two fingers for the sideways turn, a pinch for up and down.  Keeping
-    them apart means a hand raised while seeking cannot be read as volume,
-    and the two gestures do not have to be told apart by direction alone.
+    Two fingers, held up or aimed at the camera; which way they face does
+    not matter.
 
-    Which way the two fingers face does not matter.  It used to, when the
-    hand facing the camera could be swiped by sliding it as well as by
-    turning it -- but sliding is gone, both are turned, and telling the
-    orientations apart earned nothing.
+    There was a pinch here too, for volume, and it went: defined by where
+    the thumb is, it was mistaken in turn for a fist, an open hand and two
+    fingers -- because the thumb is the landmark a camera loses first,
+    whenever the hand turns or closes.  Volume is on the keyboard, where
+    brightness already was.
     """
-
-    if hand_state.is_pinching(hand):
-        return POSE_PINCH
 
     fingers = hand_state.fingers_out(hand)
 

@@ -31,8 +31,6 @@ POSE_COMMANDS = {
 SWIPE_COMMANDS = {
     "SWIPE_LEFT": Command.REWIND,
     "SWIPE_RIGHT": Command.FORWARD,
-    "PINCH_UP": Command.VOLUME_UP,
-    "PINCH_DOWN": Command.VOLUME_DOWN,
 }
 
 # Deliberately unmapped for now:
@@ -41,12 +39,14 @@ SWIPE_COMMANDS = {
 #               time you got ready to swipe.
 #   OPEN_PALM   is what a hand looks like on its way to and from every
 #               other gesture, so it would fire constantly.
-#   POINT       is free.  Brightness is what remains unbound: binding it
-#               to a held pose would fire it on the way into and out of
-#               every other gesture, and there is no movement left that is
-#               distinct enough to be safe.  The keyboard covers it --
-#               ctrl+alt+B and ctrl+alt+N -- which is enough for something
-#               set once at the start rather than adjusted mid-demo.
+#   POINT       is free.
+#
+# Volume and brightness are on the keyboard -- ctrl+alt+U and D, B and N.
+# Volume had a gesture, a pinch raised or lowered, and it was more trouble
+# than the other four together: being defined by where the thumb is, it
+# was mistaken in turn for a fist, an open hand and two fingers, because
+# the thumb is the landmark a camera loses first.  Three gestures that
+# cannot be confused with each other beat five that can.
 
 
 class GestureRouter:

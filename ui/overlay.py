@@ -83,9 +83,6 @@ def legend_lines(mapping):
         "TWO_FINGER": "two fingers",
         "SWIPE_LEFT": "2 fingers, turn wrist left",
         "SWIPE_RIGHT": "2 fingers, turn wrist right",
-        "PINCH_UP": "pinch, raise hand",
-        "PINCH_DOWN": "pinch, lower hand",
-        "PINCH": "pinch",
     }
 
     return [
@@ -148,9 +145,7 @@ def tuning_lines(state, motion, hand_state):
             for name, score in state.get("reach", {}).items()
         ) + f"   (fist below {hand_state.FIST_REACH})",
         "   why   " + str(state.get("why", "")),
-        f"   pinch {state.get('pinch', 0):.2f}"
-        f"   (pinch below {hand_state.PINCH_GAP},"
-        f" open above {hand_state.OPEN_RATIO})",
+        f"   open above {hand_state.OPEN_RATIO}",
     ]
 
 

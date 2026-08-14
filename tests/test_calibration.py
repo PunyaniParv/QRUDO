@@ -18,18 +18,16 @@ from vision import hand_state, motion
 from vision.calibration import Calibration, between, current, from_samples
 
 
-def readings(ext, reach, scale=0.15, count=20, pinch=0.8):
+def readings(ext, reach, scale=0.15, count=20):
     """A pose held still, every finger reading the same."""
 
     return [{"ext": dict.fromkeys("imrp", ext),
              "reach": dict.fromkeys("imrp", reach),
-             "scale": scale,
-             "pinch": pinch}
+             "scale": scale}
             for _ in range(count)]
 
 
-DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20,
-                       0.035, 0.33)
+DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.035)
 
 
 class TestWhereTheLineGoes(unittest.TestCase):
@@ -54,7 +52,6 @@ class TestFromSamples(unittest.TestCase):
             "open": readings(open_ext, 1.60, scale),
             "two": readings(open_ext, 1.55, scale),
             "rest": readings(0.75, rest_reach, scale),
-            "pinch": readings(0.75, 1.35, scale, pinch=0.20),
         }
 
     def test_finger_threshold_lands_between_the_two(self):
@@ -113,7 +110,7 @@ class TestApplying(unittest.TestCase):
         self.before.apply()
 
     def test_apply_moves_the_thresholds_the_detectors_read(self):
-        Calibration(0.7, 0.88, 1.3, 0.2, 0.5, 0.4, 0.9, 0.02, 0.3).apply()
+        Calibration(0.7, 0.88, 1.3, 0.2, 0.5, 0.02).apply()
 
         self.assertEqual(hand_state.EXTENDED_RATIO, 0.7)
         self.assertEqual(hand_state.FIST_REACH, 1.3)
@@ -175,7 +172,7 @@ class TestABotchedAttempt(unittest.TestCase):
     def poses(self):
         return {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
                 "two": readings(0.95, 1.55), "rest": readings(0.75, 1.40),
-                "pinch": readings(0.75, 1.35, pinch=0.20)}
+}
 
     def test_an_attempt_that_barely_moved_is_ignored(self):
         moves = {"turn": [(0.03, 0.19), (0.93, 3.85), (0.53, 2.40)]}
@@ -203,37 +200,13 @@ class TestABotchedAttempt(unittest.TestCase):
                                 DEFAULTS.swipe_turn * 0.4)
 
 
-class TestPinchThreshold(unittest.TestCase):
-    """Volume is made from a pinch, so that gets measured too."""
-
-    def poses(self, pinched=0.20):
-        return {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
-                "two": readings(0.95, 1.55), "rest": readings(0.75, 1.40),
-                "pinch": readings(0.75, 1.35, pinch=pinched)}
-
-    def test_lands_between_a_pinch_and_an_open_hand(self):
-        measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
-
-        self.assertGreater(measured.pinch_gap, 0.20)
-        self.assertLess(measured.pinch_gap, 0.80)
-        self.assertFalse([w for w in warnings if "pinch" in w])
-
-    def test_a_pinch_that_never_closed_is_reported(self):
-        """Fingers held apart throughout tell us nothing to measure."""
-
-        measured, warnings = from_samples(self.poses(pinched=0.9), {}, DEFAULTS)
-
-        self.assertEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
-        self.assertTrue(any("pinch" in w for w in warnings))
-
-
 class TestOpenHandThreshold(unittest.TestCase):
     """The line that keeps a resting hand from counting as an open one."""
 
     def poses(self, rest_ext=0.75):
         return {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
                 "two": readings(0.95, 1.55), "rest": readings(rest_ext, 1.40),
-                "pinch": readings(0.75, 1.35, pinch=0.20)}
+}
 
     def test_lands_between_resting_and_open(self):
         measured, _ = from_samples(self.poses(), {}, DEFAULTS)
@@ -256,35 +229,6 @@ class TestOpenHandThreshold(unittest.TestCase):
         self.assertTrue(any("resting" in w for w in warnings))
 
 
-class TestBarelySeparable(unittest.TestCase):
-    """A gap too narrow to be meant is not a measurement.
-
-    Taken from a real calibration: a pinch measured 0.70 and an open hand
-    0.80, and the answer came back 0.75 -- a threshold with no margin
-    either side, which then read very nearly everything as a pinch.  It
-    was the direct cause of a fist working half the time.
-    """
-
-    def poses(self, pinched, opened):
-        return {"fist": readings(0.45, 1.02),
-                "open": readings(0.95, 1.60, pinch=opened),
-                "two": readings(0.95, 1.55, pinch=opened),
-                "rest": readings(0.75, 1.40),
-                "pinch": readings(0.75, 1.35, pinch=pinched)}
-
-    def test_a_narrow_gap_is_refused(self):
-        measured, warnings = from_samples(self.poses(0.70, 0.80), {}, DEFAULTS)
-
-        self.assertEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
-        self.assertTrue(any("pinch" in w for w in warnings))
-
-    def test_a_real_gap_is_taken(self):
-        measured, warnings = from_samples(self.poses(0.20, 0.80), {}, DEFAULTS)
-
-        self.assertNotEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
-        self.assertFalse([w for w in warnings if "pinch" in w])
-
-
 class TestImplausibleValuesArePulledBack(unittest.TestCase):
     """However it was measured, a threshold has to be usable.
 
@@ -294,19 +238,55 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
     """
 
     def test_a_pinch_threshold_near_an_open_hand_is_pulled_in(self):
-        wild = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20,
-                           0.035, 0.75)
+        wild = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.90)
 
         kept, pulled = wild.sensible()
 
-        self.assertLessEqual(kept.pinch_gap, 0.55)
-        self.assertTrue(any("pinch_gap" in note for note in pulled))
+        self.assertLessEqual(kept.min_hand_on_screen, 0.12)
+        self.assertTrue(any("min_hand_on_screen" in note for note in pulled))
 
     def test_sensible_values_are_left_alone(self):
-        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.60, 1.20,
-                           0.040, 0.35)
+        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.040)
 
         kept, pulled = fine.sensible()
 
-        self.assertEqual(kept.pinch_gap, 0.35)
+        self.assertEqual(kept.min_hand_on_screen, 0.040)
         self.assertEqual(pulled, ())
+
+
+class TestABadFrameOrTwo(unittest.TestCase):
+    """A run of a hundred frames holds a few bad ones.
+
+    Taken from a real calibration: it answered 0.10 for how straight a
+    straight finger is, and 0.41 for how closed a fist is, when every
+    honest frame said about 0.9 and 1.05.  Taking the very lowest and
+    highest reading made the whole measurement hostage to the moment the
+    hand was arriving, leaving, or half read.
+    """
+
+    def poses(self, bad=3):
+        clean = readings(0.95, 1.60, count=100)
+        rubbish = readings(0.12, 0.40, count=bad)
+
+        return {"fist": readings(0.45, 1.02, count=100) + rubbish,
+                "open": clean + rubbish,
+                "two": clean,
+                "rest": readings(0.75, 1.40, count=100)}
+
+    def test_a_few_bad_frames_do_not_decide_it(self):
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.extended_ratio, 0.5)
+        self.assertLess(measured.extended_ratio, 0.95)
+
+    def test_the_fist_threshold_survives_them_too(self):
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.fist_reach, 0.9)
+        self.assertLess(measured.fist_reach, 1.4)
+
+    def test_a_clean_run_is_unaffected(self):
+        measured, _ = from_samples(self.poses(bad=0), {}, DEFAULTS)
+
+        self.assertGreater(measured.extended_ratio, 0.5)
+        self.assertLess(measured.extended_ratio, 0.95)
