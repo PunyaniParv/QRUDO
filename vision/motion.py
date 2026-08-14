@@ -97,19 +97,25 @@ def measure(values, elapsed):
     return change, abs(change) / elapsed, directness
 
 
-def detect_swipe(hand_landmarks, handedness=None):
+def detect_swipe(hand, handedness=None):
     """Detect a two-finger swipe.  ``handedness`` is accepted and ignored."""
 
     moment = now()
 
+    # Which way the hand points is a question about its shape, so it comes
+    # from the world landmarks; where it is in the frame is a question
+    # about the screen, so that comes from the normalised ones.
+    shape = hand_state.shape_of(hand)
+    screen = hand_state.screen_of(hand)
+
     _state.history.add(
         moment,
-        aim=hand_state.pointing_direction(hand_landmarks),
-        x=hand_landmarks[hand_state.MIDDLE_MCP].x,
-        scale=hand_state.hand_scale(hand_landmarks)
+        aim=hand_state.pointing_direction(shape),
+        x=screen[hand_state.MIDDLE_MCP].x,
+        scale=hand_state.hand_scale(screen)
     )
 
-    kind = gestures.two_finger_pose_kind(hand_landmarks)
+    kind = gestures.two_finger_pose_kind(hand)
 
     if kind is not None:
         _state.arm(moment, kind)
@@ -119,8 +125,8 @@ def detect_swipe(hand_landmarks, handedness=None):
     _debug.update(
         pose=kind,
         armed=armed,
-        aim=round(hand_state.pointing_direction(hand_landmarks), 2),
-        ext=hand_state.finger_scores(hand_landmarks),
+        aim=round(hand_state.pointing_direction(shape), 2),
+        ext=hand_state.finger_scores(shape),
         turn=0.0,
         slide=0.0,
         speed=0.0,

@@ -21,7 +21,16 @@ class TrackerError(RuntimeError):
 
 @dataclass(frozen=True)
 class Hand:
+    """One hand, in both of the forms MediaPipe reports it.
+
+    ``landmarks`` are normalised to the frame: use them for where the hand
+    is on screen.  ``world`` is in metres with real depth: use it for what
+    shape the hand is making.  Measuring shape from the normalised set is
+    what made a hand pointing at the camera look like a fist.
+    """
+
     landmarks: list
+    world: list
     handedness: str
 
 
@@ -72,8 +81,11 @@ class HandTracker:
         if not found.hand_landmarks:
             return None
 
+        world = found.hand_world_landmarks
+
         return Hand(
             landmarks=found.hand_landmarks[0],
+            world=world[0] if world else None,
             handedness=found.handedness[0][0].category_name
         )
 

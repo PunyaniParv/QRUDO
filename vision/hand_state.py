@@ -55,6 +55,40 @@ PALM_CERTAINTY = 0.12
 
 
 # ---------------------------------------------------------
+# Which landmarks to ask
+# ---------------------------------------------------------
+
+def shape_of(hand):
+    """Landmarks for measuring what the hand is doing.
+
+    MediaPipe returns two sets and they are not interchangeable.  The
+    normalised set says where the hand is on screen, and its depth is only
+    loosely scaled -- but a finger aimed at the lens has nearly all of its
+    length in that depth, so measured there it comes out short, which reads
+    as curled.  That is why the gun pose was mistaken for a fist and swipes
+    never armed.
+
+    The world set is in metres with real depth, which is what a question
+    about shape needs.  Anything about position on screen must still use
+    the normalised set: see screen_of.
+    """
+
+    world = getattr(hand, "world", None)
+
+    if world:
+        return world
+
+    # A plain list of landmarks, as the tests provide.
+    return getattr(hand, "landmarks", hand)
+
+
+def screen_of(hand):
+    """Landmarks for measuring where the hand is in the frame."""
+
+    return getattr(hand, "landmarks", hand)
+
+
+# ---------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------
 

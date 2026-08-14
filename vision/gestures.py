@@ -26,10 +26,10 @@ def reset():
     _stabiliser.clear()
 
 
-def classify(hand_landmarks):
+def classify(hand):
     """The shape this single frame shows, before stabilising."""
 
-    fingers = hand_state.detect_fingers(hand_landmarks)
+    fingers = hand_state.detect_fingers(hand_state.shape_of(hand))
     extended = sum(fingers.values())
 
     if extended == 0:
@@ -57,17 +57,17 @@ def classify(hand_landmarks):
     return "UNKNOWN"
 
 
-def detect_gesture(hand_landmarks, handedness=None):
+def detect_gesture(hand, handedness=None):
     """The settled gesture, once it has held for a few frames.
 
     ``handedness`` is accepted and ignored; nothing here depends on which
     hand it is any more.  It is kept so callers do not have to change.
     """
 
-    return _stabiliser.update(classify(hand_landmarks))
+    return _stabiliser.update(classify(hand))
 
 
-def two_finger_pose_kind(hand_landmarks):
+def two_finger_pose_kind(hand):
     """Which two-finger pose this is, or None.
 
     Both are index and middle out with ring and pinky in; they differ only
@@ -77,7 +77,9 @@ def two_finger_pose_kind(hand_landmarks):
     the hand happened to be turned.
     """
 
-    fingers = hand_state.detect_fingers(hand_landmarks)
+    shape = hand_state.shape_of(hand)
+
+    fingers = hand_state.detect_fingers(shape)
 
     two_out = (
         fingers["index"]
@@ -89,13 +91,13 @@ def two_finger_pose_kind(hand_landmarks):
     if not two_out:
         return None
 
-    if hand_state.fingers_aimed_at_camera(hand_landmarks):
+    if hand_state.fingers_aimed_at_camera(shape):
         return POSE_GUN
 
     return POSE_PEACE
 
 
-def is_two_finger_pose(hand_landmarks):
+def is_two_finger_pose(hand):
     """Index and middle out, ring and pinky in -- in either orientation."""
 
-    return two_finger_pose_kind(hand_landmarks) is not None
+    return two_finger_pose_kind(hand) is not None

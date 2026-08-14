@@ -71,8 +71,8 @@ def run(engine, args, tuning=False):
                 vision.reset_state()
                 router.forget()
             else:
-                gesture = gesture_module.detect_gesture(hand.landmarks)
-                swipe = motion.detect_swipe(hand.landmarks)
+                gesture = gesture_module.detect_gesture(hand)
+                swipe = motion.detect_swipe(hand)
 
                 if not tuning:
                     command = router.update(gesture, swipe)
