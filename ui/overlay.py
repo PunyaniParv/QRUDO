@@ -54,12 +54,12 @@ def legend_lines(mapping):
         "OPEN_PALM": "open hand",
         "POINT": "point",
         "TWO_FINGER": "two fingers",
-        "SWIPE_LEFT": "swipe left",
-        "SWIPE_RIGHT": "swipe right",
+        "SWIPE_LEFT": "2 fingers, turn wrist left",
+        "SWIPE_RIGHT": "2 fingers, turn wrist right",
     }
 
     return [
-        f"{described.get(gesture, gesture.lower()):<12} {command}"
+        f"{described.get(gesture, gesture.lower()):<26} {command}"
         for gesture, command in mapping.items()
     ]
 

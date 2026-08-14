@@ -436,3 +436,48 @@ class TestPeaceSignSwipe(GestureTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestRotatedPeaceSign(GestureTestCase):
+    """The chosen gesture: two fingers facing the camera, wrist rotated.
+
+    Everything stays in the plane of the image, so nothing here leans on
+    MediaPipe's depth -- which is what made the gun pose unreliable.
+    """
+
+    def roll(self, start, end, seconds, frames=12):
+        result = None
+        for i in range(frames):
+            degrees = start + (end - start) * (i / (frames - 1))
+            hand = peace_sign(roll=math.radians(degrees))
+            result = result or motion.detect_swipe(hand, HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def test_rotating_right(self):
+        self.assertEqual(self.roll(-30, 30, 0.30), "SWIPE_RIGHT")
+
+    def test_rotating_left(self):
+        self.assertEqual(self.roll(30, -30, 0.30), "SWIPE_LEFT")
+
+    def test_small_rotation_is_enough(self):
+        """A comfortable flick of the wrist, not a full sweep."""
+
+        self.assertEqual(self.roll(-15, 15, 0.25), "SWIPE_RIGHT")
+
+    def test_from_upright(self):
+        """Starting straight up, without winding back first."""
+
+        self.assertEqual(self.roll(0, 30, 0.25), "SWIPE_RIGHT")
+
+    def test_slow_rotation_is_not_a_swipe(self):
+        """Lowering your hand must not seek the video."""
+
+        self.assertIsNone(self.roll(-30, 30, 4.0, frames=40))
+
+    def test_pose_holds_throughout_the_rotation(self):
+        for degrees in range(-60, 61, 15):
+            with self.subTest(roll=degrees):
+                hand = peace_sign(roll=math.radians(degrees))
+                self.assertEqual(gestures.two_finger_pose_kind(hand),
+                                 gestures.POSE_PEACE)

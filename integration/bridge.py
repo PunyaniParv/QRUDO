@@ -16,7 +16,8 @@ POSE_COMMANDS = {
     "FIST": Command.PLAY_PAUSE,
 }
 
-#: Movements.  These are already one-off events with their own cooldown.
+#: Movements.  Two fingers facing the camera, wrist rotated left or right.
+#: These are already one-off events with their own cooldown.
 SWIPE_COMMANDS = {
     "SWIPE_LEFT": Command.REWIND,
     "SWIPE_RIGHT": Command.FORWARD,

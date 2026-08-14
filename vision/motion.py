@@ -2,15 +2,19 @@
 
     detect_swipe(landmarks, handedness) -> "SWIPE_LEFT" | "SWIPE_RIGHT" | None
 
-Two poses, each with the motion that suits it:
+The gesture is two fingers facing the camera -- an ordinary peace sign --
+with the wrist rotated left or right, the fingers staying toward the lens
+throughout.
 
-  * The gun pose -- two fingers aimed at the camera -- is swiped by
-    turning the wrist, keeping the hand where it is.  Sliding it across
-    counts for nothing, so aiming at the camera and reaching for the
-    keyboard cannot seek the video.
+That pose is deliberate.  Everything stays in the plane of the image,
+which is where MediaPipe is by far the most accurate, so nothing about
+recognising it leans on depth.  Aiming the fingers at the camera instead
+puts the whole gesture along the one axis a single camera guesses at.
 
-  * The peace sign is held up rather than aimed, so it is swiped by moving
-    the hand across, or by tilting it over.  Both work.
+Also accepted, since they cost nothing and are what some people reach for:
+
+  * the same rotation with the fingers aimed at the camera
+  * moving the peace sign bodily across, rather than rotating it
 """
 
 from __future__ import annotations
