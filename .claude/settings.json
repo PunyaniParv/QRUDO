@@ -60,7 +60,11 @@
       "Bash(git fetch *)",
       "Bash(git rev-list *)",
       "Bash(git rebase *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(.venv/bin/pyright vision/ integration/ ui/ tests/ control/log.py control/commands.py control/config.py control/executor.py main.py)",
+      "Bash(.venv/bin/pyright vision/ integration/ ui/ tests/ main.py)",
+      "Bash(osascript -e 'tell application \"Music\" to quit')",
+      "Bash(git check-ignore *)"
     ]
   }
 }

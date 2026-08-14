@@ -81,6 +81,11 @@ def main(argv=None):
 
     measured = vision.load_and_apply()
 
+    if measured is not None and getattr(measured, "incomplete", ()):
+        print(f"  ! your calibration predates "
+              f"{', '.join(measured.incomplete)}; those are still guessed."
+              f"\n    run --calibrate again to measure them.\n")
+
     if args.calibrate:
         from integration import calibrate
         return calibrate.run(args)

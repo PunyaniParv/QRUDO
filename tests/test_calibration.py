@@ -135,12 +135,27 @@ class TestApplying(unittest.TestCase):
             path.write_text("{ this is not json")
             self.assertIsNone(Calibration.load(path))
 
-    def test_a_file_missing_values_is_ignored(self):
-        """An older file from a version with fewer thresholds."""
+    def test_a_file_missing_values_keeps_what_it_has(self):
+        """An older file, from before a threshold existed.
+
+        Discarding the whole thing meant a calibration somebody had sat
+        down and done was silently ignored the next time one was added.
+        """
 
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "calibration.json"
             path.write_text('{"extended_ratio": 0.8}')
+
+            loaded = Calibration.load(path)
+
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.extended_ratio, 0.8)
+            self.assertIn("open_ratio", loaded.incomplete)
+
+    def test_a_file_of_nothing_useful_is_ignored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "calibration.json"
+            path.write_text('{"something": "else"}')
             self.assertIsNone(Calibration.load(path))
 
 

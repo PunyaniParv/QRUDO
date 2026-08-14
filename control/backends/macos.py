@@ -208,28 +208,74 @@ class MacOSController(Controller):
             if played is not None:
                 return played
 
-        if self._quartz is not None:
-            self._post_media_key(NX_KEYTYPE_PLAY)
-            return "sent play/pause media key"
+        # No app named: find one rather than fall back to the media key.
+        #
+        # The media key is a message to the system, not to a player, and
+        # macOS answers one with nothing currently playing by opening
+        # Music.  Checking that some player is running is not enough --
+        # a browser can be open without playing anything, and the key
+        # still goes to Music.  So it is not used here at all.
+        running = self._running_apps()
 
-        return self._applescript_play_pause()
+        for name in self.SCRIPTABLE:
+            if name not in running:
+                continue
+
+            played = self._play_pause_app(name)
+
+            if played is not None:
+                return played
+
+        for name in self.BROWSERS:
+            pid = self._target_pid(name)
+
+            if pid is not None:
+                self._post_key(KEY_K, to_pid=pid)
+                return f"play/pause key to {name}"
+
+        raise UnsupportedCommand(
+            "nothing to play or pause -- open a player, or name one as "
+            "target_app in sarv_config.json")
+
+    #: Players that can simply be told, without being brought forward.
+    SCRIPTABLE = ("Spotify", "Music", "VLC", "QuickTime Player", "TV")
+
+    #: Browsers, which take the video player's own keyboard shortcut.
+    BROWSERS = ("Google Chrome", "Safari", "Firefox", "Microsoft Edge",
+                "Arc", "Brave Browser", "Opera", "Vivaldi")
+
+    def _running_apps(self) -> set:
+        """What is open right now, without disturbing any of it."""
+
+        if self._workspace is None:
+            return set()
+
+        return {
+            app.localizedName()
+            for app in self._workspace.sharedWorkspace().runningApplications()
+            if app.localizedName()
+        }
 
     def _play_pause_app(self, name: str) -> str | None:
         """Play/pause a named app, or None if it cannot be reached."""
 
+        running = self._running_apps()
+
         # Players that can simply be told.  This is exact, and it neither
         # needs the app focused nor disturbs anything else.
-        for known in ("Spotify", "Music", "VLC", "QuickTime Player", "TV"):
+        #
+        # Whether it is running is settled before saying anything to it:
+        # naming an app in AppleScript at all is enough to launch it, so
+        # the obvious "if it is running then tell it" starts the very
+        # thing it was written to avoid starting.
+        for known in self.SCRIPTABLE:
             if known.lower() in name.lower():
-                if self._osascript(
-                    f'if application "{known}" is running then\n'
-                    f'  tell application "{known}" to playpause\n'
-                    f'  return "ok"\n'
-                    f'end if\n'
-                    f'return ""'
-                ) == "ok":
-                    return f"play/pause in {known}"
-                return None
+                if known not in running:
+                    return None
+
+                self._osascript(f'tell application "{known}" to playpause')
+
+                return f"play/pause in {known}"
 
         # A browser has no such interface, so use the video player's own
         # keyboard shortcut, delivered to the browser whether or not it is

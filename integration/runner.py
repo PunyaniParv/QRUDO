@@ -131,8 +131,17 @@ def run(engine, args, tuning=False):
 
             cv2.imshow("SARV", frame)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            pressed = cv2.waitKey(1) & 0xFF
+
+            if pressed == ord("q"):
                 break
+
+            # A way in that does not depend on a gesture being recognised.
+            # Arming is itself a gesture, so if the open hand will not
+            # register there is otherwise no way to turn SARV on -- and
+            # that is exactly when you need to.
+            if pressed == ord("a"):
+                switch.armed = not switch.armed
 
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -181,6 +190,7 @@ def banner(engine, router, args, tuning):
         lines.append("")
 
     lines += [
+        "  hold an open hand to pause or resume, or press a in the window",
         "  q in the window to stop" if not args.no_window else
         "  ctrl+c to stop",
         "",

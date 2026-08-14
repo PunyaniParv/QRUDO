@@ -37,9 +37,21 @@ class Calibration:
     min_hand_on_screen: float
     pinch_gap: float
 
+    #: Thresholds a loaded file did not have, filled in from the defaults.
+    #: Set after loading rather than declared as one of them, so it is not
+    #: itself saved, compared, or looked for in the file.
+    incomplete = ()
+
     @classmethod
     def load(cls, path=None):
-        """Read a saved calibration, or None if there is not one."""
+        """Read a saved calibration, or None if there is not one.
+
+        A file written before a threshold existed keeps everything it does
+        have, and the missing one falls back to its default.  Throwing the
+        whole thing away instead meant a calibration somebody had actually
+        sat down and done was silently ignored the next time a threshold
+        was added -- which is the worst of both, since nothing said so.
+        """
 
         path = Path(path) if path else DEFAULT_PATH
 
@@ -52,11 +64,21 @@ class Calibration:
             return None
 
         known = {f.name for f in fields(cls)}
+        given = {k: v for k, v in data.items() if k in known}
 
-        if not known <= set(data):
+        if not given:
             return None
 
-        return cls(**{k: v for k, v in data.items() if k in known})
+        missing = known - set(given)
+
+        if missing:
+            defaults = current()
+            given.update({name: getattr(defaults, name) for name in missing})
+
+        calibration = cls(**given)
+        calibration.incomplete = sorted(missing)
+
+        return calibration
 
     def save(self, path=None):
         path = Path(path) if path else DEFAULT_PATH
