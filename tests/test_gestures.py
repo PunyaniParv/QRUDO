@@ -169,11 +169,14 @@ HAND = "Left"  # what MediaPipe calls a right hand in a mirrored frame
 VIEWPOINTS = [math.radians(degrees) for degrees in
               (-180, -135, -90, -45, -20, 0, 20, 45, 90, 135, 180)]
 
-#: Turned far enough to still show the camera its palm.
-FACING = [math.radians(degrees) for degrees in (-45, -20, 0, 20, 45)]
+#: Anything but the back of the hand.  Side-on counts: a fist from the
+#: side is still a fist.
+NOT_FROM_BEHIND = [math.radians(degrees) for degrees in
+                   (-90, -45, -20, 0, 20, 45, 90)]
 
-#: Edge-on or turned away: the back of the hand, or neither side.
-TURNED_AWAY = [math.radians(degrees) for degrees in (-180, -135, -90, 90, 135, 180)]
+#: Looking at the back of the hand, which is what a hand at a keyboard
+#: shows the camera.
+FROM_BEHIND = [math.radians(degrees) for degrees in (-180, -135, 135, 180)]
 
 
 class GestureTestCase(unittest.TestCase):
@@ -275,30 +278,30 @@ class TestEveryAngle(GestureTestCase):
                     self.assertEqual(
                         self.settle(builder(yaw=yaw, pitch=pitch)), expected)
 
-    def test_fist_wherever_the_palm_shows(self):
-        """Side profile used to miss this entirely."""
+    def test_fist_from_any_side_but_behind(self):
+        """Side profile included: a fist from the side is still a fist."""
 
         self.check_all_views(fist, "FIST",
-                             yaws=FACING, pitches=self.PALM_PITCHES)
+                             yaws=NOT_FROM_BEHIND, pitches=self.PALM_PITCHES)
 
     def test_fist_is_not_read_from_the_back_of_the_hand(self):
         """A hand resting knuckles-out is not asking for anything."""
 
         self.check_all_views(fist, "UNKNOWN",
-                             yaws=TURNED_AWAY, pitches=self.PALM_PITCHES)
+                             yaws=FROM_BEHIND, pitches=self.PALM_PITCHES)
 
     def test_open_hand_is_not_read_from_the_back_either(self):
         self.check_all_views(make_hand, "UNKNOWN",
-                             yaws=TURNED_AWAY, pitches=self.PALM_PITCHES)
+                             yaws=FROM_BEHIND, pitches=self.PALM_PITCHES)
 
     def test_point_from_every_angle(self):
         """Three-quarter view used to report this as TWO_FINGER."""
 
         self.check_all_views(pointing, "POINT")
 
-    def test_open_palm_wherever_the_palm_shows(self):
+    def test_open_palm_from_any_side_but_behind(self):
         self.check_all_views(make_hand, "OPEN_PALM",
-                             yaws=FACING, pitches=self.PALM_PITCHES)
+                             yaws=NOT_FROM_BEHIND, pitches=self.PALM_PITCHES)
 
     def test_two_finger_from_every_angle(self):
         def two(**viewpoint):

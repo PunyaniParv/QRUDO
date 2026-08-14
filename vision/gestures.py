@@ -32,13 +32,15 @@ def classify(hand, handedness=None):
     screen = hand_state.screen_of(hand)
     handedness = getattr(hand, "handedness", handedness)
 
-    # A fist and an open hand are only those when the palm is toward the
-    # camera.  From behind they are a hand doing something else -- resting
-    # on a desk, reaching for the keyboard -- and counting those is a
-    # command nobody asked for.  The two-finger poses are exempt: the
-    # swipe can be made with the fingers aimed at the lens, where the palm
-    # faces neither way.
-    palm_toward_us = hand_state.is_palm_facing(screen, handedness)
+    # A fist and an open hand are not read from behind: the back of a hand
+    # is what the camera sees of someone typing or resting their hand on
+    # the desk, and that should ask for nothing.  Side-on is fine -- a
+    # fist from the side is still a fist -- so what is ruled out is
+    # looking at the back of it, rather than anything short of a square
+    # palm.  The two-finger poses are exempt entirely: the swipe can be
+    # made with the fingers aimed at the lens, where the palm faces
+    # neither way.
+    from_behind = hand_state.is_back_of_hand(screen, handedness)
 
     fingers = hand_state.fingers_out(hand)
     extended = sum(fingers.values())
@@ -46,7 +48,7 @@ def classify(hand, handedness=None):
     if extended == 0:
         # Nothing straight is not enough: a hand at rest has nothing
         # straight either.  It has to be shut, and facing us.
-        if not hand_state.is_clenched(screen) or not palm_toward_us:
+        if not hand_state.is_clenched(screen) or from_behind:
             return "UNKNOWN"
 
         return "FIST"
@@ -68,7 +70,7 @@ def classify(hand, handedness=None):
         return "TWO_FINGER"
 
     if extended == 4:
-        return "OPEN_PALM" if palm_toward_us else "UNKNOWN"
+        return "UNKNOWN" if from_behind else "OPEN_PALM"
 
     return "UNKNOWN"
 

@@ -216,6 +216,21 @@ def is_palm_facing(hand_landmarks, handedness):
     ) > PALM_CERTAINTY
 
 
+def is_back_of_hand(hand_landmarks, handedness):
+    """True only when the camera is clearly behind the hand.
+
+    Separate from "is the palm facing us", and the useful one of the two.
+    A hand turned side-on is neither -- and a fist from the side is still
+    a fist -- so the test that matters is whether we are looking at the
+    back of it, which is what a hand on a keyboard shows.
+    """
+
+    return palm_facing_strength(
+        hand_landmarks,
+        handedness
+    ) < -PALM_CERTAINTY
+
+
 # ---------------------------------------------------------
 # Fingers
 # ---------------------------------------------------------
