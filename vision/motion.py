@@ -56,6 +56,7 @@ SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 SWIPE_LIFT = 0.60         # palm widths the hand must cover
 SWIPE_LIFT_SPEED = 1.20   # palm widths per second
 LIFT_STILL = 0.50         # below this speed the hand counts as at rest
+REST_DWELL = 1.00         # and it must stay there this long to become the rest
 
 #: Both scripts mirror the frame before detection, so x increases to the
 #: user's right and a rightward swipe is a rise in x.
@@ -243,7 +244,17 @@ def detect_swipe(hand, handedness=None):
         drift = (max(heights) - min(heights)) / mean_scale
 
         if span > 0 and drift / span < LIFT_STILL:
-            _state.neutral_y = heights[-1]
+            if _state.still_since is None:
+                _state.still_since = moment
+
+            # Only a real dwell moves it, not the pause at the top of a
+            # raise.  A brief pause was enough before, which made the
+            # raised position the new rest -- so putting the hand back
+            # down again became a genuine swipe down.
+            if moment - _state.still_since >= REST_DWELL:
+                _state.neutral_y = heights[-1]
+        else:
+            _state.still_since = None
 
     lift = (_state.neutral_y - screen[hand_state.MIDDLE_MCP].y) / mean_scale
 
@@ -324,6 +335,7 @@ def detect_swipe(hand, handedness=None):
     # hand held up is not going to.  Coming back toward the middle is what
     # readies the next one.
     _state.lifted = True
+    _state.still_since = None
     _state.cooldown_until = moment + SWIPE_COOLDOWN
 
     return "SWIPE_UP" if lift > 0 else "SWIPE_DOWN"

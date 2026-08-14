@@ -775,7 +775,7 @@ class TestRestingHeight(GestureTestCase):
             self.clock.tick(seconds / (frames - 1))
         return result
 
-    def rest(self, cy, seconds=0.40, frames=10):
+    def rest(self, cy, seconds=1.30, frames=26):
         for _ in range(frames):
             motion.detect_swipe(self.peace(cy), HAND)
             self.clock.tick(seconds / frames)
@@ -802,3 +802,63 @@ class TestRestingHeight(GestureTestCase):
         self.hold_pose(self.peace(0.60))
         self.rest(0.60)
         self.assertEqual(self.move(0.60, 0.78), "SWIPE_DOWN")
+
+
+class TestPuttingTheHandBack(GestureTestCase):
+    """Putting the hand back where it was is not a gesture.
+
+    Reported: raise for volume up, bring the hand back down, and the
+    coming back counted as volume down -- and the same in reverse.  A
+    brief pause at the top was enough to make the raised position the new
+    resting height, which made the return a genuine downward move.
+    """
+
+    def peace(self, cy):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy)
+
+    def move(self, start, end, seconds=0.30, frames=12):
+        result = None
+        for i in range(frames):
+            cy = start + (end - start) * (i / (frames - 1))
+            result = result or motion.detect_swipe(self.peace(cy), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def pause(self, cy, seconds=0.35, frames=8):
+        result = None
+        for _ in range(frames):
+            result = result or motion.detect_swipe(self.peace(cy), HAND)
+            self.clock.tick(seconds / frames)
+        return result
+
+    def test_raise_pause_and_put_it_back(self):
+        self.hold_pose(self.peace(0.60))
+        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.pause(0.40)
+        self.assertIsNone(self.move(0.40, 0.60),
+                          "putting the hand back counted as a swipe down")
+
+    def test_lower_pause_and_put_it_back(self):
+        self.hold_pose(self.peace(0.45))
+        self.assertEqual(self.move(0.45, 0.65), "SWIPE_DOWN")
+        self.pause(0.65)
+        self.assertIsNone(self.move(0.65, 0.45),
+                          "putting the hand back counted as a swipe up")
+
+    def test_raising_twice_from_the_same_place(self):
+        """Back where you started, so raising again is another swipe up."""
+
+        self.hold_pose(self.peace(0.60))
+        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.pause(0.40)
+        self.move(0.40, 0.60)
+        self.pause(0.60)
+        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+
+    def test_settling_at_a_new_height_does_move_the_reference(self):
+        """Held there long enough, it becomes where the hand lives."""
+
+        self.hold_pose(self.peace(0.60))
+        self.assertEqual(self.move(0.60, 0.40), "SWIPE_UP")
+        self.pause(0.40, seconds=1.40, frames=28)
+        self.assertEqual(self.move(0.40, 0.60), "SWIPE_DOWN")

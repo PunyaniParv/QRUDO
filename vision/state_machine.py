@@ -96,6 +96,7 @@ class SwipeState:
         self.cooldown_until = 0.0
         self.armed_since = 0.0
         self.neutral_y = None
+        self.still_since = None
         self.lifted = False
         self.settling = False
         self._seen_kind = None
@@ -170,6 +171,7 @@ class SwipeState:
         self.armed_until = 0.0
         self.armed_kind = None
         self.neutral_y = None
+        self.still_since = None
         self.lifted = False
         self.settling = False
         self._seen_kind = None
