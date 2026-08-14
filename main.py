@@ -48,6 +48,9 @@ def build_parser():
                         help="run without the preview, so nothing takes focus")
     parser.add_argument("--camera", type=int, default=0, metavar="N",
                         help="which camera to use (default 0)")
+    parser.add_argument("--skip-setup", action="store_true",
+                        help="start without the first-run setup, using the "
+                             "default thresholds")
     parser.add_argument("--far", action="store_true",
                         help="more pixels on a distant hand, for controlling "
                              "from across a room; costs frame rate")
@@ -102,8 +105,36 @@ def main(argv=None):
     if args.command:
         return run_one(engine, args)
 
+    # First time in front of this camera: measure the hand before using
+    # it.  Nobody discovers a --calibrate flag on their own, and the
+    # thresholds are guesses until somebody runs it -- so it is part of
+    # starting up, not an option.  It teaches the gestures on the way
+    # through, since it has to ask for each one anyway.
+    if measured is None and not args.skip_setup:
+        print(first_run_notice())
+
+        from integration import calibrate
+
+        calibrate.run(args)
+        vision.load_and_apply()
+
     from integration.runner import run
     return run(engine, args, tuning=args.tune)
+
+
+def first_run_notice():
+    return "\n".join([
+        "",
+        "  First run: a short setup, about a minute.",
+        "",
+        "  It measures your hand so the gestures suit your camera and how",
+        "  far away you stand, and shows you what each one does.  Stand",
+        "  where you actually mean to use SARV.",
+        "",
+        "  --skip-setup starts without it, using thresholds that were",
+        "  guessed rather than measured.",
+        "",
+    ])
 
 
 def show_capabilities(engine, config):

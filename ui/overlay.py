@@ -79,7 +79,7 @@ def draw_arming(cv2, frame, armed, holding=0.0):
                 (30, height - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 1)
 
 
-def draw_prompt(cv2, frame, prompt, note, remaining, hand_seen):
+def draw_prompt(cv2, frame, prompt, note, remaining, hand_seen, purpose=""):
     """What to do next, while calibrating.
 
     Large, because you are meant to be standing where you would actually
@@ -96,6 +96,10 @@ def draw_prompt(cv2, frame, prompt, note, remaining, hand_seen):
 
     cv2.putText(frame, f"{note}  {max(0.0, remaining):.0f}",
                 (24, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.1, colour, 3)
+
+    if purpose:
+        cv2.putText(frame, purpose, (24, 132),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, GREY, 1)
 
     if not hand_seen:
         cv2.putText(frame, "no hand -- move into view",

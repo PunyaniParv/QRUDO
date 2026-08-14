@@ -13,18 +13,24 @@ from __future__ import annotations
 import sys
 import time
 
-#: name, what to ask for, seconds of recording
+#: name, what to ask for, what it is for, seconds of recording
 POSES = [
-    ("fist", "Make a FIST, palm toward the camera", 3.0),
-    ("open", "Hold your hand OPEN, fingers spread", 3.0),
-    ("two", "Hold up TWO FINGERS", 3.0),
-    ("rest", "Let your hand REST naturally, however it falls", 3.0),
+    ("fist", "Make a FIST, palm toward the camera",
+     "this plays and pauses", 3.0),
+    ("open", "Hold your hand OPEN, fingers spread",
+     "held, this turns SARV on and off", 3.0),
+    ("two", "Hold up TWO FINGERS",
+     "the pose for seeking and volume", 3.0),
+    ("rest", "Let your hand REST naturally, however it falls",
+     "so a hand doing nothing is left alone", 3.0),
 ]
 
-#: name, what to ask for, how many times
+#: name, what to ask for, what it is for, how many times
 MOVES = [
-    ("turn", "Two fingers up: TURN YOUR WRIST left, then back", 3),
-    ("lift", "Two fingers up: RAISE your hand, then lower it", 3),
+    ("turn", "Two fingers up: TURN YOUR WRIST left, then back",
+     "this rewinds and skips forward", 3),
+    ("lift", "Two fingers up: RAISE your hand, then lower it",
+     "this is the volume", 3),
 ]
 
 READY_SECONDS = 2.0
@@ -57,11 +63,11 @@ def run(args):
     session = _Session(cv2, camera, tracker, vision, gestures, motion, overlay)
 
     try:
-        poses = {name: session.record_pose(prompt, seconds)
-                 for name, prompt, seconds in POSES}
+        poses = {name: session.record_pose(prompt, purpose, seconds)
+                 for name, prompt, purpose, seconds in POSES}
 
-        moves = {name: session.record_move(prompt, times)
-                 for name, prompt, times in MOVES}
+        moves = {name: session.record_move(prompt, purpose, times)
+                 for name, prompt, purpose, times in MOVES}
     except _Cancelled:
         print("\n  cancelled -- nothing was saved.")
         return 1
@@ -109,16 +115,17 @@ class _Session:
         self.motion = motion
         self.overlay = overlay
 
-    def record_pose(self, prompt, seconds):
+    def record_pose(self, prompt, purpose, seconds):
         """Hold still: collect the finger measurements frame by frame."""
 
-        self._countdown(prompt, READY_SECONDS)
+        self._countdown(prompt, READY_SECONDS, purpose)
 
         readings = []
         until = time.time() + seconds
 
         while time.time() < until:
-            hand = self._frame(prompt, "hold it", until - time.time())
+            hand = self._frame(prompt, "hold it", until - time.time(),
+                               purpose)
 
             if hand is None:
                 continue
@@ -136,13 +143,14 @@ class _Session:
 
         return readings
 
-    def record_move(self, prompt, times):
+    def record_move(self, prompt, purpose, times):
         """Move: collect the largest reading reached in each repetition."""
 
         peaks = []
 
         for attempt in range(1, times + 1):
-            self._countdown(f"{prompt}  ({attempt} of {times})", READY_SECONDS)
+            self._countdown(f"{prompt}  ({attempt} of {times})",
+                            READY_SECONDS, purpose)
 
             self.vision.reset_state()
 
@@ -151,7 +159,7 @@ class _Session:
 
             while time.time() < until:
                 hand = self._frame(prompt, f"go  ({attempt} of {times})",
-                                   until - time.time())
+                                   until - time.time(), purpose)
 
                 if hand is None:
                     continue
@@ -168,13 +176,13 @@ class _Session:
 
         return peaks
 
-    def _countdown(self, prompt, seconds):
+    def _countdown(self, prompt, seconds, purpose=""):
         until = time.time() + seconds
 
         while time.time() < until:
-            self._frame(prompt, "get ready", until - time.time())
+            self._frame(prompt, "get ready", until - time.time(), purpose)
 
-    def _frame(self, prompt, note, remaining):
+    def _frame(self, prompt, note, remaining, purpose=""):
         """One frame: track, draw, and check for q."""
 
         frame = self.camera.read()
@@ -185,7 +193,7 @@ class _Session:
             self.motion.detect_swipe(hand)
 
         self.overlay.draw_prompt(self.cv2, frame, prompt, note, remaining,
-                                 hand is not None)
+                                 hand is not None, purpose)
 
         self.cv2.imshow("SARV - calibrating", frame)
 
@@ -209,7 +217,7 @@ def _bigger(biggest, state, prompt):
 def banner():
     return "\n".join([
         "",
-        "  SARV calibration",
+        "  SARV setup",
         "",
         "  Four poses to hold, then two movements to repeat.  Stand where",
         "  you actually intend to use it -- the numbers depend on how big",
