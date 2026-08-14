@@ -37,7 +37,17 @@ class Hand:
 class HandTracker:
     """Finds one hand in a frame."""
 
-    def __init__(self, model_path=MODEL_PATH, confidence=0.7):
+    #: How sure MediaPipe has to be before reporting a hand.
+    #:
+    #: 0.7 is its own suggestion and suits a hand filling the frame.  A
+    #: hand three metres away is twenty pixels across, and the model is
+    #: rightly less certain about it -- at 0.7 it says nothing at all,
+    #: which reads as SARV not working from across the room.  Lower, it
+    #: offers a guess, and the gesture tests behind it are strict enough to
+    #: throw away the bad ones.
+    DEFAULT_CONFIDENCE = 0.5
+
+    def __init__(self, model_path=MODEL_PATH, confidence=DEFAULT_CONFIDENCE):
         self.model_path = Path(model_path)
         self.confidence = confidence
         self._landmarker = None

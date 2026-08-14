@@ -273,15 +273,20 @@ def from_samples(poses, moves, current):
     elif missed:
         warnings.append("one of the wrist turns barely moved, and was ignored")
 
-    # How small a hand may look and still be read.  Set from how large
-    # yours looked while calibrating, so calibrating at arm's length and
-    # calibrating across the room both work.
+    # How small a hand may look and still be read.  Taken from how large
+    # yours looked while calibrating, so calibrating across the room lets
+    # SARV reach that far.
+    #
+    # It can only ever loosen the limit, never tighten it: calibrating at
+    # the keyboard would otherwise set the floor at a hand's size there
+    # and quietly stop the thing working from across the room, which is
+    # the point of it.
     sizes = [reading["scale"]
              for readings in poses.values()
              for reading in readings]
 
-    min_hand = (edge(sizes, 0.10, 0.1) * 0.6 if sizes
-                else current.min_hand_on_screen)
+    min_hand = (min(edge(sizes, 0.10, 0.1) * 0.6, current.min_hand_on_screen)
+                if sizes else current.min_hand_on_screen)
 
     return Calibration(
         extended_ratio=round(extended_ratio, 3),

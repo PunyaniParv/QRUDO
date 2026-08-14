@@ -290,3 +290,31 @@ class TestABadFrameOrTwo(unittest.TestCase):
 
         self.assertGreater(measured.extended_ratio, 0.5)
         self.assertLess(measured.extended_ratio, 0.95)
+
+
+class TestRangeOnlyLoosens(unittest.TestCase):
+    """Calibrating close by must not shorten how far SARV can see.
+
+    A hand is about a tenth of the frame across at a metre and a thirtieth
+    at three.  Setting the floor from a calibration taken at the keyboard
+    would put it at a hand's size there, and quietly stop the thing working
+    from across the room -- which is the point of it.
+    """
+
+    def poses(self, scale):
+        return {"fist": readings(0.45, 1.02, scale),
+                "open": readings(0.95, 1.60, scale),
+                "two": readings(0.95, 1.55, scale),
+                "rest": readings(0.75, 1.40, scale)}
+
+    def test_calibrating_close_by_keeps_the_range(self):
+        measured, _ = from_samples(self.poses(0.25), {}, DEFAULTS)
+
+        self.assertLessEqual(measured.min_hand_on_screen,
+                             DEFAULTS.min_hand_on_screen)
+
+    def test_calibrating_across_the_room_extends_it(self):
+        measured, _ = from_samples(self.poses(0.04), {}, DEFAULTS)
+
+        self.assertLess(measured.min_hand_on_screen,
+                        DEFAULTS.min_hand_on_screen)

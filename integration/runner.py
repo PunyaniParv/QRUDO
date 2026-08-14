@@ -16,6 +16,11 @@ from .bridge import GestureRouter
 #: How long a completed swipe stays on screen, in seconds.
 SWIPE_SHOWN_FOR = 0.8
 
+#: How long with no hand at all before saying something about it.  Far
+#: enough away and the camera simply stops reporting one, which from where
+#: the user is standing looks exactly like the app having stopped.
+NOTHING_SEEN_FOR = 6.0
+
 
 def run(engine, args, tuning=False):
     """Run SARV until q is pressed or the camera goes away.
@@ -38,6 +43,7 @@ def run(engine, args, tuning=False):
     last_result = None
     last_swipe = None
     last_swipe_at = 0.0
+    last_hand_at = time.time()
 
     def remember(result):
         nonlocal last_result
@@ -89,6 +95,7 @@ def run(engine, args, tuning=False):
                     vision.reset_state()
                     router.forget()
             else:
+                last_hand_at = time.time()
                 presence.seen(time.time())
                 gesture = gesture_module.detect_gesture(hand)
                 swipe = motion.detect_swipe(hand)
@@ -116,6 +123,8 @@ def run(engine, args, tuning=False):
                 continue
 
             overlay.draw_gesture(cv2, frame, gesture)
+            overlay.draw_hint(cv2, frame, out_of_range(time.time() - last_hand_at,
+                                                       args))
             overlay.draw_result(cv2, frame, last_result)
             overlay.draw_legend(cv2, frame, router.mapping())
 
@@ -144,6 +153,19 @@ def run(engine, args, tuning=False):
 
     print("\n  bye.")
     return 0
+
+
+def out_of_range(quiet_for, args):
+    """What to say when no hand has been seen for a while."""
+
+    if quiet_for < NOTHING_SEEN_FOR:
+        return ""
+
+    if getattr(args, "far", False):
+        return ("no hand seen -- move closer, or into better light")
+
+    return ("no hand seen -- move closer, or restart with --far "
+            "for more range")
 
 
 def frame_rate(times):

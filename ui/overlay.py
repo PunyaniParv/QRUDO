@@ -26,6 +26,22 @@ def draw_gesture(cv2, frame, gesture):
                 GREEN if gesture else RED, 2)
 
 
+def draw_hint(cv2, frame, text):
+    """A line along the bottom, for when nothing is happening.
+
+    "It stopped working" and "you are out of range" look identical from
+    where the user is standing, so the app says which.
+    """
+
+    if not text:
+        return
+
+    height = frame.shape[0]
+
+    cv2.putText(frame, text, (20, height - 70),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, RED, 1)
+
+
 def draw_result(cv2, frame, result):
     """What the last command did, under the gesture."""
 
