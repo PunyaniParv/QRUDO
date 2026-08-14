@@ -79,6 +79,29 @@ def draw_arming(cv2, frame, armed, holding=0.0):
                 (30, height - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 1)
 
 
+def draw_prompt(cv2, frame, prompt, note, remaining, hand_seen):
+    """What to do next, while calibrating.
+
+    Large, because you are meant to be standing where you would actually
+    use it -- which may be several metres away.
+    """
+
+    height, width = frame.shape[:2]
+    colour = GREEN if hand_seen else RED
+
+    cv2.rectangle(frame, (0, 0), (width - 1, height - 1), colour, 10)
+
+    cv2.putText(frame, prompt, (24, 56),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, GREY, 2)
+
+    cv2.putText(frame, f"{note}  {max(0.0, remaining):.0f}",
+                (24, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.1, colour, 3)
+
+    if not hand_seen:
+        cv2.putText(frame, "no hand -- move into view",
+                    (24, height - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
+
+
 def legend_lines(mapping):
     """What each gesture does, in plain words.
 

@@ -1,0 +1,254 @@
+"""Thresholds measured from your hand, rather than guessed at.
+
+Every number the detectors compare against -- how straight a finger has to
+be, how far a wrist has to turn -- was picked by reasoning about
+geometry.  That is a starting point, not an answer: a hand two metres from
+a laptop webcam measures differently from one at arm's length, and
+differently again on someone else's camera.
+
+Calibrating records what your hand actually does while you make each
+gesture, and sets every threshold in the gap between what you do and what
+you do not, with a margin either side.  The result is written to a file
+and loaded at startup.
+
+    python main.py --calibrate
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, fields
+from pathlib import Path
+
+DEFAULT_PATH = Path(__file__).resolve().parent.parent / "sarv_calibration.json"
+
+
+@dataclass
+class Calibration:
+    """One set of measured thresholds."""
+
+    extended_ratio: float
+    fist_reach: float
+    swipe_turn: float
+    swipe_turn_speed: float
+    swipe_lift: float
+    swipe_lift_speed: float
+    min_hand_on_screen: float
+
+    @classmethod
+    def load(cls, path=None):
+        """Read a saved calibration, or None if there is not one."""
+
+        path = Path(path) if path else DEFAULT_PATH
+
+        if not path.exists():
+            return None
+
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+
+        known = {f.name for f in fields(cls)}
+
+        if not known <= set(data):
+            return None
+
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def save(self, path=None):
+        path = Path(path) if path else DEFAULT_PATH
+        path.write_text(json.dumps(asdict(self), indent=2) + "\n")
+        return path
+
+    def apply(self):
+        """Put these numbers where the detectors read them from.
+
+        They are module-level constants read at the moment of each
+        decision, so replacing them takes effect immediately and nothing
+        has to be rebuilt.
+        """
+
+        from . import hand_state, motion
+
+        hand_state.EXTENDED_RATIO = self.extended_ratio
+        hand_state.FIST_REACH = self.fist_reach
+        hand_state.MIN_HAND_ON_SCREEN = self.min_hand_on_screen
+
+        motion.SWIPE_TURN = self.swipe_turn
+        motion.SWIPE_TURN_SPEED = self.swipe_turn_speed
+        motion.SWIPE_LIFT = self.swipe_lift
+        motion.SWIPE_LIFT_SPEED = self.swipe_lift_speed
+
+    def describe(self):
+        return [
+            f"finger out above      {self.extended_ratio:.2f}",
+            f"fist below            {self.fist_reach:.2f}",
+            f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
+            f"hand lift             {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
+            f"smallest hand read    {self.min_hand_on_screen:.3f} of the frame",
+        ]
+
+
+def between(low, high, defaults_to, fraction=0.5):
+    """A threshold in the gap between two measurements.
+
+    ``low`` is the highest value seen when the answer should be no,
+    ``high`` the lowest when it should be yes.  If they overlap there is no
+    gap to sit in -- the two cases were not distinguishable on this camera
+    -- so the existing value is kept rather than inventing one.
+    """
+
+    if high <= low:
+        return defaults_to, False
+
+    return low + (high - low) * fraction, True
+
+
+def from_samples(poses, moves, current):
+    """Work thresholds out from what was recorded.
+
+    ``poses`` maps a pose name to the readings taken while it was held,
+    ``moves`` maps a movement name to the peak of each repetition, and
+    ``current`` is what the thresholds are now, used wherever a
+    measurement did not separate cleanly.
+
+    Returns the calibration and a list of anything that could not be
+    measured, which is worth telling the user rather than hiding.
+    """
+
+    warnings = []
+
+    # A finger is out above this.  Curled fingers come from the fist,
+    # straight ones from the open hand -- so the line goes between the
+    # straightest curled finger and the most bent straight one.
+    curled = [score
+              for reading in poses.get("fist", [])
+              for score in reading["ext"].values()]
+
+    straight = [score
+                for reading in poses.get("open", [])
+                for score in reading["ext"].values()]
+
+    extended_ratio, ok = between(
+        max(curled, default=0.0), min(straight, default=1.0),
+        current.extended_ratio)
+
+    if not ok:
+        warnings.append("could not tell a straight finger from a curled one")
+
+    # A fist is below this.  The other side is a hand at rest, which is
+    # the case that matters: it is what the camera sees most of the time.
+    fist = [score
+            for reading in poses.get("fist", [])
+            for score in reading["reach"].values()]
+
+    resting = [score
+               for reading in poses.get("rest", [])
+               for score in reading["reach"].values()]
+
+    fist_reach, ok = between(
+        max(fist, default=0.0), min(resting, default=99.0),
+        current.fist_reach)
+
+    if not ok:
+        warnings.append("could not tell a fist from a resting hand")
+
+    # Movements: take the weakest repetition and sit comfortably under it,
+    # so the gentlest gesture you actually made still counts.
+    swipe_turn, swipe_turn_speed, missed = _movement(
+        moves.get("turn", []), current.swipe_turn, current.swipe_turn_speed)
+
+    if not moves.get("turn"):
+        warnings.append("no wrist turn was recorded")
+    elif missed:
+        warnings.append("one of the wrist turns barely moved, and was ignored")
+
+    swipe_lift, swipe_lift_speed, missed = _movement(
+        moves.get("lift", []), current.swipe_lift, current.swipe_lift_speed)
+
+    if not moves.get("lift"):
+        warnings.append("no hand raise was recorded")
+    elif missed:
+        warnings.append("one of the hand raises barely moved, and was ignored")
+
+    # How small a hand may look and still be read.  Set from how large
+    # yours looked while calibrating, so calibrating at arm's length and
+    # calibrating across the room both work.
+    sizes = [reading["scale"]
+             for readings in poses.values()
+             for reading in readings]
+
+    min_hand = (min(sizes) * 0.6 if sizes else current.min_hand_on_screen)
+
+    return Calibration(
+        extended_ratio=round(extended_ratio, 3),
+        fist_reach=round(fist_reach, 3),
+        swipe_turn=round(swipe_turn, 3),
+        swipe_turn_speed=round(swipe_turn_speed, 3),
+        swipe_lift=round(swipe_lift, 3),
+        swipe_lift_speed=round(swipe_lift_speed, 3),
+        min_hand_on_screen=round(min_hand, 4),
+    ), warnings
+
+
+#: An attempt smaller than this share of the best is treated as one that
+#: did not happen -- a hand out of frame, or a prompt missed.
+BOTCHED = 0.4
+
+#: However gentle the gesture, a threshold below this share of the default
+#: is not believed.  Left alone, one failed attempt could set the bar at
+#: almost nothing and the app would fire at everything.
+FLOOR = 0.4
+
+
+def _movement(peaks, default_size, default_speed, margin=0.55):
+    """Thresholds from the peaks of several repetitions.
+
+    The weakest attempt sets the bar, because a gesture that only works
+    when made emphatically will fail on the day.  But an attempt far below
+    the others was not a gentle gesture, it was a missed one -- the prompt
+    came while the hand was out of frame, or halfway through moving back --
+    and letting that set the bar puts it on the floor.
+    """
+
+    if not peaks:
+        return default_size, default_speed, False
+
+    best = max(size for size, _ in peaks)
+
+    real = [(size, speed) for size, speed in peaks if size >= best * BOTCHED]
+
+    size = min(s for s, _ in real) * margin
+    speed = min(v for _, v in real) * margin
+
+    return (max(size, default_size * FLOOR),
+            max(speed, default_speed * FLOOR),
+            len(real) < len(peaks))
+
+
+def load_and_apply(path=None):
+    """Use a saved calibration if there is one.  Returns it, or None."""
+
+    calibration = Calibration.load(path)
+
+    if calibration is not None:
+        calibration.apply()
+
+    return calibration
+
+
+def current():
+    """The thresholds as they stand, measured or not."""
+
+    from . import hand_state, motion
+
+    return Calibration(
+        extended_ratio=hand_state.EXTENDED_RATIO,
+        fist_reach=hand_state.FIST_REACH,
+        swipe_turn=motion.SWIPE_TURN,
+        swipe_turn_speed=motion.SWIPE_TURN_SPEED,
+        swipe_lift=motion.SWIPE_LIFT,
+        swipe_lift_speed=motion.SWIPE_LIFT_SPEED,
+        min_hand_on_screen=hand_state.MIN_HAND_ON_SCREEN,
+    )

@@ -29,6 +29,8 @@ def build_parser():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--tune", action="store_true",
                       help="camera with the gesture numbers shown, no commands")
+    mode.add_argument("--calibrate", action="store_true",
+                      help="measure the thresholds from your own hand")
     mode.add_argument("--check", action="store_true",
                       help="print backend capabilities and permission warnings")
     mode.add_argument("--selftest", action="store_true",
@@ -70,6 +72,15 @@ def main(argv=None):
     # only unless asked.
     log.setup(config.log_dir, console=args.verbose,
               level=10 if args.verbose else 20)
+
+    # Thresholds measured from this machine's camera, if there are any.
+    import vision
+
+    measured = vision.load_and_apply()
+
+    if args.calibrate:
+        from integration import calibrate
+        return calibrate.run(args)
 
     engine = ControlEngine(config=config)
 

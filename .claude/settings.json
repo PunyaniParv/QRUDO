@@ -55,7 +55,8 @@
       "Bash(.venv/bin/pyright vision/ integration/ ui/ control/log.py)",
       "Bash(.venv/bin/pyright tests/ vision/ integration/ ui/ control/log.py control/commands.py control/config.py control/executor.py main.py)",
       "Bash(.venv/bin/python -m unittest tests.test_gestures.TestReturnStroke -v)",
-      "Bash(.venv/bin/python main.py --help)"
+      "Bash(.venv/bin/python main.py --help)",
+      "Bash(.venv/bin/python -m unittest tests.test_calibration)"
     ]
   }
 }

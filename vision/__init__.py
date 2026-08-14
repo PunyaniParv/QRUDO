@@ -7,6 +7,7 @@ tested without touching the machine.  The two halves meet only in
 integration/bridge.py.
 """
 
+from .calibration import Calibration, load_and_apply
 from .camera import Camera, CameraError
 from .gestures import (
     POSE_GUN,
@@ -20,6 +21,7 @@ from .state_machine import Presence, now
 from .motion import debug_state, detect_swipe
 
 __all__ = [
+    "Calibration",
     "Camera",
     "CameraError",
     "Hand",
@@ -33,6 +35,7 @@ __all__ = [
     "detect_gesture",
     "detect_swipe",
     "is_two_finger_pose",
+    "load_and_apply",
     "reset_state",
     "two_finger_pose_kind",
 ]
