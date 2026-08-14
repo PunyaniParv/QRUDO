@@ -116,6 +116,41 @@ class SwipeState:
         self.armed_kind = None
 
 
+class Presence:
+    """Tolerates the hand vanishing for a moment.
+
+    A fast gesture is precisely when MediaPipe is most likely to lose the
+    hand for a frame or two: the blur that makes a movement fast is the
+    blur that makes a hand hard to find.  Forgetting everything the instant
+    it disappears throws away the swipe that was in progress -- which is
+    why a slow turn worked and a quick one did not.
+
+    So the hand has to be gone for a little while before anything is
+    forgotten.  Long enough to ride out the blur, short enough that a hand
+    which really left cannot combine with the next one.
+    """
+
+    def __init__(self, grace=0.35):
+        self.grace = grace
+        self.last_seen = None
+
+    def seen(self, moment):
+        self.last_seen = moment
+
+    def missing(self, moment):
+        """True once it has been gone long enough to forget it."""
+
+        if self.last_seen is None:
+            return False
+
+        if moment - self.last_seen < self.grace:
+            return False
+
+        self.last_seen = None
+
+        return True
+
+
 def now():
     """Indirection so tests can replay motion on their own clock."""
 
