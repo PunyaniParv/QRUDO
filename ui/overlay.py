@@ -99,7 +99,12 @@ def tuning_lines(state, motion, hand_state):
         return (f"{mark}{label} {state.get(key, 0):.2f}"
                 f"  peak {peak:.2f} / {target}{note}")
 
+    fps = state.get("fps")
+
     return [
+        # Below about 15 the gestures suffer: a quick turn stops producing
+        # enough frames to be seen as one.
+        f"   fps   {fps:.0f}" if fps else "   fps   -",
         f"   pose  {state.get('pose')}   armed {state.get('armed')}",
         f"   aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
         line("turn ", "turn", motion.SWIPE_TURN),

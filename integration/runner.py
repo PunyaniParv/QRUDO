@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections import deque
 
 from .bridge import GestureRouter
 
@@ -33,6 +34,7 @@ def run(engine, args, tuning=False):
 
     router = GestureRouter()
     presence = Presence()
+    frame_times = deque(maxlen=30)
     last_result = None
     last_swipe = None
     last_swipe_at = 0.0
@@ -65,6 +67,7 @@ def run(engine, args, tuning=False):
 
     try:
         for frame in camera.frames():
+            frame_times.append(time.time())
             hand = tracker.track(frame)
             gesture = None
 
@@ -106,8 +109,9 @@ def run(engine, args, tuning=False):
             overlay.draw_legend(cv2, frame, router.mapping())
 
             if tuning:
-                overlay.draw_tuning(
-                    cv2, frame, motion.debug_state(), motion, hand_state)
+                state = motion.debug_state()
+                state["fps"] = frame_rate(frame_times)
+                overlay.draw_tuning(cv2, frame, state, motion, hand_state)
 
             cv2.imshow("SARV", frame)
 
@@ -129,6 +133,17 @@ def run(engine, args, tuning=False):
 
     print("\n  bye.")
     return 0
+
+
+def frame_rate(times):
+    """Frames per second over the last second or so of frames."""
+
+    if len(times) < 2:
+        return None
+
+    elapsed = times[-1] - times[0]
+
+    return (len(times) - 1) / elapsed if elapsed > 0 else None
 
 
 def banner(engine, router, args, tuning):
