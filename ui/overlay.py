@@ -114,6 +114,10 @@ def tuning_lines(state, motion, hand_state):
         "   ext   " + "  ".join(
             f"{name[0]}{score:.2f}" for name, score in scores.items()
         ) + f"   (out above {hand_state.EXTENDED_RATIO})",
+        "   reach " + "  ".join(
+            f"{name[0]}{score:.2f}"
+            for name, score in state.get("reach", {}).items()
+        ) + f"   (fist below {hand_state.FIST_REACH})",
     ]
 
 

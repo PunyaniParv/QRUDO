@@ -29,15 +29,14 @@ def reset():
 def classify(hand):
     """The shape this single frame shows, before stabilising."""
 
-    shape = hand_state.shape_of(hand)
-
-    fingers = hand_state.detect_fingers(shape)
+    fingers = hand_state.fingers_out(hand)
     extended = sum(fingers.values())
 
     if extended == 0:
         # Nothing straight is not enough: a hand at rest has nothing
         # straight either.  It has to be shut.
-        return "FIST" if hand_state.is_clenched(shape) else "UNKNOWN"
+        return ("FIST" if hand_state.is_clenched(hand_state.screen_of(hand))
+                else "UNKNOWN")
 
     if (
         fingers["index"]
@@ -81,9 +80,7 @@ def two_finger_pose_kind(hand):
     the hand happened to be turned.
     """
 
-    shape = hand_state.shape_of(hand)
-
-    fingers = hand_state.detect_fingers(shape)
+    fingers = hand_state.fingers_out(hand)
 
     two_out = (
         fingers["index"]
@@ -95,7 +92,7 @@ def two_finger_pose_kind(hand):
     if not two_out:
         return None
 
-    if hand_state.fingers_aimed_at_camera(shape):
+    if hand_state.fingers_aimed_at_camera(hand_state.shape_of(hand)):
         return POSE_GUN
 
     return POSE_PEACE

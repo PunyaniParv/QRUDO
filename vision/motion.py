@@ -162,6 +162,7 @@ def detect_swipe(hand, handedness=None):
         armed=armed,
         aim=round(hand_state.pointing_direction(hand), 2),
         ext=hand_state.finger_scores(shape),
+        reach=hand_state.reach_scores(screen),
         turn=0.0,
         slide=0.0,
         speed=0.0,

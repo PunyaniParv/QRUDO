@@ -43,13 +43,14 @@ FINGERS = {
 #: line; turning the hand does not.
 EXTENDED_RATIO = 0.82
 
-#: A fist has to be shut.  Not "no finger is straight" -- a hand at rest
-#: has no finger straight -- and not merely bent either: fingers held a
-#: little away from the palm are a hand doing nothing in particular.  The
-#: fingertips have to come most of the way back to the knuckles, which
-#: leaves a wide deadband where the hand is neither open nor closed and
-#: nothing happens.
-CURLED_RATIO = 0.55
+#: A fist is judged by where the fingertips end up rather than by how
+#: bent each finger is.  How far a tip sits from the wrist, against how
+#: far its knuckle does: shut brings the tips back level with the
+#: knuckles, a hand merely resting leaves them well beyond, and an open
+#: hand further still.  Those separate cleanly, where "how bent is this
+#: finger" does not -- and the knuckles and wrist stay well tracked even
+#: when a closed hand hides the fingers themselves.
+FIST_REACH = 1.15
 
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is
@@ -256,6 +257,21 @@ def finger_is_extended(hand_landmarks, tip, pip, mcp):
     ) > EXTENDED_RATIO
 
 
+def finger_reach(hand_landmarks, tip, mcp):
+    """How far past its knuckle a fingertip sits, as a multiple.
+
+    About 1 when the hand is shut, around 1.3 when it is merely resting,
+    and 1.6 or more when the finger is out.
+    """
+
+    knuckle = distance(hand_landmarks[WRIST], hand_landmarks[mcp])
+
+    if knuckle == 0:
+        return 0.0
+
+    return distance(hand_landmarks[WRIST], hand_landmarks[tip]) / knuckle
+
+
 def detect_fingers(hand_landmarks):
     """Which fingers are out."""
 
@@ -265,13 +281,37 @@ def detect_fingers(hand_landmarks):
     }
 
 
+def fingers_out(hand):
+    """Which fingers are out, asking both views of the hand.
+
+    A finger counts if either says so.  The screen view is exact for a
+    hand held flat and hopeless for one aimed at the camera; the world
+    view is the reverse.  Requiring both to agree loses real gestures --
+    which is what stopped two fingers registering at all.
+    """
+
+    shape = detect_fingers(shape_of(hand))
+    screen = detect_fingers(screen_of(hand))
+
+    return {name: shape[name] or screen[name] for name in FINGERS}
+
+
 def is_clenched(hand_landmarks):
-    """Whether every finger is properly folded, not merely un-straight."""
+    """Whether the hand is shut, not merely un-straight."""
 
     return all(
-        finger_extension(hand_landmarks, tip, pip, mcp) < CURLED_RATIO
-        for tip, pip, mcp in FINGERS.values()
+        finger_reach(hand_landmarks, tip, mcp) < FIST_REACH
+        for tip, _, mcp in FINGERS.values()
     )
+
+
+def reach_scores(hand_landmarks):
+    """Every finger's reach, for the tuning overlay."""
+
+    return {
+        name: round(finger_reach(hand_landmarks, tip, mcp), 2)
+        for name, (tip, _, mcp) in FINGERS.items()
+    }
 
 
 def finger_scores(hand_landmarks):
