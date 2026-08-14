@@ -754,3 +754,51 @@ class TestVolumeBothWays(GestureTestCase):
         for _ in range(30):
             self.assertIsNone(motion.detect_swipe(self.peace(0.30), HAND))
             self.clock.tick(0.03)
+
+
+class TestRestingHeight(GestureTestCase):
+    """Where the hand is held still is the height it is judged against.
+
+    Reported twice: raising worked, lowering never did.  A hand comes into
+    view from below, so a fixed starting point sits near the bottom of its
+    range -- up is easy from there and down would mean leaving the frame.
+    """
+
+    def peace(self, cy):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy)
+
+    def move(self, start, end, seconds=0.30, frames=12):
+        result = None
+        for i in range(frames):
+            cy = start + (end - start) * (i / (frames - 1))
+            result = result or motion.detect_swipe(self.peace(cy), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def rest(self, cy, seconds=0.40, frames=10):
+        for _ in range(frames):
+            motion.detect_swipe(self.peace(cy), HAND)
+            self.clock.tick(seconds / frames)
+
+    def test_lowering_from_a_raised_hand(self):
+        """Raise, hold a moment, lower: the second one is a swipe down."""
+
+        self.hold_pose(self.peace(0.55))
+        self.assertEqual(self.move(0.55, 0.35), "SWIPE_UP")
+        self.rest(0.35)
+        self.assertEqual(self.move(0.35, 0.55), "SWIPE_DOWN")
+
+    def test_raising_twice_over(self):
+        """Volume up, up again: each raise counts from the new height."""
+
+        self.hold_pose(self.peace(0.70))
+        self.assertEqual(self.move(0.70, 0.55), "SWIPE_UP")
+        self.rest(0.55)
+        self.assertEqual(self.move(0.55, 0.40), "SWIPE_UP")
+
+    def test_a_hand_brought_in_low_can_still_go_down(self):
+        """The case from the report: the pose is first seen low."""
+
+        self.hold_pose(self.peace(0.60))
+        self.rest(0.60)
+        self.assertEqual(self.move(0.60, 0.78), "SWIPE_DOWN")
