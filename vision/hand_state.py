@@ -43,12 +43,13 @@ FINGERS = {
 #: line; turning the hand does not.
 EXTENDED_RATIO = 0.82
 
-#: A fist is not merely "no finger is straight".  A hand resting on a
-#: keyboard, or just relaxed, is halfway between -- and calling that a
-#: fist is what made play/pause fire at nothing.  Every finger has to be
-#: properly folded, which leaves a deliberate deadband in between where
-#: the hand is neither and nothing happens.
-CURLED_RATIO = 0.68
+#: A fist has to be shut.  Not "no finger is straight" -- a hand at rest
+#: has no finger straight -- and not merely bent either: fingers held a
+#: little away from the palm are a hand doing nothing in particular.  The
+#: fingertips have to come most of the way back to the knuckles, which
+#: leaves a wide deadband where the hand is neither open nor closed and
+#: nothing happens.
+CURLED_RATIO = 0.55
 
 #: How squarely the fingers must aim at the camera to count as the gun
 #: pose rather than the peace sign.  1.0 is straight down the lens, 0.5 is

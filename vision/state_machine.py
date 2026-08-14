@@ -94,6 +94,7 @@ class SwipeState:
         self.armed_until = 0.0
         self.armed_kind = None
         self.cooldown_until = 0.0
+        self.armed_since = 0.0
         self._seen_kind = None
         self._seen_since = 0.0
         self._last_pose_at = 0.0
@@ -128,6 +129,12 @@ class SwipeState:
         self._last_pose_at = now
 
         if now - self._seen_since >= self.hold:
+            if not self.is_armed(now):
+                # Note when this began, so the movement that counts is the
+                # movement made since -- not whatever the hand was doing on
+                # its way into shot.
+                self.armed_since = now
+
             self.armed_until = now + self.arm_hold
             self.armed_kind = kind
 

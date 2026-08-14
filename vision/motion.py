@@ -35,6 +35,11 @@ ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
 POSE_HOLD = 0.15          # the pose must be held this long before it counts
 
+#: Moving the peace sign bodily across used to count as a swipe too.  It
+#: is off by default: shifting your hand a little is not a gesture, and
+#: while it was on, it was.  The wrist turn is the gesture.
+SWIPE_ALLOW_SLIDE = False
+
 SWIPE_SLIDE = 0.90        # palm widths the hand must cover
 SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 
@@ -140,7 +145,11 @@ def detect_swipe(hand, handedness=None):
     if _state.is_cooling(moment) or not armed:
         return None
 
-    window = _state.history.recent(moment)
+    # Only what happened after the pose settled.  Raising a hand into
+    # frame swings this reading wildly as the fingers come into view, and
+    # counting that was why simply showing two fingers fired a swipe.
+    window = [sample for sample in _state.history.recent(moment)
+              if sample[0] >= _state.armed_since]
 
     if len(window) < SWIPE_MIN_SAMPLES:
         return None
@@ -179,7 +188,8 @@ def detect_swipe(hand, handedness=None):
     )
 
     slid = (
-        _state.armed_kind == gestures.POSE_PEACE
+        SWIPE_ALLOW_SLIDE
+        and _state.armed_kind == gestures.POSE_PEACE
         and abs(slide) >= SWIPE_SLIDE
         and slide_speed >= SWIPE_SLIDE_SPEED
         and slide_agree >= SWIPE_CONSISTENCY

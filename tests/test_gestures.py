@@ -52,7 +52,8 @@ class Clock:
 # --- building a hand -------------------------------------------------------
 
 EXTENDED = "extended"
-CURLED = "curled"
+CURLED = "curled"      # shut: fingertips back at the knuckles
+LOOSE = "loose"        # bent, but held away from the palm
 
 #: Screen axes: x right, y down, z away from the camera.
 #: Canonically the hand is palm-to-camera with the fingers pointing up.
@@ -114,11 +115,18 @@ def make_hand(index=EXTENDED, middle=EXTENDED, ring=EXTENDED, pinky=EXTENDED,
             points.append(Point(mx, my - 0.045, 0.0))
             points.append(Point(mx, my - 0.080, 0.0))
             points.append(Point(mx, my - 0.115, 0.0))
+        elif states[name] == LOOSE:
+            # Bent, but with a gap between the fingers and the palm: a hand
+            # resting or half-closed, which is not a gesture.
+            points.append(Point(mx, my - 0.045, 0.000))
+            points.append(Point(mx, my - 0.065, -0.025))
+            points.append(Point(mx, my - 0.060, -0.055))
+
         else:
-            # Curled in toward the palm, so the tip ends up near the knuckle.
+            # Shut: the fingertip comes right back to the knuckle.
             points.append(Point(mx, my - 0.040, -0.010))
             points.append(Point(mx, my - 0.050, -0.040))
-            points.append(Point(mx, my - 0.020, -0.055))
+            points.append(Point(mx, my - 0.005, -0.045))
 
     assert len(points) == 21, len(points)
 
@@ -214,6 +222,13 @@ class TestStaticGestures(GestureTestCase):
         """One good frame is not a gesture; that is how flicker gets in."""
 
         self.assertEqual(gestures.detect_gesture(make_hand(), HAND), "UNKNOWN")
+
+    def test_a_half_closed_hand_is_not_a_fist(self):
+        """Reported from real use: fingers bent but clear of the palm were
+        being taken as a fist, so play/pause fired at a resting hand."""
+
+        loose = make_hand(LOOSE, LOOSE, LOOSE, LOOSE)
+        self.assertEqual(self.settle(loose), "UNKNOWN")
 
     def test_punch_is_a_fist(self):
         """A punch shows the camera its knuckles, not its palm."""
@@ -433,7 +448,20 @@ class TestGunSwipe(GestureTestCase):
 
 
 class TestPeaceSignSwipe(GestureTestCase):
-    """Two fingers up, palm to the camera: slid or tilted across."""
+    """Two fingers up, palm to the camera: slid or tilted across.
+
+    Sliding is off by default -- shifting your hand a little is not a
+    gesture -- so these turn it on.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._slide_was = motion.SWIPE_ALLOW_SLIDE
+        motion.SWIPE_ALLOW_SLIDE = True
+
+    def tearDown(self):
+        motion.SWIPE_ALLOW_SLIDE = self._slide_was
+        super().tearDown()
 
     def slide(self, start, end, seconds, frames=12):
         self.hold_pose(peace_sign(cx=start))
