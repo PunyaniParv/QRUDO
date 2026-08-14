@@ -55,7 +55,13 @@ def run(engine, args, tuning=False):
         return 1
 
     try:
-        camera = Camera(args.camera).open()
+        # More pixels reach further: a hand three metres off is about
+        # twenty pixels across at 640, which is not much to find joints in.
+        camera = Camera(
+            args.camera,
+            width=1280 if getattr(args, "far", False) else 640,
+            height=720 if getattr(args, "far", False) else 480,
+        ).open()
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
         tracker.close()

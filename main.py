@@ -46,6 +46,9 @@ def build_parser():
                         help="run without the preview, so nothing takes focus")
     parser.add_argument("--camera", type=int, default=0, metavar="N",
                         help="which camera to use (default 0)")
+    parser.add_argument("--far", action="store_true",
+                        help="more pixels on a distant hand, for controlling "
+                             "from across a room; costs frame rate")
     parser.add_argument("--delay", type=float, default=0.0, metavar="SECONDS",
                         help="count down before --command, so you can click "
                              "the video first")

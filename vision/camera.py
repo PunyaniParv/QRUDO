@@ -47,9 +47,11 @@ class Camera:
             raise CameraError(f"could not open camera {self.index}")
 
         # A webcam left to itself often hands over 1280x720 or more, and
-        # every one of those pixels goes through hand detection.  Nothing
-        # here needs the resolution: a hand is a hand at 640x480, and the
-        # frame rate is what the gestures actually depend on.
+        # every one of those pixels goes through hand detection.  640x480
+        # is plenty up close and keeps the frame rate up, which is what the
+        # gestures depend on -- but it costs range, because a hand three
+        # metres away is only about twenty pixels across at this size.
+        # --far raises it for that.
         self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 

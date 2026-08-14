@@ -62,10 +62,16 @@ AIM_AT_CAMERA = 0.50
 #: tell" rather than a coin flip.
 PALM_CERTAINTY = 0.12
 
-#: Smallest a hand can look on screen and still be taken as deliberate,
-#: as a fraction of the frame width.  A hand across the room, or one
-#: mostly out of shot, is doing something else.
-MIN_HAND_ON_SCREEN = 0.09
+#: Smallest a hand can look on screen and still be read, as a fraction of
+#: the frame width.  This is a range limit, so it wants to be low: a palm
+#: is about a tenth of the frame at a metre and a thirtieth at three, and
+#: the point of the thing is to work from across a room.  At 0.035 it
+#: reaches roughly three metres, while still ignoring someone at the far
+#: side of a hall.
+#:
+#: It was 0.09 briefly, to cut down false positives, which quietly capped
+#: the whole app at arm's length.
+MIN_HAND_ON_SCREEN = 0.035
 
 
 # ---------------------------------------------------------
