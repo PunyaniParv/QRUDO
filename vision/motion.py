@@ -30,7 +30,7 @@ SWIPE_WINDOW = 0.60       # seconds of movement considered
 SWIPE_TURN = 0.30         # how far the aim must swing
 SWIPE_TURN_SPEED = 0.80   # per second
 SWIPE_CONSISTENCY = 0.65  # how directly the motion got where it ended up
-SWIPE_MIN_SAMPLES = 4
+SWIPE_MIN_SAMPLES = 3     # a fast flick is only a few frames long
 ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
 

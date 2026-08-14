@@ -25,13 +25,14 @@ def run(engine, args, tuning=False):
 
     import cv2
 
-    from vision import Camera, CameraError, HandTracker, TrackerError
+    from vision import Camera, CameraError, HandTracker, Presence, TrackerError
     from vision import gestures as gesture_module
     from vision import hand_state, motion
     import vision
     from ui import overlay
 
     router = GestureRouter()
+    presence = Presence()
     last_result = None
     last_swipe = None
     last_swipe_at = 0.0
@@ -68,9 +69,13 @@ def run(engine, args, tuning=False):
             gesture = None
 
             if hand is None:
-                vision.reset_state()
-                router.forget()
+                # Not immediately: a fast gesture blurs, and a blurred hand
+                # is a hand MediaPipe misses for a frame or two.
+                if presence.missing(time.time()):
+                    vision.reset_state()
+                    router.forget()
             else:
+                presence.seen(time.time())
                 gesture = gesture_module.detect_gesture(hand)
                 swipe = motion.detect_swipe(hand)
 

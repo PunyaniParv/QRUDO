@@ -481,3 +481,68 @@ class TestRotatedPeaceSign(GestureTestCase):
                 hand = peace_sign(roll=math.radians(degrees))
                 self.assertEqual(gestures.two_finger_pose_kind(hand),
                                  gestures.POSE_PEACE)
+
+
+class TestFastSwipes(GestureTestCase):
+    """A quick flick, which is where this used to fall apart.
+
+    Moving fast blurs the frame, and a blurred hand is one MediaPipe
+    misses -- so a fast gesture is exactly the one most likely to arrive
+    with frames missing from the middle of it.
+    """
+
+    def flick(self, seconds, frames, dropped=()):
+        """Rotate through 50 degrees, losing the listed frames entirely."""
+
+        result = None
+        for i in range(frames):
+            degrees = -25 + 50 * (i / (frames - 1))
+            if i not in dropped:
+                hand = peace_sign(roll=math.radians(degrees))
+                result = result or motion.detect_swipe(hand, HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def test_quick_flick(self):
+        """Six frames, a fifth of a second."""
+
+        self.assertEqual(self.flick(0.20, 6), "SWIPE_RIGHT")
+
+    def test_very_quick_flick(self):
+        """Four frames is about as short as a real gesture gets."""
+
+        self.assertEqual(self.flick(0.13, 4), "SWIPE_RIGHT")
+
+    def test_survives_a_lost_frame(self):
+        self.assertEqual(self.flick(0.20, 8, dropped={3}), "SWIPE_RIGHT")
+
+    def test_survives_two_lost_frames(self):
+        self.assertEqual(self.flick(0.20, 8, dropped={3, 4}), "SWIPE_RIGHT")
+
+
+class TestPresence(GestureTestCase):
+    """How long the hand has to be gone before the gesture is abandoned."""
+
+    def test_a_blink_is_not_a_departure(self):
+        presence = gd_presence(grace=0.35)
+        presence.seen(1000.0)
+        self.assertFalse(presence.missing(1000.1))
+
+    def test_a_real_departure_is(self):
+        presence = gd_presence(grace=0.35)
+        presence.seen(1000.0)
+        self.assertTrue(presence.missing(1000.5))
+
+    def test_reported_once_not_every_frame(self):
+        presence = gd_presence(grace=0.35)
+        presence.seen(1000.0)
+        self.assertTrue(presence.missing(1000.5))
+        self.assertFalse(presence.missing(1000.6))
+
+    def test_nothing_to_forget_before_a_hand_appears(self):
+        self.assertFalse(gd_presence().missing(1000.0))
+
+
+def gd_presence(grace=0.35):
+    from vision.state_machine import Presence
+    return Presence(grace)

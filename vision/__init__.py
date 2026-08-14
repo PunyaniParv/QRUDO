@@ -16,6 +16,7 @@ from .gestures import (
     two_finger_pose_kind,
 )
 from .hand_tracker import Hand, HandTracker, TrackerError
+from .state_machine import Presence, now
 from .motion import debug_state, detect_swipe
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
     "CameraError",
     "Hand",
     "HandTracker",
+    "Presence",
+    "now",
     "POSE_GUN",
     "POSE_PEACE",
     "TrackerError",
