@@ -148,7 +148,8 @@ class TestApplying(unittest.TestCase):
 
             loaded = Calibration.load(path)
 
-            self.assertIsNotNone(loaded)
+            assert loaded is not None, "an older file should still load"
+
             self.assertEqual(loaded.extended_ratio, 0.8)
             self.assertIn("open_ratio", loaded.incomplete)
 

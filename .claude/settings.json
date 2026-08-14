@@ -64,7 +64,9 @@
       "Bash(.venv/bin/pyright vision/ integration/ ui/ tests/ control/log.py control/commands.py control/config.py control/executor.py main.py)",
       "Bash(.venv/bin/pyright vision/ integration/ ui/ tests/ main.py)",
       "Bash(osascript -e 'tell application \"Music\" to quit')",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(.venv/bin/python -m pip uninstall -q -y pyright)",
+      "Bash(git commit -q -m 'Narrow the optional in the calibration test *)"
     ]
   }
 }
