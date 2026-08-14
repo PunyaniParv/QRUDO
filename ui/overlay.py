@@ -41,6 +41,44 @@ def draw_result(cv2, frame, result):
                 GREEN if result.ok else RED, 1)
 
 
+def draw_arming(cv2, frame, armed, holding=0.0):
+    """Whether SARV is listening, shown so it reads from across a room.
+
+    A border around the whole picture rather than a word in a corner: the
+    point of the app is to work from a few metres away, and at that
+    distance you can see a colour but not read small text.  The word is
+    there too, large, for anyone close enough.
+    """
+
+    height, width = frame.shape[:2]
+    colour = GREEN if armed else RED
+
+    cv2.rectangle(frame, (0, 0), (width - 1, height - 1), colour, 14)
+
+    label = "ARMED" if armed else "PAUSED"
+    scale = 1.2
+    thickness = 3
+
+    (text_width, _), _ = cv2.getTextSize(
+        label, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+
+    cv2.putText(frame, label, (width - text_width - 30, 45),
+                cv2.FONT_HERSHEY_SIMPLEX, scale, colour, thickness)
+
+    if holding <= 0:
+        return
+
+    # Filling bar while an open hand is held, so a hand held up with
+    # nothing happening does not look like a gesture being missed.
+    bar = int((width - 60) * holding)
+
+    cv2.rectangle(frame, (30, height - 40),
+                  (30 + bar, height - 22), colour, -1)
+
+    cv2.putText(frame, "hold to " + ("pause" if armed else "arm"),
+                (30, height - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 1)
+
+
 def legend_lines(mapping):
     """What each gesture does, in plain words.
 

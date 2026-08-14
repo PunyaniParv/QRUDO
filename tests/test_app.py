@@ -118,10 +118,6 @@ class TestMapping(unittest.TestCase):
         self.assertIsNone(router.update(swipe="SWIPE_LEFT"))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class TestFlickerDoesNotDoubleFire(unittest.TestCase):
     """Reported from a slower machine: a fist played and paused at once.
 
@@ -158,3 +154,74 @@ class TestFlickerDoesNotDoubleFire(unittest.TestCase):
         self.assertIsNotNone(router.update("FIST"))
         router.forget()
         self.assertIsNotNone(router.update("FIST"))
+
+
+class TestArmingSwitch(unittest.TestCase):
+    """Holding an open hand turns SARV on and off.
+
+    The problem it answers: talking with your hands should not pause your
+    video, and no amount of threshold tuning reliably tells a gesture from
+    a gesticulation.  This hands the decision over instead.
+    """
+
+    def setUp(self):
+        from integration.bridge import ArmingSwitch
+        self.switch = ArmingSwitch()
+        self.now = 1000.0
+
+    def hold(self, gesture, seconds, step=0.05):
+        """Show a gesture for a while; returns how often it switched."""
+
+        switches = 0
+        for _ in range(int(seconds / step)):
+            switches += bool(self.switch.update(gesture, self.now))
+            self.now += step
+        return switches
+
+    def test_starts_listening(self):
+        self.assertTrue(self.switch.armed)
+
+    def test_holding_an_open_hand_pauses_it(self):
+        self.hold("OPEN_PALM", 2.0)
+        self.assertFalse(self.switch.armed)
+
+    def test_holding_it_again_starts_it_listening(self):
+        self.hold("OPEN_PALM", 2.0)
+        self.hold("UNKNOWN", 0.3)
+        self.hold("OPEN_PALM", 2.0)
+        self.assertTrue(self.switch.armed)
+
+    def test_a_glimpse_of_an_open_hand_does_nothing(self):
+        """An open hand is what your hand passes through on the way to
+        every other gesture."""
+
+        self.hold("OPEN_PALM", 0.5)
+        self.assertTrue(self.switch.armed)
+
+    def test_holding_on_does_not_flip_it_back(self):
+        """Keep holding after it switches and it must stay switched."""
+
+        self.assertEqual(self.hold("OPEN_PALM", 6.0), 1)
+        self.assertFalse(self.switch.armed)
+
+    def test_the_hand_has_to_leave_before_it_counts_again(self):
+        self.hold("OPEN_PALM", 6.0)
+        self.hold("FIST", 0.2)
+        self.hold("OPEN_PALM", 2.0)
+        self.assertTrue(self.switch.armed)
+
+    def test_progress_is_reported_while_holding(self):
+        """Shown as a filling bar, so a held hand does not look ignored."""
+
+        self.hold("OPEN_PALM", 0.75)
+        self.assertGreater(self.switch.holding(self.now), 0.4)
+        self.assertLess(self.switch.holding(self.now), 0.6)
+
+    def test_progress_is_nothing_when_not_holding(self):
+        self.assertEqual(self.switch.holding(self.now), 0.0)
+        self.hold("FIST", 1.0)
+        self.assertEqual(self.switch.holding(self.now), 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

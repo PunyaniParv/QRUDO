@@ -11,7 +11,7 @@ import sys
 import time
 from collections import deque
 
-from .bridge import GestureRouter
+from .bridge import ArmingSwitch, GestureRouter
 
 #: How long a completed swipe stays on screen, in seconds.
 SWIPE_SHOWN_FOR = 0.8
@@ -33,6 +33,7 @@ def run(engine, args, tuning=False):
     from ui import overlay
 
     router = GestureRouter()
+    switch = ArmingSwitch()
     presence = Presence()
     frame_times = deque(maxlen=30)
     last_result = None
@@ -93,7 +94,9 @@ def run(engine, args, tuning=False):
                 gesture = gesture_module.detect_gesture(hand)
                 swipe = motion.detect_swipe(hand)
 
-                if not tuning:
+                switch.update(gesture, time.time())
+
+                if not tuning and switch.armed:
                     command = router.update(gesture, swipe)
 
                     if command is not None:
@@ -115,6 +118,8 @@ def run(engine, args, tuning=False):
             if not show_window:
                 continue
 
+            overlay.draw_arming(cv2, frame, switch.armed,
+                                switch.holding(time.time()))
             overlay.draw_gesture(cv2, frame, gesture)
             overlay.draw_result(cv2, frame, last_result)
             overlay.draw_legend(cv2, frame, router.mapping())
