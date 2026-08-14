@@ -43,8 +43,14 @@ def classify(hand, handedness=None):
     # neither way.
     from_behind = hand_state.is_back_of_hand(screen, handedness)
 
-    # Before the fist: pinching curls the index finger in, so a pinch
-    # with the others closed reads as a fist if nothing looks first.
+    # The fist first.  A shut hand lays the thumb against the curled index
+    # finger, which looks much like a pinch, so whichever is asked second
+    # never gets a look at a genuine one of the other.  A fist is the less
+    # ambiguous of the two -- every finger shut -- so it answers first, and
+    # a real pinch is unaffected because its index finger is out.
+    if hand_state.is_clenched(screen):
+        return "UNKNOWN" if from_behind else "FIST"
+
     if hand_state.is_pinching(hand):
         return "PINCH"
 
@@ -52,12 +58,8 @@ def classify(hand, handedness=None):
     extended = sum(fingers.values())
 
     if extended == 0:
-        # Nothing straight is not enough: a hand at rest has nothing
-        # straight either.  It has to be shut, and facing us.
-        if not hand_state.is_clenched(screen) or from_behind:
-            return "UNKNOWN"
-
-        return "FIST"
+        # Not shut, but nothing straight either: a hand at rest.
+        return "UNKNOWN"
 
     if (
         fingers["index"]

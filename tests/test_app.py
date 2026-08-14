@@ -58,12 +58,14 @@ class TestHeldPoses(unittest.TestCase):
         """Re-arming takes a real gesture in between, not an unsure frame.
 
         This used to accept "UNKNOWN" as the gap, which is what made a fist
-        fire twice on a machine where the picture flickers.
+        fire twice on a machine where the picture flickers.  A moment has
+        to pass as well now, since a flicker to another real gesture and
+        back does the same thing in under a second.
         """
 
-        self.assertIsNotNone(self.router.update("FIST"))
-        self.router.update("OPEN_PALM")
-        self.assertIsNotNone(self.router.update("FIST"))
+        self.assertIsNotNone(self.router.update("FIST", now=1000.0))
+        self.router.update("OPEN_PALM", now=1000.5)
+        self.assertIsNotNone(self.router.update("FIST", now=1002.0))
 
     def test_unmapped_poses_do_nothing(self):
         for gesture in ("OPEN_PALM", "POINT", "TWO_FINGER", "UNKNOWN"):
@@ -142,12 +144,16 @@ class TestFlickerDoesNotDoubleFire(unittest.TestCase):
         self.assertIsNone(router.update("FIST"))
 
     def test_another_real_gesture_still_re_arms(self):
-        """Fist, open the hand, fist again is two deliberate gestures."""
+        """Fist, open the hand, fist again is two deliberate gestures.
+
+        Given a moment between them: done inside a second it is a
+        misreading flickering, which is what this guards.
+        """
 
         router = GestureRouter()
-        self.assertIsNotNone(router.update("FIST"))
-        router.update("OPEN_PALM")
-        self.assertIsNotNone(router.update("FIST"))
+        self.assertIsNotNone(router.update("FIST", now=1000.0))
+        router.update("OPEN_PALM", now=1000.5)
+        self.assertIsNotNone(router.update("FIST", now=1002.0))
 
     def test_the_hand_leaving_re_arms(self):
         router = GestureRouter()
@@ -225,3 +231,45 @@ class TestArmingSwitch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
+    """A misreading that is not "unknown" must not fire a pose twice.
+
+    Reported twice, from two different flickers.  The first went through
+    "unknown" and was fixed by ignoring that; this one went fist to pinch
+    and back, which are both real gestures, so the pose re-armed and fired
+    on the way in and again on the way back -- playing and pausing at once,
+    leaving the video where it started.
+    """
+
+    def setUp(self):
+        self.router = GestureRouter()
+        self.now = 1000.0
+
+    def fire(self, gesture, after=0.05):
+        self.now += after
+        return self.router.update(gesture, now=self.now)
+
+    def test_a_flicker_to_another_gesture_and_back_fires_once(self):
+        self.assertIsNotNone(self.fire("FIST"))
+        self.fire("PINCH")
+        self.assertIsNone(self.fire("FIST"))
+
+    def test_a_deliberate_repeat_after_a_pause_still_fires(self):
+        self.assertIsNotNone(self.fire("FIST"))
+        self.fire("OPEN_PALM")
+        self.assertIsNotNone(self.fire("FIST", after=1.5))
+
+    def test_the_hand_leaving_counts_as_deliberate(self):
+        """Fist, drop your hand, fist again is two gestures however fast."""
+
+        self.assertIsNotNone(self.fire("FIST"))
+        self.router.forget()
+        self.assertIsNotNone(self.fire("FIST"))
+
+    def test_different_poses_are_unaffected_by_each_other(self):
+        router = GestureRouter(poses={"FIST": Command.PLAY_PAUSE,
+                                      "POINT": Command.VOLUME_UP})
+        self.assertIsNotNone(router.update("FIST", now=1000.0))
+        self.assertIsNotNone(router.update("POINT", now=1000.1))

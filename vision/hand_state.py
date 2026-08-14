@@ -226,6 +226,14 @@ def is_pinching(hand):
 
     screen = screen_of(hand)
 
+    # A shut hand is never a pinch, whatever the thumb is doing.  It lies
+    # against the curled index finger, so the gap between them is nearly
+    # as small as a real pinch -- close enough that a fist flickered
+    # between the two, which both lost the fist half the time and fired
+    # play and pause together when the flicker went and came back.
+    if is_clenched(screen):
+        return False
+
     if pinch_gap(hand) >= PINCH_GAP:
         return False
 

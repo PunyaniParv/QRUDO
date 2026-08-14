@@ -8,7 +8,16 @@ does is a change to this file alone.
 
 from __future__ import annotations
 
+import time
+
 from control import Command
+
+#: How soon the same held pose may fire again.  Making a fist twice in
+#: under a second is not something anyone does deliberately, and a
+#: misreading that flickers to another gesture and back is: the flicker
+#: re-arms the pose, so it fires on the way in and again on the way back,
+#: playing and pausing at once.  Only a misreading is refused here.
+POSE_REPEAT = 1.0
 
 #: Held poses.  These fire once when you make them, not repeatedly while
 #: you hold them -- see GestureRouter.
@@ -112,13 +121,17 @@ class GestureRouter:
     not what changed.
     """
 
-    def __init__(self, poses=None, swipes=None):
+    def __init__(self, poses=None, swipes=None, repeat=POSE_REPEAT):
         self.poses = POSE_COMMANDS if poses is None else poses
         self.swipes = SWIPE_COMMANDS if swipes is None else swipes
+        self.repeat = repeat
         self._held = None
+        self._fired_at = {}
 
-    def update(self, gesture=None, swipe=None):
+    def update(self, gesture=None, swipe=None, now=None):
         """Return the command this frame should run, or None."""
+
+        now = time.time() if now is None else now
 
         # A swipe is a movement that already happened, so it always counts.
         if swipe is not None and swipe in self.swipes:
@@ -140,12 +153,28 @@ class GestureRouter:
 
         self._held = gesture
 
-        return self.poses.get(gesture)
+        command = self.poses.get(gesture)
+
+        if command is None:
+            return None
+
+        if now - self._fired_at.get(gesture, -1e9) < self.repeat:
+            return None
+
+        self._fired_at[gesture] = now
+
+        return command
 
     def forget(self):
-        """Hand left the frame; the next pose is a new one."""
+        """Hand left the frame; the next pose is a new one.
+
+        The hand leaving is deliberate enough to clear the repeat guard as
+        well: making a fist, dropping your hand, and making another is two
+        gestures however quickly it is done.
+        """
 
         self._held = None
+        self._fired_at.clear()
 
     def mapping(self):
         """Everything bound, for showing the user what they can do."""
