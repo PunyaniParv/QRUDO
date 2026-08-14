@@ -85,6 +85,37 @@ class Calibration:
         path.write_text(json.dumps(asdict(self), indent=2) + "\n")
         return path
 
+    #: What each threshold may sensibly be, whatever was measured.  A
+    #: measurement can be wrong -- a hand held badly, a landmark the camera
+    #: guessed at -- and a threshold far outside these does not fail
+    #: gently: it reads everything, or nothing, as the gesture.
+    BOUNDS = {
+        "extended_ratio": (0.60, 0.95),
+        "open_ratio": (0.70, 0.98),
+        "fist_reach": (0.90, 1.40),
+        "pinch_gap": (0.20, 0.55),
+        "min_hand_on_screen": (0.02, 0.12),
+    }
+
+    def sensible(self):
+        """This calibration with anything implausible pulled back.
+
+        Returns it and whatever had to be pulled, which is worth saying:
+        it means that threshold was not really measured.
+        """
+
+        pulled = []
+
+        for name, (low, high) in self.BOUNDS.items():
+            was = getattr(self, name)
+            now = min(high, max(low, was))
+
+            if now != was:
+                setattr(self, name, now)
+                pulled.append(f"{name} was {was:.2f}, kept to {now:.2f}")
+
+        return self, pulled
+
     def apply(self):
         """Put these numbers where the detectors read them from.
 
@@ -118,16 +149,22 @@ class Calibration:
         ]
 
 
-def between(low, high, defaults_to, fraction=0.5):
+def between(low, high, defaults_to, fraction=0.5, least=0.08):
     """A threshold in the gap between two measurements.
 
     ``low`` is the highest value seen when the answer should be no,
     ``high`` the lowest when it should be yes.  If they overlap there is no
     gap to sit in -- the two cases were not distinguishable on this camera
     -- so the existing value is kept rather than inventing one.
+
+    A gap too narrow to be meant is treated the same way.  Measured a
+    pinch at 0.70 and an open hand at 0.80, this used to answer 0.75 and
+    sound confident: a threshold with no margin on either side, which then
+    read very nearly everything as a pinch.  Barely separable is not
+    separable.
     """
 
-    if high <= low:
+    if high - low < least:
         return defaults_to, False
 
     return low + (high - low) * fraction, True
@@ -158,9 +195,12 @@ def from_samples(poses, moves, current):
                 for reading in poses.get("open", [])
                 for score in reading["ext"].values()]
 
+    # Each of these has its own scale, so what counts as a usable gap
+    # differs: finger extension runs from about 0.4 to 1.0, the pinch from
+    # 0.2 to 0.85, the fist reach from 1.0 to 1.6.
     extended_ratio, ok = between(
         max(curled, default=0.0), min(straight, default=1.0),
-        current.extended_ratio)
+        current.extended_ratio, least=0.10)
 
     if not ok:
         warnings.append("could not tell a straight finger from a curled one")
@@ -176,7 +216,7 @@ def from_samples(poses, moves, current):
 
     open_ratio, ok = between(
         max(slack, default=0.0), min(straight, default=1.0),
-        current.open_ratio)
+        current.open_ratio, least=0.06)
 
     if not ok:
         warnings.append("could not tell an open hand from a resting one")
@@ -193,7 +233,7 @@ def from_samples(poses, moves, current):
 
     fist_reach, ok = between(
         max(fist, default=0.0), min(resting, default=99.0),
-        current.fist_reach)
+        current.fist_reach, least=0.12)
 
     if not ok:
         warnings.append("could not tell a fist from a resting hand")
@@ -226,7 +266,7 @@ def from_samples(poses, moves, current):
              for reading in poses.get(name, [])]
 
     pinch, ok = between(max(pinched, default=0.0), min(apart, default=9.0),
-                        current.pinch_gap)
+                        current.pinch_gap, least=0.20)
 
     if not ok:
         warnings.append("could not tell a pinch from an open hand")
@@ -293,8 +333,12 @@ def load_and_apply(path=None):
 
     calibration = Calibration.load(path)
 
-    if calibration is not None:
-        calibration.apply()
+    if calibration is None:
+        return None
+
+    calibration, pulled = calibration.sensible()
+    calibration.pulled = pulled
+    calibration.apply()
 
     return calibration
 

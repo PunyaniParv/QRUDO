@@ -414,12 +414,24 @@ def is_open(hand_landmarks):
 
 
 def is_clenched(hand_landmarks):
-    """Whether the hand is shut, not merely un-straight."""
+    """Whether the hand is shut, not merely un-straight.
 
-    return all(
-        finger_reach(hand_landmarks, tip, mcp) < FIST_REACH
-        for tip, _, mcp in FINGERS.values()
-    )
+    The index finger has to be in, and two of the other three.  Requiring
+    all four made a fist fail whenever one finger was misread, which on a
+    closed hand is often -- three of them are half hidden behind it.  The
+    index is not optional because that is what separates a fist from a
+    pinch: pinching holds it out to meet the thumb.
+    """
+
+    closed = {
+        name: finger_reach(hand_landmarks, tip, mcp) < FIST_REACH
+        for name, (tip, _, mcp) in FINGERS.items()
+    }
+
+    if not closed["index"]:
+        return False
+
+    return sum(closed[name] for name in ("middle", "ring", "pinky")) >= 2
 
 
 def reach_scores(hand_landmarks):

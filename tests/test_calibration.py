@@ -254,3 +254,59 @@ class TestOpenHandThreshold(unittest.TestCase):
 
         self.assertEqual(measured.open_ratio, DEFAULTS.open_ratio)
         self.assertTrue(any("resting" in w for w in warnings))
+
+
+class TestBarelySeparable(unittest.TestCase):
+    """A gap too narrow to be meant is not a measurement.
+
+    Taken from a real calibration: a pinch measured 0.70 and an open hand
+    0.80, and the answer came back 0.75 -- a threshold with no margin
+    either side, which then read very nearly everything as a pinch.  It
+    was the direct cause of a fist working half the time.
+    """
+
+    def poses(self, pinched, opened):
+        return {"fist": readings(0.45, 1.02),
+                "open": readings(0.95, 1.60, pinch=opened),
+                "two": readings(0.95, 1.55, pinch=opened),
+                "rest": readings(0.75, 1.40),
+                "pinch": readings(0.75, 1.35, pinch=pinched)}
+
+    def test_a_narrow_gap_is_refused(self):
+        measured, warnings = from_samples(self.poses(0.70, 0.80), {}, DEFAULTS)
+
+        self.assertEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
+        self.assertTrue(any("pinch" in w for w in warnings))
+
+    def test_a_real_gap_is_taken(self):
+        measured, warnings = from_samples(self.poses(0.20, 0.80), {}, DEFAULTS)
+
+        self.assertNotEqual(measured.pinch_gap, DEFAULTS.pinch_gap)
+        self.assertFalse([w for w in warnings if "pinch" in w])
+
+
+class TestImplausibleValuesArePulledBack(unittest.TestCase):
+    """However it was measured, a threshold has to be usable.
+
+    A measurement can be wrong -- a hand held badly, a landmark guessed at
+    -- and a threshold far outside the plausible does not fail gently: it
+    reads everything, or nothing, as the gesture.
+    """
+
+    def test_a_pinch_threshold_near_an_open_hand_is_pulled_in(self):
+        wild = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20,
+                           0.035, 0.75)
+
+        kept, pulled = wild.sensible()
+
+        self.assertLessEqual(kept.pinch_gap, 0.55)
+        self.assertTrue(any("pinch_gap" in note for note in pulled))
+
+    def test_sensible_values_are_left_alone(self):
+        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.60, 1.20,
+                           0.040, 0.35)
+
+        kept, pulled = fine.sensible()
+
+        self.assertEqual(kept.pinch_gap, 0.35)
+        self.assertEqual(pulled, [])

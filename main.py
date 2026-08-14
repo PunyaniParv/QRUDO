@@ -81,6 +81,10 @@ def main(argv=None):
 
     measured = vision.load_and_apply()
 
+    for note in getattr(measured, "pulled", ()):
+        print(f"  ! {note}"
+              f"\n    that one did not measure cleanly; run --calibrate again\n")
+
     if measured is not None and getattr(measured, "incomplete", ()):
         print(f"  ! your calibration predates "
               f"{', '.join(measured.incomplete)}; those are still guessed."
