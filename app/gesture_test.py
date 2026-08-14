@@ -1,3 +1,4 @@
+import sys
 import time
 
 import cv2
@@ -6,7 +7,18 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from gesture_detection import detect_gesture, detect_swipe
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gesture_detection import (
+    SWIPE_CONSISTENCY,
+    SWIPE_SPEED,
+    SWIPE_TRAVEL,
+    debug_state,
+    detect_gesture,
+    detect_swipe,
+)
 
 
 # ---------------------------------------------------------
@@ -21,7 +33,10 @@ last_swipe_time = 0
 # MediaPipe model
 # ---------------------------------------------------------
 
-MODEL_PATH = "models/hand_landmarker.task"
+# Relative to the repo, not to wherever you happened to run this from.
+MODEL_PATH = str(
+    Path(__file__).resolve().parent.parent / "models" / "hand_landmarker.task"
+)
 
 base_options = python.BaseOptions(
     model_asset_path=MODEL_PATH
@@ -141,6 +156,38 @@ while True:
             (0, 255, 0),
             2
         )
+
+        # -------------------------------------------------
+        # Live swipe readout
+        #
+        # Thresholds depend on your camera, your lighting and
+        # how far away you sit, so watch these while swiping:
+        # whichever line is short of its target is the reason
+        # a swipe did not fire.
+        # -------------------------------------------------
+
+        state = debug_state()
+
+        readout = [
+            f"pose   {state.get('pose')}   armed {state.get('armed')}",
+            f"travel {state.get('travel', 0):.2f} / {SWIPE_TRAVEL}"
+            f"   (palm widths)",
+            f"speed  {state.get('speed', 0):.2f} / {SWIPE_SPEED}",
+            f"agree  {state.get('agree', 0):.2f} / {SWIPE_CONSISTENCY}",
+            f"palm   {state.get('palm', 0):.2f}",
+        ]
+
+        for line_number, line in enumerate(readout):
+
+            cv2.putText(
+                frame,
+                line,
+                (20, 100 + line_number * 26),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (200, 200, 200),
+                1
+            )
 
     # -----------------------------------------------------
     # No hand detected
