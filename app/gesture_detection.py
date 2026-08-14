@@ -87,10 +87,19 @@ CURLED_DEPTH = 0.15
 SWIPE_WINDOW = 0.60       # seconds of movement considered
 SWIPE_TURN = 0.30         # how far the aim must swing
 SWIPE_TURN_SPEED = 0.80   # per second
-SWIPE_CONSISTENCY = 0.65  # fraction of frames turning the same way
+SWIPE_CONSISTENCY = 0.65  # how directly the motion got where it ended up
 SWIPE_MIN_SAMPLES = 4
 ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
+
+# The peace sign is held up rather than aimed, and the natural way to
+# swipe it is to move the hand across rather than pivot the wrist.  So
+# that pose also accepts a sideways slide, measured in palm widths.
+#
+# The gun pose deliberately does not: aiming at the camera and carrying
+# your hand to the keyboard should not seek the video.
+SWIPE_SLIDE = 0.90        # palm widths the hand must cover
+SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 
 
 # ---------------------------------------------------------
@@ -106,6 +115,7 @@ gesture_history = deque(maxlen=5)
 motion_history = deque(maxlen=64)
 
 swipe_armed_until = 0.0
+swipe_armed_kind = None
 swipe_cooldown_until = 0.0
 
 # Filled in every frame for the on-screen readout.
@@ -119,7 +129,10 @@ def reset_state():
     motion_history.clear()
 
     global swipe_armed_until
+    global swipe_armed_kind
+
     swipe_armed_until = 0.0
+    swipe_armed_kind = None
 
 
 def debug_state():
@@ -346,12 +359,15 @@ def pointing_direction(hand_landmarks):
 # Two-finger pose
 # ---------------------------------------------------------
 
-def is_two_finger_pose(hand_landmarks):
-    """Index and middle out, ring and pinky in -- in either orientation.
+POSE_GUN = "gun"      # two fingers aimed at the camera
+POSE_PEACE = "peace"  # two fingers held up, palm toward the camera
 
-    Accepting both means the swipe still works if the hand drifts from
-    pointing at the camera toward facing it, which it does naturally as
-    the arm moves sideways.
+
+def two_finger_pose_kind(hand_landmarks):
+    """Which two-finger pose this is, or None.
+
+    Both are index and middle out with ring and pinky in; they differ in
+    which way the hand faces, and therefore in how you swipe with them.
     """
 
     scale = hand_scale(hand_landmarks)
@@ -364,21 +380,54 @@ def is_two_finger_pose(hand_landmarks):
         and finger_is_curled(hand_landmarks, 16, 13, scale)
         and finger_is_curled(hand_landmarks, 20, 17, scale)
     ):
-        return True
+        return POSE_GUN
 
     flat = detect_fingers(hand_landmarks)
 
-    return (
+    if (
         flat["index"]
         and flat["middle"]
         and not flat["ring"]
         and not flat["pinky"]
-    )
+    ):
+        return POSE_PEACE
+
+    return None
+
+
+def is_two_finger_pose(hand_landmarks):
+    """Index and middle out, ring and pinky in -- in either orientation."""
+
+    return two_finger_pose_kind(hand_landmarks) is not None
 
 
 # ---------------------------------------------------------
 # Swipe detection
 # ---------------------------------------------------------
+
+def _measure(values, elapsed):
+    """Summarise one signal over the window: (change, speed, directness).
+
+    Directness compares where the signal ended up against how far it
+    travelled getting there.  A clean movement scores near 1; a hand
+    shaking between two positions covers ground and arrives nowhere, so it
+    scores low however fast it shakes.  Counting which frames moved the
+    right way is not enough -- alternating samples can reach two thirds
+    agreement by luck, which is exactly how a wobble used to fire a swipe.
+    """
+
+    change = values[-1] - values[0]
+
+    steps = [
+        values[i + 1] - values[i]
+        for i in range(len(values) - 1)
+    ]
+
+    path = sum(abs(step) for step in steps)
+
+    directness = abs(change) / path if path > 0 else 0.0
+
+    return change, abs(change) / elapsed, directness
 
 def detect_swipe(hand_landmarks, handedness):
     """Detect a two-finger swipe.
@@ -396,24 +445,33 @@ def detect_swipe(hand_landmarks, handedness):
     """
 
     global swipe_armed_until
+    global swipe_armed_kind
     global swipe_cooldown_until
 
     now = time.time()
+    scale = hand_scale(hand_landmarks)
 
-    motion_history.append((now, pointing_direction(hand_landmarks)))
+    motion_history.append((
+        now,
+        pointing_direction(hand_landmarks),
+        hand_landmarks[MIDDLE_MCP].x,
+        scale
+    ))
 
-    posed = is_two_finger_pose(hand_landmarks)
+    kind = two_finger_pose_kind(hand_landmarks)
 
-    if posed:
+    if kind is not None:
         swipe_armed_until = now + ARM_HOLD
+        swipe_armed_kind = kind
 
     armed = now < swipe_armed_until
 
     _debug.update(
-        pose=posed,
+        pose=kind,
         armed=armed,
         aim=round(motion_history[-1][1], 2),
         turn=0.0,
+        slide=0.0,
         speed=0.0,
         agree=0.0
     )
@@ -434,48 +492,45 @@ def detect_swipe(hand_landmarks, handedness):
     if elapsed <= 0:
         return None
 
-    swing = window[-1][1] - window[0][1]
+    # Turning the wrist: works with either pose.
+    turn, turn_speed, turn_agree = _measure(
+        [sample[1] for sample in window], elapsed)
 
-    turn = abs(swing)
-    speed = turn / elapsed
+    # Moving the hand across: only the peace sign, and measured in palm
+    # widths so distance from the camera does not matter.
+    mean_scale = sum(sample[3] for sample in window) / len(window)
 
-    # A swipe turns one way.  A wobble does not.
-    #
-    # Compare how far the aim actually ended up from where it started
-    # against how far it travelled getting there.  A clean turn scores
-    # near 1; a hand shaking between two angles covers a lot of ground and
-    # arrives nowhere, so it scores low however fast it shakes.  Counting
-    # which frames moved the right way is not enough: alternating samples
-    # can reach two-thirds agreement by luck.
-    steps = [
-        window[i + 1][1] - window[i][1]
-        for i in range(len(window) - 1)
-    ]
-
-    path = sum(abs(step) for step in steps)
-
-    agreement = turn / path if path > 0 else 0.0
+    slide, slide_speed, slide_agree = _measure(
+        [sample[2] / mean_scale for sample in window], elapsed)
 
     _debug.update(
-        turn=round(turn, 2),
-        speed=round(speed, 2),
-        agree=round(agreement, 2)
+        turn=round(abs(turn), 2),
+        slide=round(abs(slide), 2),
+        speed=round(turn_speed, 2),
+        agree=round(turn_agree, 2)
     )
 
-    if turn < SWIPE_TURN:
-        return None
+    turned = (
+        abs(turn) >= SWIPE_TURN
+        and turn_speed >= SWIPE_TURN_SPEED
+        and turn_agree >= SWIPE_CONSISTENCY
+    )
 
-    if speed < SWIPE_TURN_SPEED:
-        return None
+    slid = (
+        swipe_armed_kind == POSE_PEACE
+        and abs(slide) >= SWIPE_SLIDE
+        and slide_speed >= SWIPE_SLIDE_SPEED
+        and slide_agree >= SWIPE_CONSISTENCY
+    )
 
-    if agreement < SWIPE_CONSISTENCY:
+    if not turned and not slid:
         return None
 
     # -------------------------------------------------
     # Direction
     # -------------------------------------------------
 
-    moving_right = swing > 0
+    moving_right = (turn if turned else slide) > 0
 
     if not FRAME_IS_MIRRORED:
         moving_right = not moving_right
@@ -485,6 +540,7 @@ def detect_swipe(hand_landmarks, handedness):
     # Start fresh, so the tail of this swipe cannot trigger another.
     motion_history.clear()
     swipe_armed_until = 0.0
+    swipe_armed_kind = None
     swipe_cooldown_until = now + SWIPE_COOLDOWN
 
     return gesture

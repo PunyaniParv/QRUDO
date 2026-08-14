@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gesture_detection import (
     SWIPE_CONSISTENCY,
+    SWIPE_SLIDE,
     SWIPE_TURN,
     SWIPE_TURN_SPEED,
     debug_state,
@@ -172,6 +173,8 @@ while True:
             f"pose  {state.get('pose')}   armed {state.get('armed')}",
             f"aim   {state.get('aim', 0):+.2f}   (-1 left, +1 right)",
             f"turn  {state.get('turn', 0):.2f} / {SWIPE_TURN}",
+            f"slide {state.get('slide', 0):.2f} / {SWIPE_SLIDE}"
+            f"   (peace sign only)",
             f"speed {state.get('speed', 0):.2f} / {SWIPE_TURN_SPEED}",
             f"agree {state.get('agree', 0):.2f} / {SWIPE_CONSISTENCY}",
         ]

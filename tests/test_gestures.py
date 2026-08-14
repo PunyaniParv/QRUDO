@@ -255,12 +255,13 @@ class TestSwipe(GestureTestCase):
             self.clock.tick(0.025)
         self.assertIsNone(result)
 
-    def test_moving_the_whole_hand_is_not_a_swipe(self):
-        """The wrist is meant to stay put.
+    def test_carrying_the_gun_pose_across_is_not_a_swipe(self):
+        """Aiming at the camera and reaching for the keyboard must do nothing.
 
-        Aim is measured relative to the wrist, so carrying the hand across
-        the frame without turning it reads as no movement at all -- which
-        is what stops reaching for the keyboard from seeking the video.
+        Aim is measured relative to the wrist, so moving the hand without
+        turning it reads as no movement at all.  The peace sign is treated
+        differently -- see TestPeaceSignSwipe -- because a slide is how you
+        naturally swipe a hand that is held up rather than aimed.
         """
 
         result = None
@@ -314,8 +315,64 @@ class TestSwipe(GestureTestCase):
 
         gd.detect_swipe(two_finger_pointing(), HAND)
         state = gd.debug_state()
-        for key in ("pose", "armed", "aim", "turn", "speed", "agree"):
+        for key in ("pose", "armed", "aim", "turn", "slide", "speed", "agree"):
             self.assertIn(key, state)
+
+
+def peace_sign(cx=0.50, tilt=0.0):
+    """Two fingers held up, palm toward the camera.
+
+    ``tilt`` leans the fingers sideways, which is the other way to swipe
+    this pose.
+    """
+
+    hand = make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cx=cx)
+
+    if tilt:
+        for mcp in (5, 9):
+            for joint in range(mcp + 1, mcp + 4):
+                lean = (joint - mcp) * 0.045 * tilt
+                hand[joint] = Point(hand[joint].x + lean,
+                                    hand[joint].y,
+                                    hand[joint].z)
+    return hand
+
+
+class TestPeaceSignSwipe(GestureTestCase):
+    """Two fingers up, palm to the camera: slid or tilted across."""
+
+    def slide(self, start, end, seconds, frames=12):
+        result = None
+        for i in range(frames):
+            cx = start + (end - start) * (i / (frames - 1))
+            result = result or gd.detect_swipe(peace_sign(cx=cx), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def test_pose_is_recognised(self):
+        self.assertEqual(gd.two_finger_pose_kind(peace_sign()), gd.POSE_PEACE)
+
+    def test_slide_right(self):
+        self.assertEqual(self.slide(0.40, 0.58, 0.30), "SWIPE_RIGHT")
+
+    def test_slide_left(self):
+        self.assertEqual(self.slide(0.58, 0.40, 0.30), "SWIPE_LEFT")
+
+    def test_slow_slide_is_not_a_swipe(self):
+        self.assertIsNone(self.slide(0.40, 0.58, 4.0, frames=40))
+
+    def test_small_slide_is_not_a_swipe(self):
+        self.assertIsNone(self.slide(0.50, 0.52, 0.30))
+
+    def test_tilting_also_works(self):
+        """Leaning the fingers over turns the aim, same as the gun pose."""
+
+        result = None
+        for i in range(12):
+            tilt = -1.0 + 2.0 * (i / 11)
+            result = result or gd.detect_swipe(peace_sign(tilt=tilt), HAND)
+            self.clock.tick(0.30 / 11)
+        self.assertEqual(result, "SWIPE_RIGHT")
 
 
 if __name__ == "__main__":
