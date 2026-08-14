@@ -42,7 +42,9 @@
       "Bash(/Users/mac/SARV-1/.venv/bin/python -c ' *)",
       "Bash(sed -i '' 's/    SWIPE_TURN,\\\\n    SWIPE_TURN_SPEED,/&/' app/gesture_test.py)",
       "Bash(.venv/bin/python -m py_compile app/gesture_test.py)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(.venv/bin/python main.py --command PLAY_PAUSE)",
+      "Bash(.venv/bin/python main.py --command PLAY_PAUSE --dry-run)"
     ]
   }
 }

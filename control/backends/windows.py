@@ -34,6 +34,7 @@ VK_VOLUME_UP = 0xAF
 VK_MEDIA_NEXT_TRACK = 0xB0
 VK_MEDIA_PREV_TRACK = 0xB1
 VK_MEDIA_PLAY_PAUSE = 0xB3
+VK_K = 0x4B      # YouTube's play/pause
 VK_LEFT = 0x25
 VK_RIGHT = 0x27
 
@@ -308,7 +309,25 @@ class WindowsController(Controller):
     # ------------------------------------------------------------------- media
 
     def play_pause(self) -> str:
+        """Play or pause, in the named app if there is one.
+
+        The media key works in any app but is a message to the system
+        rather than to a player, so which app answers it is out of our
+        hands when several are open.  Naming one settles it.
+        """
+
+        if self.config.app:
+            window = self._target_window()
+
+            if window:
+                # A browser has no scriptable play/pause, so use the video
+                # player's own shortcut.  k is YouTube's, and is safer than
+                # space, which scrolls when the player is not selected.
+                self._post_key_to_window(window, VK_K)
+                return f"play/pause key to {self.config.app}"
+
         self._press(VK_MEDIA_PLAY_PAUSE)
+
         return "sent play/pause media key"
 
     def rewind(self, seconds: int) -> str:
@@ -333,19 +352,19 @@ class WindowsController(Controller):
                 self._press(key, extended=True)  # arrows are extended keys
         covered = presses * self.config.seek_step_seconds
         direction = "forward" if forward else "back"
-        where = f" to {self.config.seek_target_app}" if window else ""
+        where = f" to {self.config.app}" if window else ""
         return (f"seek {direction} ~{covered}s{where} "
                 f"({presses}x arrow, {seconds}s requested)")
 
     # -------------------------------------------------- targeting a window
 
-    def _target_window(self) -> int | None:
-        """Handle of a window whose title matches ``seek_target_app``.
+    def _target_window(self, title: str | None = None) -> int | None:
+        """Handle of a window whose title matches ``target_app``.
 
         Returns None when nothing is configured or nothing matches, in which
         case seeking falls back to the focused window.
         """
-        wanted = self.config.seek_target_app.strip().lower()
+        wanted = (title or self.config.app).strip().lower()
         if not wanted:
             return None
 
@@ -369,7 +388,7 @@ class WindowsController(Controller):
         user32.EnumWindows(visit, 0)
         if not matches:
             self.log.warning("no window matching %r; sending seek to the focused "
-                             "window instead", self.config.seek_target_app)
+                             "window instead", self.config.app)
             return None
         return self._render_surface(matches[0])
 

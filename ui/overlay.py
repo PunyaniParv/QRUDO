@@ -41,6 +41,41 @@ def draw_result(cv2, frame, result):
                 GREEN if result.ok else RED, 1)
 
 
+def legend_lines(mapping):
+    """What each gesture does, in plain words.
+
+    Shown on the preview the whole time it is running.  A gesture app that
+    does not say what its gestures are is unusable by anyone who did not
+    write it, which during a demo includes the audience.
+    """
+
+    described = {
+        "FIST": "fist",
+        "OPEN_PALM": "open hand",
+        "POINT": "point",
+        "TWO_FINGER": "two fingers",
+        "SWIPE_LEFT": "swipe left",
+        "SWIPE_RIGHT": "swipe right",
+    }
+
+    return [
+        f"{described.get(gesture, gesture.lower()):<12} {command}"
+        for gesture, command in mapping.items()
+    ]
+
+
+def draw_legend(cv2, frame, mapping):
+    """Print the mapping down the bottom-left of the frame."""
+
+    lines = legend_lines(mapping)
+    height = frame.shape[0]
+    top = height - 20 - (len(lines) * 22)
+
+    for number, line in enumerate(lines):
+        cv2.putText(frame, line, (20, top + number * 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, GREY, 1)
+
+
 def tuning_lines(state, motion, hand_state):
     """The numbers behind a swipe decision, against what they must reach.
 

@@ -85,6 +85,7 @@ def run(engine, args, tuning=False):
 
             overlay.draw_gesture(cv2, frame, gesture)
             overlay.draw_result(cv2, frame, last_result)
+            overlay.draw_legend(cv2, frame, router.mapping())
 
             if tuning:
                 overlay.draw_tuning(

@@ -32,6 +32,7 @@ NX_KEYTYPE_NEXT = 17
 NX_KEYTYPE_PREVIOUS = 18
 
 # --- Virtual key codes for ordinary keys ------------------------------------
+KEY_K = 40          # YouTube's play/pause
 KEY_LEFT_ARROW = 123
 KEY_RIGHT_ARROW = 124
 
@@ -190,10 +191,58 @@ class MacOSController(Controller):
     # ------------------------------------------------------------------- media
 
     def play_pause(self) -> str:
+        """Play or pause, in the named app if there is one.
+
+        The media key is the obvious way to do this and works in any app,
+        but it is a message to the system rather than to a player: with
+        nothing currently playing, macOS answers it by opening Music.
+        Naming the app avoids that, and also settles which one gets it when
+        both a browser and Spotify are open.
+        """
+
+        target = self.config.app
+
+        if target:
+            played = self._play_pause_app(target)
+
+            if played is not None:
+                return played
+
         if self._quartz is not None:
             self._post_media_key(NX_KEYTYPE_PLAY)
             return "sent play/pause media key"
+
         return self._applescript_play_pause()
+
+    def _play_pause_app(self, name: str) -> str | None:
+        """Play/pause a named app, or None if it cannot be reached."""
+
+        # Players that can simply be told.  This is exact, and it neither
+        # needs the app focused nor disturbs anything else.
+        for known in ("Spotify", "Music", "VLC", "QuickTime Player", "TV"):
+            if known.lower() in name.lower():
+                if self._osascript(
+                    f'if application "{known}" is running then\n'
+                    f'  tell application "{known}" to playpause\n'
+                    f'  return "ok"\n'
+                    f'end if\n'
+                    f'return ""'
+                ) == "ok":
+                    return f"play/pause in {known}"
+                return None
+
+        # A browser has no such interface, so use the video player's own
+        # keyboard shortcut, delivered to the browser whether or not it is
+        # focused.  k is YouTube's, and is safer than space, which scrolls
+        # the page when the player is not selected.
+        pid = self._target_pid(name)
+
+        if pid is None:
+            return None
+
+        self._post_key(KEY_K, to_pid=pid)
+
+        return f"play/pause key to {name}"
 
     def rewind(self, seconds: int) -> str:
         return self._seek(seconds, forward=False)
@@ -217,13 +266,13 @@ class MacOSController(Controller):
         for _ in range(presses):
             self._post_key(key, to_pid=pid)
         covered = presses * self.config.seek_step_seconds
-        where = f" to {self.config.seek_target_app}" if pid else ""
+        where = f" to {self.config.app}" if pid else ""
         return (f"seek {direction} ~{covered}s{where} "
                 f"({presses}x arrow, {seconds}s requested)")
 
-    def _target_pid(self) -> int | None:
-        """The process to aim seek keys at, or None to use the focused window."""
-        name = self.config.seek_target_app.strip()
+    def _target_pid(self, name: str | None = None) -> int | None:
+        """The process to aim keys at, or None to use the focused window."""
+        name = (name if name is not None else self.config.app).strip()
         if not name or self._workspace is None:
             return None
         wanted = name.lower()
@@ -231,7 +280,7 @@ class MacOSController(Controller):
             running = app.localizedName()
             if running and wanted in running.lower():
                 return app.processIdentifier()
-        self.log.warning("seek_target_app %r is not running; "
+        self.log.warning("target_app %r is not running; "
                          "sending to the focused window instead", name)
         return None
 

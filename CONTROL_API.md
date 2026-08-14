@@ -66,11 +66,17 @@ Two of the seven are sensitive to keyboard focus:
 That's why seeking from `--simulate` appears to do nothing: you are typing into
 the terminal, so the terminal is focused and swallows the arrows.
 
-**Fix it by naming the app you want seeking to reach.** In `sarv_config.json`:
+**Name the app you are controlling.** In `sarv_config.json`:
 
 ```json
-{ "seek_target_app": "Google Chrome" }
+{ "target_app": "Google Chrome" }
 ```
+
+This is worth setting for a second reason: `PLAY_PAUSE` otherwise sends the
+keyboard's media key, and macOS answers a media key with nothing playing by
+**opening Music** — so the first gesture of a demo launches the wrong app. With
+a target named, play/pause goes to that app instead (a scriptable player like
+Spotify is told directly; a browser is sent YouTube's `k` shortcut).
 
 macOS matches the app name; Windows matches any part of the window title (so
 `"YouTube"` works). The keys are then delivered to that app whether or not it
@@ -157,7 +163,7 @@ to `main.py`:
   "brightness_step": 5,
   "seek_seconds": 10,
   "seek_step_seconds": 5,
-  "seek_target_app": "Google Chrome",
+  "target_app": "Google Chrome",
   "cooldown_seconds": 0.6,
   "dry_run": false
 }

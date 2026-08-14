@@ -39,8 +39,24 @@ class ControlConfig:
     this to 10 when driving those.
     """
 
+    target_app: str = ""
+    """The app SARV is controlling, e.g. "Google Chrome" or "Spotify".
+
+    Worth setting.  Without it, PLAY_PAUSE is the keyboard's media key, and
+    macOS answers a media key with nothing playing by opening Music -- so
+    the first gesture of a demo launches the wrong app.  Naming the app
+    sends play/pause to it directly instead.
+
+    It also covers seeking, which otherwise only reaches whichever window
+    has keyboard focus.
+
+    macOS matches the app's name; Windows matches any part of a window
+    title, so "YouTube" works.  If the app is not running, both fall back
+    to the old behaviour rather than failing.
+    """
+
     seek_target_app: str = ""
-    """Send REWIND/FORWARD to this app whether or not it has keyboard focus.
+    """Older name for ``target_app``, still honoured.  Use ``target_app``.
 
     Seeking has no system-wide key, so it is sent as arrow keys -- and arrow
     keys normally land in the focused window, which is why seeking from the
@@ -91,6 +107,12 @@ class ControlConfig:
         path = Path(path) if path else DEFAULT_CONFIG_PATH
         path.write_text(json.dumps(asdict(self), indent=2) + "\n")
         return path
+
+    @property
+    def app(self) -> str:
+        """The app to aim commands at, under either config name."""
+
+        return (self.target_app or self.seek_target_app).strip()
 
     @property
     def seek_presses(self) -> int:
