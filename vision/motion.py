@@ -182,7 +182,7 @@ def detect_swipe(hand, handedness=None):
         agree=0.0
     )
 
-    if _state.is_cooling(moment) or not armed:
+    if not armed:
         return None
 
     # Only what happened after the pose settled.  Raising a hand into
@@ -210,15 +210,29 @@ def detect_swipe(hand, handedness=None):
     slide, slide_speed, slide_agree = measure(
         times, [sample[1]["x"] / mean_scale for sample in window])
 
-    # Raising or lowering the hand.  Screen y grows downwards, so a lift
-    # is a fall in y.
-    lift, lift_speed, lift_agree = measure(
+    # Raising or lowering the hand, measured against where it was when the
+    # pose began rather than against where it was a moment ago.
+    #
+    # Height cannot be judged by movement alone, because the way back from
+    # a raised hand is a lowered hand: with the sideways turn you return
+    # through the middle and can go either way from there, but nobody
+    # rests their hand at the bottom of its range.  Against a fixed
+    # starting point, up and down are simply above and below it, and the
+    # journey back is neither.
+    if _state.neutral_y is None:
+        _state.neutral_y = window[0][1]["y"]
+
+    lift = (_state.neutral_y - screen[hand_state.MIDDLE_MCP].y) / mean_scale
+
+    # How briskly it got there.  Position alone would let a hand lowered
+    # slowly to the desk turn the volume down on its way.
+    _, lift_speed, _ = measure(
         times, [-sample[1]["y"] / mean_scale for sample in window])
 
     # Bringing the hand back is the same movement as swiping the other
     # way, so after a swipe nothing counts until it has gone quiet.
     if _state.settling:
-        if abs(turn) < SWIPE_QUIET and abs(lift) < SWIPE_QUIET:
+        if abs(turn) < SWIPE_QUIET:
             _state.settling = False
 
         _debug.update(turn=round(abs(turn), 2), settling=True)
@@ -229,7 +243,7 @@ def detect_swipe(hand, handedness=None):
         settling=False,
         turn=round(abs(turn), 2),
         slide=round(abs(slide), 2),
-        lift=round(abs(lift), 2),
+        lift=round(lift, 2),
         speed=round(turn_speed, 2),
         agree=round(turn_agree, 2),
         peak_turn=round(_peak("turn", abs(turn), moment), 2),
@@ -252,10 +266,20 @@ def detect_swipe(hand, handedness=None):
         and slide_agree >= SWIPE_CONSISTENCY
     )
 
+    # Back near where it started: ready to count again, in either
+    # direction.  Deliberately before the cooldown check below, because
+    # the hand comes back *during* the cooldown -- leaving it after meant
+    # the latch was never cleared and only the first raise ever counted.
+    if abs(lift) < SWIPE_LIFT * 0.5:
+        _state.lifted = False
+
+    if _state.is_cooling(moment):
+        return None
+
     lifted = (
         abs(lift) >= SWIPE_LIFT
         and lift_speed >= SWIPE_LIFT_SPEED
-        and lift_agree >= SWIPE_CONSISTENCY
+        and not _state.lifted
     )
 
     if not turned and not slid and not lifted:
@@ -273,6 +297,10 @@ def detect_swipe(hand, handedness=None):
 
         return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
 
-    _state.fired(moment)
+    # Deliberately not fired(): that waits for the hand to stop, and a
+    # hand held up is not going to.  Coming back toward the middle is what
+    # readies the next one.
+    _state.lifted = True
+    _state.cooldown_until = moment + SWIPE_COOLDOWN
 
     return "SWIPE_UP" if lift > 0 else "SWIPE_DOWN"

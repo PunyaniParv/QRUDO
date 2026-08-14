@@ -704,3 +704,53 @@ class TestVerticalSwipes(GestureTestCase):
     def test_the_hand_coming_back_down_is_not_a_second_swipe(self):
         self.assertEqual(self.move(0.55, 0.30), "SWIPE_UP")
         self.assertIsNone(self.move(0.30, 0.55, hold=False))
+
+
+class TestVolumeBothWays(GestureTestCase):
+    """Raising and lowering have to work one after the other.
+
+    Reported: up registered, down never did.  Height was judged by
+    movement, and the way back from a raised hand is a lowered hand -- so
+    every lowering was either the return from a raise, or would have had
+    to start below where a hand naturally rests.  Height is now measured
+    against where the hand was when the pose began.
+    """
+
+    def peace(self, cy):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy)
+
+    def move(self, start, end, seconds=0.30, frames=12):
+        result = None
+        for i in range(frames):
+            cy = start + (end - start) * (i / (frames - 1))
+            result = result or motion.detect_swipe(self.peace(cy), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def test_up_then_down(self):
+        """Raise, come back, lower: two commands, opposite ways."""
+
+        self.hold_pose(self.peace(0.50))
+        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+        self.move(0.30, 0.50)                      # back to the middle
+        self.assertEqual(self.move(0.50, 0.70), "SWIPE_DOWN")
+
+    def test_down_then_up(self):
+        self.hold_pose(self.peace(0.50))
+        self.assertEqual(self.move(0.50, 0.70), "SWIPE_DOWN")
+        self.move(0.70, 0.50)
+        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+
+    def test_coming_back_does_not_fire(self):
+        self.hold_pose(self.peace(0.50))
+        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+        self.assertIsNone(self.move(0.30, 0.50),
+                          "the hand returning counted as a swipe down")
+
+    def test_holding_it_up_fires_once(self):
+        self.hold_pose(self.peace(0.50))
+        self.assertEqual(self.move(0.50, 0.30), "SWIPE_UP")
+
+        for _ in range(30):
+            self.assertIsNone(motion.detect_swipe(self.peace(0.30), HAND))
+            self.clock.tick(0.03)
