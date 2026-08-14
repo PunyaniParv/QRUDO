@@ -25,3 +25,18 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+# Local Python environments
+.venv/
+.venv-1/
+
+# Local runtime/log files
+logs/
+
+# Local configuration
+sarv_config.json
+
+# Raw acoustic experiment recordings
+acoustic_test/distance_validation_v1/audio/
+
+# Raw acoustic experiment recordings
+acoustic_test/distance_validation_v1/audio/
