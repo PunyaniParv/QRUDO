@@ -222,6 +222,14 @@ def is_pinching(hand):
     if pinch_gap(hand) >= PINCH_GAP:
         return False
 
+    # The middle finger settles it against a peace sign.  A tucked thumb
+    # is half hidden behind the palm, so where its tip is has to be
+    # guessed, and the guess sometimes lands near the index finger -- at
+    # which point two fingers held up look pinched, and the pose that arms
+    # seeking never arms.  Nobody pinches with two fingers up.
+    if finger_is_extended(shape_of(hand), *FINGERS["middle"]):
+        return False
+
     return finger_reach(screen, INDEX_TIP, INDEX_MCP) >= FIST_REACH
 
 

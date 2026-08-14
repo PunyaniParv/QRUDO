@@ -1010,3 +1010,53 @@ class TestPinchMistakenForOpenHand(GestureTestCase):
                 turned = pinching(yaw=math.radians(yaw))
                 self.assertAlmostEqual(face_on, hand_state.pinch_gap(turned),
                                        places=6)
+
+
+class TestPeaceSignMistakenForPinch(GestureTestCase):
+    """Reported: two fingers sometimes read as a pinch, and seeking stopped.
+
+    Both halves of one fault.  A tucked thumb is half hidden behind the
+    palm, so MediaPipe has to guess where its tip is, and the guess
+    sometimes lands near the index finger.  Two fingers then look pinched
+    -- and since the pinch arms volume rather than seeking, the wrist turn
+    had nothing to arm and did nothing at all.
+    """
+
+    def misplaced_thumb(self, hand):
+        """As the camera reports it when the thumb is behind the palm."""
+
+        tip = hand[hand_state.INDEX_TIP]
+        hand[hand_state.THUMB_TIP] = Point(tip.x + 0.01, tip.y + 0.01, 0.0)
+        return hand
+
+    def test_two_fingers_up_are_never_a_pinch(self):
+        self.assertFalse(hand_state.is_pinching(
+            self.misplaced_thumb(peace_sign())))
+
+    def test_it_still_reads_as_two_fingers(self):
+        self.assertEqual(
+            self.settle(self.misplaced_thumb(peace_sign())), "TWO_FINGER")
+
+    def test_it_still_arms_seeking(self):
+        self.assertEqual(
+            gestures.pose_kind(self.misplaced_thumb(peace_sign())),
+            gestures.POSE_PEACE)
+
+    def test_seeking_works_with_the_thumb_misread(self):
+        """The symptom itself: the turn must still register."""
+
+        def hand(roll):
+            return self.misplaced_thumb(peace_sign(roll=math.radians(roll)))
+
+        self.hold_pose(hand(-25))
+
+        result = None
+        for i in range(12):
+            result = result or motion.detect_swipe(
+                hand(-25 + 50 * (i / 11)), HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertEqual(result, "SWIPE_RIGHT")
+
+    def test_a_real_pinch_is_untouched(self):
+        self.assertTrue(hand_state.is_pinching(pinching()))
