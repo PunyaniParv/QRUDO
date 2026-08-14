@@ -44,6 +44,13 @@ SWIPE_ALLOW_SLIDE = False
 SWIPE_SLIDE = 0.90        # palm widths the hand must cover
 SWIPE_SLIDE_SPEED = 1.60  # palm widths per second
 
+#: Raising and lowering the two fingers, for volume.  Up and down is a
+#: movement of the whole hand rather than a turn of the wrist, because a
+#: wrist does not tilt up and down through anything like the range it
+#: swings sideways through.
+SWIPE_LIFT = 1.10         # palm widths the hand must cover
+SWIPE_LIFT_SPEED = 1.80   # palm widths per second
+
 #: Both scripts mirror the frame before detection, so x increases to the
 #: user's right and a rightward swipe is a rise in x.
 FRAME_IS_MIRRORED = True
@@ -148,6 +155,7 @@ def detect_swipe(hand, handedness=None):
         moment,
         aim=hand_state.pointing_direction(hand),
         x=screen[hand_state.MIDDLE_MCP].x,
+        y=screen[hand_state.MIDDLE_MCP].y,
         scale=hand_state.hand_scale(screen)
     )
 
@@ -197,10 +205,15 @@ def detect_swipe(hand, handedness=None):
     slide, slide_speed, slide_agree = measure(
         times, [sample[1]["x"] / mean_scale for sample in window])
 
+    # Raising or lowering the hand.  Screen y grows downwards, so a lift
+    # is a fall in y.
+    lift, lift_speed, lift_agree = measure(
+        times, [-sample[1]["y"] / mean_scale for sample in window])
+
     # Bringing the hand back is the same movement as swiping the other
     # way, so after a swipe nothing counts until it has gone quiet.
     if _state.settling:
-        if abs(turn) < SWIPE_QUIET:
+        if abs(turn) < SWIPE_QUIET and abs(lift) < SWIPE_QUIET:
             _state.settling = False
 
         _debug.update(turn=round(abs(turn), 2), settling=True)
@@ -211,6 +224,7 @@ def detect_swipe(hand, handedness=None):
         settling=False,
         turn=round(abs(turn), 2),
         slide=round(abs(slide), 2),
+        lift=round(abs(lift), 2),
         speed=round(turn_speed, 2),
         agree=round(turn_agree, 2),
         peak_turn=round(_peak("turn", abs(turn), moment), 2),
@@ -233,14 +247,27 @@ def detect_swipe(hand, handedness=None):
         and slide_agree >= SWIPE_CONSISTENCY
     )
 
-    if not turned and not slid:
+    lifted = (
+        abs(lift) >= SWIPE_LIFT
+        and lift_speed >= SWIPE_LIFT_SPEED
+        and lift_agree >= SWIPE_CONSISTENCY
+    )
+
+    if not turned and not slid and not lifted:
         return None
 
-    moving_right = (turn if turned else slide) > 0
+    # Sideways first: a turn of the wrist barely moves the hand up or
+    # down, while raising it can wobble the fingers a little.
+    if turned or slid:
+        moving_right = (turn if turned else slide) > 0
 
-    if not FRAME_IS_MIRRORED:
-        moving_right = not moving_right
+        if not FRAME_IS_MIRRORED:
+            moving_right = not moving_right
+
+        _state.fired(moment)
+
+        return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
 
     _state.fired(moment)
 
-    return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
+    return "SWIPE_UP" if lift > 0 else "SWIPE_DOWN"

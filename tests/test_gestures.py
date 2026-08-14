@@ -665,3 +665,42 @@ class TestReturnStroke(GestureTestCase):
         self.rotate_through(-30, 0)
         self.hold_still(0)
         self.assertEqual(self.rotate_through(0, 30), "SWIPE_RIGHT")
+
+
+class TestVerticalSwipes(GestureTestCase):
+    """Raising and lowering the two fingers, for volume."""
+
+    def move(self, start, end, seconds=0.30, frames=12, hold=True):
+        """Move the hand vertically, in fractions of the frame."""
+
+        if hold:
+            self.hold_pose(
+                make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=start))
+
+        result = None
+        for i in range(frames):
+            cy = start + (end - start) * (i / (frames - 1))
+            result = result or motion.detect_swipe(
+                make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy), HAND)
+            self.clock.tick(seconds / (frames - 1))
+        return result
+
+    def test_raising_the_hand(self):
+        """Screen y grows downwards, so a lift is a fall in y."""
+
+        self.assertEqual(self.move(0.55, 0.30), "SWIPE_UP")
+
+    def test_lowering_the_hand(self):
+        self.assertEqual(self.move(0.30, 0.55), "SWIPE_DOWN")
+
+    def test_a_small_lift_is_not_a_swipe(self):
+        self.assertIsNone(self.move(0.50, 0.47))
+
+    def test_a_slow_lift_is_not_a_swipe(self):
+        """Lowering your hand to the desk must not change the volume."""
+
+        self.assertIsNone(self.move(0.55, 0.30, seconds=4.0, frames=40))
+
+    def test_the_hand_coming_back_down_is_not_a_second_swipe(self):
+        self.assertEqual(self.move(0.55, 0.30), "SWIPE_UP")
+        self.assertIsNone(self.move(0.30, 0.55, hold=False))

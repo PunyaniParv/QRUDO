@@ -21,6 +21,8 @@ POSE_COMMANDS = {
 SWIPE_COMMANDS = {
     "SWIPE_LEFT": Command.REWIND,
     "SWIPE_RIGHT": Command.FORWARD,
+    "SWIPE_UP": Command.VOLUME_UP,
+    "SWIPE_DOWN": Command.VOLUME_DOWN,
 }
 
 # Deliberately unmapped for now:
@@ -29,9 +31,12 @@ SWIPE_COMMANDS = {
 #               time you got ready to swipe.
 #   OPEN_PALM   is what a hand looks like on its way to and from every
 #               other gesture, so it would fire constantly.
-#   POINT       is free, but volume and brightness need four distinct
-#               signals and there are not four left.  Vertical swipes are
-#               the natural way to find them.
+#   POINT       is free.  Brightness is what remains unbound: binding it
+#               to a held pose would fire it on the way into and out of
+#               every other gesture, and there is no movement left that is
+#               distinct enough to be safe.  The keyboard covers it --
+#               ctrl+alt+B and ctrl+alt+N -- which is enough for something
+#               set once at the start rather than adjusted mid-demo.
 
 
 class GestureRouter:
