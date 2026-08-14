@@ -1,14 +1,8 @@
 """Where the Vision Engine and the Control Engine meet, and nowhere else."""
 
-from .bridge import (
-    POSE_COMMANDS,
-    SWIPE_COMMANDS,
-    ArmingSwitch,
-    GestureRouter,
-)
+from .bridge import POSE_COMMANDS, SWIPE_COMMANDS, GestureRouter
 
-__all__ = ["ArmingSwitch", "GestureRouter", "POSE_COMMANDS",
-           "SWIPE_COMMANDS", "run"]
+__all__ = ["GestureRouter", "POSE_COMMANDS", "SWIPE_COMMANDS", "run"]
 
 
 def run(*args, **kwargs):

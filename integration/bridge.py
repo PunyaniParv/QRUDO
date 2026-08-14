@@ -49,69 +49,6 @@ SWIPE_COMMANDS = {
 #               set once at the start rather than adjusted mid-demo.
 
 
-#: Holding an open hand this long turns SARV on or off.  An open palm is
-#: the universal sign for stop, it reads to a room without explanation,
-#: and it is the one gesture large enough to make reliably from across
-#: that room.  Holding it is what makes it deliberate: an open hand is
-#: also what your hand passes through on the way to every other gesture.
-TOGGLE_GESTURE = "OPEN_PALM"
-TOGGLE_HOLD = 1.5
-
-
-class ArmingSwitch:
-    """Whether SARV is listening, and the gesture that changes its mind.
-
-    Talking with your hands should not pause your video.  Rather than
-    guessing which movements were meant -- which cannot be done reliably --
-    this puts it under your control, and puts the answer on the screen so
-    there is never a question of which state it is in.
-    """
-
-    def __init__(self, hold=TOGGLE_HOLD, armed=True):
-        self.armed = armed
-        self.hold = hold
-        self._since = None
-        self._used = False
-
-    def update(self, gesture, now):
-        """Feed the gesture seen this frame.  True if it just switched."""
-
-        if gesture != TOGGLE_GESTURE:
-            self._since = None
-            self._used = False
-            return False
-
-        if self._used:
-            return False
-
-        if self._since is None:
-            self._since = now
-
-        if now - self._since < self.hold:
-            return False
-
-        self.armed = not self.armed
-
-        # Held on past the switch: do not flip back and forth.  The hand
-        # has to leave the pose before it counts again.
-        self._used = True
-        self._since = None
-
-        return True
-
-    def holding(self, now):
-        """How far through the hold we are, 0 to 1, for showing progress.
-
-        Worth showing: without it, a hand held up for a second with nothing
-        happening looks like a gesture that is not being seen.
-        """
-
-        if self._since is None or self._used:
-            return 0.0
-
-        return min(1.0, (now - self._since) / self.hold)
-
-
 class GestureRouter:
     """Turn a stream of gesture names into commands.
 

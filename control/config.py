@@ -68,14 +68,15 @@ class ControlConfig:
     Empty means "send to whatever has focus", the old behaviour.
     """
 
-    browser_play_key: str = "k"
+    browser_play_key: str = "media"
     """Which key plays and pauses inside a browser.
 
-    A browser has no scriptable play/pause, so a key is sent to it -- and
-    which key depends on the site, not the browser.  "k" is YouTube's.
-    Other players use the spacebar.  "media" sends the keyboard's own
-    play/pause key instead, which works wherever something is genuinely
-    playing but opens Music if nothing is.
+    The keyboard's own play/pause key by default: it reaches whatever is
+    actually playing, whichever site that is.  Sending a letter instead
+    means guessing the site's shortcut, and a wrong guess is not a no-op
+    -- k is play/pause on YouTube and skips a track elsewhere.
+
+    "k" or "space" force a particular key for anyone who wants one.
     """
 
     seek_mode: str = "seek"

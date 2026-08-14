@@ -28,7 +28,7 @@ log.setup(console=False)
 class FakeMac(MacOSController):
     """The routing, with everything that needs macOS replaced."""
 
-    def __init__(self, running=(), target="", play_key="k"):
+    def __init__(self, running=(), target="", play_key="media"):
         self.config = ControlConfig(target_app=target,
                                     browser_play_key=play_key)
         self.log = log.get_logger("test")
@@ -75,7 +75,7 @@ class TestNothingPlaying(unittest.TestCase):
         wherever the system thinks the music is -- which is Music.
         """
 
-        controller = FakeMac(running={"Google Chrome"})
+        controller = FakeMac(running={"Google Chrome"}, play_key="k")
         controller.play_pause()
 
         self.assertEqual(controller.media_keys, [])
@@ -90,8 +90,21 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
     another player that key means something else.
     """
 
-    def test_the_default_is_youtubes(self):
+    def test_the_default_is_the_keyboards_own_key(self):
+        """It reaches whatever is playing, whichever site that is.
+
+        Guessing a letter means guessing the site's shortcut, and a wrong
+        guess is not a no-op: k is play/pause on YouTube and skips a track
+        elsewhere, which is how a fist came to change songs.
+        """
+
         controller = FakeMac(running={"Google Chrome"})
+        controller.play_pause()
+
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_youtubes_letter_for_anyone_who_wants_it(self):
+        controller = FakeMac(running={"Google Chrome"}, play_key="k")
 
         self.assertIn("(k)", controller.play_pause())
 
@@ -100,15 +113,6 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
 
         self.assertIn("(space)", controller.play_pause())
         self.assertEqual(controller.media_keys, [])
-
-    def test_the_media_key_for_anyone_who_wants_it(self):
-        """Works wherever something really is playing, and opens Music if
-        nothing is -- so it is asked for rather than assumed."""
-
-        controller = FakeMac(running={"Google Chrome"}, play_key="media")
-        controller.play_pause()
-
-        self.assertEqual(len(controller.media_keys), 1)
 
     def test_a_scriptable_player_ignores_the_setting(self):
         """Spotify is told in words; no key is involved."""
@@ -130,7 +134,7 @@ class TestWhichAppItReaches(unittest.TestCase):
         self.assertEqual(controller.keyed, [])
 
     def test_a_browser_gets_the_players_own_shortcut(self):
-        controller = FakeMac(running={"Google Chrome"})
+        controller = FakeMac(running={"Google Chrome"}, play_key="k")
         detail = controller.play_pause()
 
         self.assertIn("Chrome", detail)
@@ -138,7 +142,7 @@ class TestWhichAppItReaches(unittest.TestCase):
 
     def test_a_named_app_wins_over_whatever_else_is_open(self):
         controller = FakeMac(running={"Spotify", "Google Chrome"},
-                             target="Google Chrome")
+                             target="Google Chrome", play_key="k")
         detail = controller.play_pause()
 
         self.assertIn("Chrome", detail)

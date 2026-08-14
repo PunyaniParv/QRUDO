@@ -18,7 +18,7 @@ POSES = [
     ("fist", "Make a FIST, palm toward the camera",
      "this plays and pauses", 3.0),
     ("open", "Hold your hand OPEN, fingers spread",
-     "held, this turns SARV on and off", 3.0),
+     "so an open hand is told from a pinch", 3.0),
     ("two", "Hold up TWO FINGERS",
      "the pose for seeking", 3.0),
     ("pinch", "PINCH your thumb and finger together",

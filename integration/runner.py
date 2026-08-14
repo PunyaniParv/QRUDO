@@ -11,7 +11,7 @@ import sys
 import time
 from collections import deque
 
-from .bridge import ArmingSwitch, GestureRouter
+from .bridge import GestureRouter
 
 #: How long a completed swipe stays on screen, in seconds.
 SWIPE_SHOWN_FOR = 0.8
@@ -33,7 +33,6 @@ def run(engine, args, tuning=False):
     from ui import overlay
 
     router = GestureRouter()
-    switch = ArmingSwitch()
     presence = Presence()
     frame_times = deque(maxlen=30)
     last_result = None
@@ -94,9 +93,7 @@ def run(engine, args, tuning=False):
                 gesture = gesture_module.detect_gesture(hand)
                 swipe = motion.detect_swipe(hand)
 
-                switch.update(gesture, time.time())
-
-                if not tuning and switch.armed:
+                if not tuning:
                     command = router.update(gesture, swipe)
 
                     if command is not None:
@@ -118,8 +115,6 @@ def run(engine, args, tuning=False):
             if not show_window:
                 continue
 
-            overlay.draw_arming(cv2, frame, switch.armed,
-                                switch.holding(time.time()))
             overlay.draw_gesture(cv2, frame, gesture)
             overlay.draw_result(cv2, frame, last_result)
             overlay.draw_legend(cv2, frame, router.mapping())
@@ -131,17 +126,8 @@ def run(engine, args, tuning=False):
 
             cv2.imshow("SARV", frame)
 
-            pressed = cv2.waitKey(1) & 0xFF
-
-            if pressed == ord("q"):
+            if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
-
-            # A way in that does not depend on a gesture being recognised.
-            # Arming is itself a gesture, so if the open hand will not
-            # register there is otherwise no way to turn SARV on -- and
-            # that is exactly when you need to.
-            if pressed == ord("a"):
-                switch.armed = not switch.armed
 
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -190,7 +176,6 @@ def banner(engine, router, args, tuning):
         lines.append("")
 
     lines += [
-        "  hold an open hand to pause or resume, or press a in the window",
         "  q in the window to stop" if not args.no_window else
         "  ctrl+c to stop",
         "",

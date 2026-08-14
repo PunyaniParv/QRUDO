@@ -162,73 +162,6 @@ class TestFlickerDoesNotDoubleFire(unittest.TestCase):
         self.assertIsNotNone(router.update("FIST"))
 
 
-class TestArmingSwitch(unittest.TestCase):
-    """Holding an open hand turns SARV on and off.
-
-    The problem it answers: talking with your hands should not pause your
-    video, and no amount of threshold tuning reliably tells a gesture from
-    a gesticulation.  This hands the decision over instead.
-    """
-
-    def setUp(self):
-        from integration.bridge import ArmingSwitch
-        self.switch = ArmingSwitch()
-        self.now = 1000.0
-
-    def hold(self, gesture, seconds, step=0.05):
-        """Show a gesture for a while; returns how often it switched."""
-
-        switches = 0
-        for _ in range(int(seconds / step)):
-            switches += bool(self.switch.update(gesture, self.now))
-            self.now += step
-        return switches
-
-    def test_starts_listening(self):
-        self.assertTrue(self.switch.armed)
-
-    def test_holding_an_open_hand_pauses_it(self):
-        self.hold("OPEN_PALM", 2.0)
-        self.assertFalse(self.switch.armed)
-
-    def test_holding_it_again_starts_it_listening(self):
-        self.hold("OPEN_PALM", 2.0)
-        self.hold("UNKNOWN", 0.3)
-        self.hold("OPEN_PALM", 2.0)
-        self.assertTrue(self.switch.armed)
-
-    def test_a_glimpse_of_an_open_hand_does_nothing(self):
-        """An open hand is what your hand passes through on the way to
-        every other gesture."""
-
-        self.hold("OPEN_PALM", 0.5)
-        self.assertTrue(self.switch.armed)
-
-    def test_holding_on_does_not_flip_it_back(self):
-        """Keep holding after it switches and it must stay switched."""
-
-        self.assertEqual(self.hold("OPEN_PALM", 6.0), 1)
-        self.assertFalse(self.switch.armed)
-
-    def test_the_hand_has_to_leave_before_it_counts_again(self):
-        self.hold("OPEN_PALM", 6.0)
-        self.hold("FIST", 0.2)
-        self.hold("OPEN_PALM", 2.0)
-        self.assertTrue(self.switch.armed)
-
-    def test_progress_is_reported_while_holding(self):
-        """Shown as a filling bar, so a held hand does not look ignored."""
-
-        self.hold("OPEN_PALM", 0.75)
-        self.assertGreater(self.switch.holding(self.now), 0.4)
-        self.assertLess(self.switch.holding(self.now), 0.6)
-
-    def test_progress_is_nothing_when_not_holding(self):
-        self.assertEqual(self.switch.holding(self.now), 0.0)
-        self.hold("FIST", 1.0)
-        self.assertEqual(self.switch.holding(self.now), 0.0)
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 
@@ -273,3 +206,29 @@ class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
                                       "POINT": Command.VOLUME_UP})
         self.assertIsNotNone(router.update("FIST", now=1000.0))
         self.assertIsNotNone(router.update("POINT", now=1000.1))
+
+
+class TestTheOverlayIsWhole(unittest.TestCase):
+    """Everything the app draws with has to be there.
+
+    Deleting the arming indicator took the calibration prompt with it,
+    because they sat next to each other -- and nothing noticed, since the
+    tests never import the drawing.  The app failed to start.
+    """
+
+    def test_every_drawing_function_the_app_uses_exists(self):
+        import ui
+
+        for name in ("draw_gesture", "draw_result", "draw_legend",
+                     "draw_prompt", "draw_tuning"):
+            with self.subTest(name=name):
+                self.assertTrue(callable(getattr(ui, name, None)))
+
+    def test_the_app_and_the_setup_both_import(self):
+        """Neither is covered by a test that runs them, so at least this."""
+
+        import importlib
+
+        for module in ("integration.runner", "integration.calibrate", "main"):
+            with self.subTest(module=module):
+                self.assertIsNotNone(importlib.import_module(module))
