@@ -52,11 +52,22 @@ class Camera:
         # 640x480.  Measured on synthetic hands with that error added, the
         # bigger picture roughly doubles the distance every pose survives.
         #
-        # It was the other way round for fear of the frame rate, which
-        # turns out not to be the trade it looked like: hand detection
-        # takes 5.5ms a frame at 640x480 and 5.9ms at 1280x720, because
-        # the models resize to their own fixed input either way.  --near
-        # is there for a machine that disagrees.
+        # The frame rate is not the cost it looks like: hand detection
+        # takes 5.2ms a frame at 640x480 and 7.1ms at 1760x1328, because
+        # the models resize to their own fixed input either way.
+        #
+        # The shape is the cost, and it is asked for in fours and threes
+        # for that reason.  A webcam asked for 1280x720 on this machine
+        # answers with the middle band of its 4:3 picture -- measured, the
+        # two match at 0.998 once the band is cropped out -- so going
+        # widescreen quietly throws away a quarter of the height.  Nobody
+        # notices at a distance.  Close up, where a hand fills the frame,
+        # raising it takes it out of the picture, and the gestures that
+        # travel up and down stop working while the far ones improve.
+        #
+        # Asked in fours and threes the same camera offers 1760x1328,
+        # which matches the 640x480 view at 0.993: the whole picture, with
+        # nearly three times the height in pixels.
         self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
@@ -65,6 +76,17 @@ class Camera:
         self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         return self
+
+    @property
+    def shape(self):
+        """What the camera actually hands over, which is not what was
+        asked for: it answers with the nearest mode it has."""
+
+        if self._capture is None:
+            return None
+
+        return (int(self._capture.get(self._cv2.CAP_PROP_FRAME_WIDTH)),
+                int(self._capture.get(self._cv2.CAP_PROP_FRAME_HEIGHT)))
 
     #: A camera drops the odd frame -- just after opening, or under load --
     #: and one bad read is not the camera going away.  Only a run of them

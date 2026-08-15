@@ -70,8 +70,8 @@ def run(engine, args, tuning=False):
         # twenty pixels across at 640, which is not much to find joints in.
         camera = Camera(
             args.camera,
-            width=640 if getattr(args, "near", False) else 1280,
-            height=480 if getattr(args, "near", False) else 720,
+            width=640 if getattr(args, "near", False) else 1600,
+            height=480 if getattr(args, "near", False) else 1200,
         ).open()
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -79,6 +79,7 @@ def run(engine, args, tuning=False):
         return 1
 
     print(banner(engine, router, args, tuning), flush=True)
+    print(picture(camera), flush=True)
 
     show_window = not args.no_window
 
@@ -171,6 +172,31 @@ def run(engine, args, tuning=False):
 
     print("\n  bye.")
     return 0
+
+
+def picture(camera):
+    """What the camera gave, and whether it kept the whole view.
+
+    Worth a line, because a camera answering a request for a big picture
+    with a widescreen one drops a quarter of its height -- and the only
+    symptom is that gestures made close up stop working while distant
+    ones improve, which is not a symptom anybody would trace to this.
+    """
+
+    shape = camera.shape
+
+    if not shape:
+        return ""
+
+    width, height = shape
+    line = f"  camera : {width}x{height}"
+
+    if abs(width / height - 4 / 3) > 0.05:
+        return (line + "  -- widescreen, so the top and bottom of the view"
+                       "\n           may be cropped; try --near if gestures"
+                       " close up are missed")
+
+    return line
 
 
 def out_of_range(quiet_for, args):
