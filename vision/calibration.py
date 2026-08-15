@@ -228,6 +228,23 @@ def edge(values, share, default):
     return ordered[index]
 
 
+#: Where a line sits between two measurements, when one of the two was
+#: made deliberately for the camera and the other was not.
+#:
+#: A pose held for a prompt is tidier than the same pose made casually: a
+#: fist for a calibration is squeezed, two fingers are folded right down,
+#: an open hand is spread wide.  In use that side relaxes toward the line
+#: while the other side -- a hand at rest, a finger that is simply
+#: straight -- stays where it was.  Splitting the difference gives half
+#: the room to a side that does not need it.
+#:
+#: This was found the expensive way.  A fist measured from a hard clench
+#: put its line below where an ordinary fist reads, and stopped
+#: recognising fists altogether.
+DELIBERATE = 0.65
+STEADY = 1 - DELIBERATE
+
+
 def between(low, high, defaults_to, fraction=0.5, least=0.08):
     """A threshold in the gap between two measurements.
 
@@ -450,9 +467,11 @@ class Profile:
         # Each of these has its own scale, so what counts as a usable gap
         # differs: finger extension runs from about 0.4 to 1.0, and the
         # fist reach from 1.0 to 1.6.
+        # The curled side is the deliberate one: fingers folded right
+        # down for a prompt, and held looser in use.
         extended_ratio, ok = between(
             max(curled, default=0.0), min(straight, default=1.0),
-            current.extended_ratio, least=0.10)
+            current.extended_ratio, fraction=DELIBERATE, least=0.10)
 
         if not ok:
             warnings.append("could not tell a finger held out from one held down")
@@ -472,10 +491,13 @@ class Profile:
         # straight index finger and a curled pinky separates perfectly
         # well on the pinky, and this reported that it could not be told
         # apart at all.
+        # Here it is the upper side that was deliberate -- a hand spread
+        # wide for a prompt is wider than one shown in passing -- so the
+        # line goes nearer the resting hand, which is the steady one.
         open_ratio, ok = between(
             min(self.among(["rest"], self.HIGH), default=0.0),
             min(self.among(["open"], self.LOW), default=1.0),
-            current.open_ratio, least=0.06)
+            current.open_ratio, fraction=STEADY, least=0.06)
 
         if not ok:
             warnings.append("could not tell an open hand from a resting one")
@@ -492,7 +514,7 @@ class Profile:
         fist_reach, ok = between(
             max(self.among(["fist"], self.HIGH, "reach"), default=0.0),
             min(self.among(["rest"], self.LOW, "reach"), default=99.0),
-            current.fist_reach, least=0.12)
+            current.fist_reach, fraction=DELIBERATE, least=0.12)
 
         if not ok:
             warnings.append("could not tell a fist from a resting hand")
@@ -504,7 +526,7 @@ class Profile:
         fist_curl, ok = between(
             max(self.among(["fist"], self.HIGH), default=0.0),
             min(self.among(["rest"], self.LOW), default=1.0),
-            current.fist_curl, least=0.10)
+            current.fist_curl, fraction=DELIBERATE, least=0.10)
 
         if not ok:
             warnings.append("could not tell a closed hand from a slack one")

@@ -280,6 +280,50 @@ class TestFromSamples(unittest.TestCase):
             "rest": readings(0.75, rest_reach, scale),
         }
 
+    def test_a_line_sits_nearer_the_side_that_does_not_move(self):
+        """A pose held for a prompt is tidier than one made in passing.
+
+        Fingers folded right down for a camera come up in use; a finger
+        that is simply straight stays straight.  Splitting the difference
+        gives half the room to the side that does not need it, and the
+        fist found out what that costs -- a line set from a hard clench
+        stopped recognising ordinary fists altogether.
+        """
+
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        folded, straight = 0.78, 0.95      # what self.poses() holds
+        middle = (folded + straight) / 2
+
+        self.assertGreater(measured.extended_ratio, middle)
+        self.assertLess(measured.extended_ratio, straight - 0.05)
+
+    def test_the_same_for_a_fist(self):
+        """Where the deliberate side is the fist rather than the fold."""
+
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.fist_reach, (1.02 + 1.40) / 2)
+        self.assertGreater(measured.fist_curl, (0.45 + 0.75) / 2)
+
+    def test_and_the_other_way_round_for_an_open_hand(self):
+        """Here the deliberate side is the upper one -- a hand spread wide
+        for a prompt is wider than one shown in passing -- so the line
+        goes nearer the resting hand instead.
+
+        Measured on a hand whose fingers fold well down, so that the
+        finger line lands low and the guard keeping this above it does
+        not decide the answer.
+        """
+
+        poses = dict(self.poses(), two=two_fingers(down=0.50))
+        rest, spread = 0.75, 0.95
+
+        measured, _ = from_samples(poses, {}, DEFAULTS)
+
+        self.assertGreater(measured.open_ratio, rest)
+        self.assertLess(measured.open_ratio, (rest + spread) / 2)
+
     def test_it_clears_two_fingers_held_down(self):
         """Reported as "it is not recognising 2 finger".
 
@@ -485,7 +529,9 @@ class TestOpenHandThreshold(unittest.TestCase):
 
         measured, _ = from_samples(self.poses(), {}, DEFAULTS)
 
-        self.assertGreater(measured.open_ratio, measured.extended_ratio)
+        # Equal when the measured open line would have fallen below it:
+        # the guard raises it to meet the other rather than past it.
+        self.assertGreaterEqual(measured.open_ratio, measured.extended_ratio)
 
     def test_a_slack_hand_that_looks_open_is_reported(self):
         measured, warnings = from_samples(self.poses(rest_ext=0.99), {},
