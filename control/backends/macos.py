@@ -615,10 +615,18 @@ def _focus_report(pid: int) -> tuple:
     background browser says, while still delivering the letter to its
     front tab -- and "unknown" when nothing could be asked.
 
-    Editable is judged by role and by whether the element's value can be
-    written.  Role alone missed the chat boxes -- WhatsApp's and
-    ChatGPT's composers are editable regions, not classic text fields,
-    and the first version of this guard let a k through into both.
+    Editable is judged by role.  It was briefly also judged by whether
+    the element's value could be written, to catch editable regions that
+    are not classic text fields -- and that probe read a freshly loaded
+    page as a text box, because a page container's value is settable too:
+    it is the scroll position, not text.  Focus sits on the container
+    until the video is clicked, so a fist could pause a video it could
+    never start.
+
+    The chat boxes that motivated the probe are already refused by the
+    front-tab title: they are not the video, and the letter can go
+    nowhere else.  On the video's own page, the typing targets are real
+    text fields -- a search box, a comment box -- which the roles name.
 
     The title answers even for a background app, and it names the front
     tab -- which is the one place the letter can go.
@@ -670,11 +678,7 @@ def _focus_report(pid: int) -> tuple:
         _, role_ref = read(focused, b"AXRole")
         role = as_text(role_ref)
 
-        settable = ctypes.c_bool(False)
-        services.AXUIElementIsAttributeSettable(
-            focused, cfstr(b"AXValue"), ctypes.byref(settable))
-
-        if (role in _TEXT_ROLES) or settable.value:
+        if role in _TEXT_ROLES:
             return "editable", title
 
         return "element", title

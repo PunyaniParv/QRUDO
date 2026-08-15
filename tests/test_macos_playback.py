@@ -274,6 +274,23 @@ class TestTheLetterOnlyGoesToTheVideo(unittest.TestCase):
 
         self.assertEqual(controller.keyed, [])
 
+    def test_a_video_not_yet_played_still_gets_the_letter(self):
+        """Reported: the fist could pause a video but never start one.
+
+        Until the video is clicked, the page's focus is its own container
+        -- and a container's value is settable (its scroll position), so
+        a probe that read "settable" as "takes typing" classified every
+        fresh page as a text box.  A container is an element, not an
+        editable, and the letter must flow.
+        """
+
+        controller = self.controller(
+            ("element", "Fresh Video - YouTube - Google Chrome"))
+
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242])
+
     def test_the_video_tab_with_ordinary_focus_gets_the_letter(self):
         controller = self.controller(
             ("element", "Some Video - YouTube - Google Chrome"))
