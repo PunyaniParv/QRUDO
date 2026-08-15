@@ -414,4 +414,16 @@ def pointing_direction(hand):
     # as huge -- enough that slowly lowering the hand counted as a swipe.
     # A hand and a half is the floor: comfortably under the reach of an
     # upright peace sign, so that gesture is measured as it stands.
-    return sideways / max(reach, hand_scale(screen) * 1.5)
+    lean = sideways / max(reach, hand_scale(screen) * 1.5)
+
+    # That ratio is the sine of the lean, and a sine flattens out.  Forty
+    # degrees of wrist read 0.67 from upright and 0.26 from a wrist
+    # already turned 55 -- the same movement, a third of the reading --
+    # so a turn made from a hand that habitually sits tilted one way was
+    # measured as barely happening, and did not register at all.  Reported
+    # as swipe right not working, on a hand that rests leaning right.
+    #
+    # The angle itself does not flatten.  In radians it is within a
+    # percent of the sine for the small leans where the thresholds were
+    # measured, and only diverges where the sine was going wrong.
+    return math.asin(max(-1.0, min(1.0, lean)))

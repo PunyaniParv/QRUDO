@@ -668,6 +668,74 @@ class TestVolumeOnTwoFingers(GestureTestCase):
         self.assertNotIn(result, ("SWIPE_UP", "SWIPE_DOWN"))
 
 
+class TestATurnCountsTheSameWhereverItStarts(GestureTestCase):
+    """Reported as swipe right not being detected.
+
+    Which way the fingers lean was measured as the sine of the angle,
+    and a sine flattens out.  Forty degrees of wrist read 0.67 from
+    upright and 0.26 from a wrist already turned 55 -- the same movement,
+    a third of the reading.  So on a hand that habitually rests leaning
+    one way, turning further that way was measured as barely happening,
+    while turning back the other way had the whole range to itself.
+
+    That is not a threshold that can be tuned around.  It is one
+    direction being worth less than the other.
+    """
+
+    def peace(self, roll):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED,
+                         roll=math.radians(roll))
+
+    def turn(self, start, degrees, seconds=0.30, frames=14):
+        for _ in range(24):
+            motion.detect_swipe(self.peace(start), HAND)
+            self.clock.tick(0.04)
+
+        fired = None
+
+        for i in range(frames):
+            share = i / (frames - 1)
+            fired = fired or motion.detect_swipe(
+                self.peace(start + degrees * share), HAND)
+            self.clock.tick(seconds / (frames - 1))
+
+        return fired
+
+    def test_the_same_turn_reads_the_same_wherever_it_starts(self):
+        change = []
+
+        for start in (-55, -20, 0, 20, 55):
+            here = hand_state.pointing_direction(self.peace(start))
+            there = hand_state.pointing_direction(self.peace(start + 40))
+            change.append(abs(there - here))
+
+        self.assertAlmostEqual(min(change), max(change), places=2)
+
+    def test_both_ways_from_a_hand_that_rests_leaning_right(self):
+        for degrees, wanted in ((40, "SWIPE_RIGHT"), (-40, "SWIPE_LEFT")):
+            with self.subTest(turning=degrees):
+                self.setUp()
+
+                self.assertEqual(self.turn(45, degrees), wanted)
+
+    def test_both_ways_from_a_hand_that_rests_leaning_left(self):
+        for degrees, wanted in ((40, "SWIPE_RIGHT"), (-40, "SWIPE_LEFT")):
+            with self.subTest(turning=degrees):
+                self.setUp()
+
+                self.assertEqual(self.turn(-45, degrees), wanted)
+
+    def test_a_hand_aimed_at_the_camera_is_still_guarded(self):
+        """The reach floor is what stops a hand collapsing on screen from
+        reading as an enormous turn, and it is still there."""
+
+        aimed = make_hand(EXTENDED, EXTENDED, CURLED, CURLED,
+                          pitch=math.radians(90))
+
+        self.assertLessEqual(abs(hand_state.pointing_direction(aimed)),
+                             math.pi / 2)
+
+
 class TestOneFrameCannotBeAGesture(GestureTestCase):
     """A hand cannot cross a gesture's worth of ground in a single frame.
 
