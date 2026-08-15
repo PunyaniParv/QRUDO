@@ -70,8 +70,8 @@ def run(engine, args, tuning=False):
         # twenty pixels across at 640, which is not much to find joints in.
         camera = Camera(
             args.camera,
-            width=1280 if getattr(args, "far", False) else 640,
-            height=720 if getattr(args, "far", False) else 480,
+            width=640 if getattr(args, "near", False) else 1280,
+            height=480 if getattr(args, "near", False) else 720,
         ).open()
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -179,11 +179,11 @@ def out_of_range(quiet_for, args):
     if quiet_for < NOTHING_SEEN_FOR:
         return ""
 
-    if getattr(args, "far", False):
-        return ("no hand seen -- move closer, or into better light")
+    if getattr(args, "near", False):
+        return ("no hand seen -- move closer, or restart without --near "
+                "for more range")
 
-    return ("no hand seen -- move closer, or restart with --far "
-            "for more range")
+    return "no hand seen -- move closer, or into better light"
 
 
 def frame_rate(times):

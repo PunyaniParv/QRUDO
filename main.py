@@ -51,9 +51,12 @@ def build_parser():
     parser.add_argument("--skip-setup", action="store_true",
                         help="start without the first-run setup, using the "
                              "default thresholds")
+    parser.add_argument("--near", action="store_true",
+                        help="a smaller picture, for a machine that cannot "
+                             "keep up; costs about half the range")
     parser.add_argument("--far", action="store_true",
-                        help="more pixels on a distant hand, for controlling "
-                             "from across a room; costs frame rate")
+                        help=argparse.SUPPRESS)  # now the default; kept so
+                                                 # older instructions still run
     parser.add_argument("--delay", type=float, default=0.0, metavar="SECONDS",
                         help="count down before --command, so you can click "
                              "the video first")

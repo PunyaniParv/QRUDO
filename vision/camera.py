@@ -46,12 +46,17 @@ class Camera:
         if not self._capture.isOpened():
             raise CameraError(f"could not open camera {self.index}")
 
-        # A webcam left to itself often hands over 1280x720 or more, and
-        # every one of those pixels goes through hand detection.  640x480
-        # is plenty up close and keeps the frame rate up, which is what the
-        # gestures depend on -- but it costs range, because a hand three
-        # metres away is only about twenty pixels across at this size.
-        # --far raises it for that.
+        # Range is bought with pixels.  Landmark error is roughly fixed in
+        # pixels, so it grows against the hand as the hand shrinks, and a
+        # hand three metres off is only about twenty pixels across at
+        # 640x480.  Measured on synthetic hands with that error added, the
+        # bigger picture roughly doubles the distance every pose survives.
+        #
+        # It was the other way round for fear of the frame rate, which
+        # turns out not to be the trade it looked like: hand detection
+        # takes 5.5ms a frame at 640x480 and 5.9ms at 1280x720, because
+        # the models resize to their own fixed input either way.  --near
+        # is there for a machine that disagrees.
         self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 

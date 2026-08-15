@@ -18,6 +18,7 @@ right hand "Left".  These hands are built accordingly.
 from __future__ import annotations
 
 import math
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -748,6 +749,104 @@ class TestTheFourDirectionsAreDistinct(GestureTestCase):
             self.clock.tick(0.30 / 11)
 
         self.assertNotIn(fired, ("SWIPE_UP", "SWIPE_DOWN"))
+
+
+class TestEveryPoseAtADistance(GestureTestCase):
+    """The same hands, shrunk, with landmark error added.
+
+    Error is roughly fixed in pixels, so it grows against the hand as the
+    hand shrinks -- which is the whole of why range is hard.  These hands
+    are geometrically perfect and a real one seen small is also blurred
+    and partly lost, so this is the optimistic case; what it is good for
+    is catching a threshold that is secretly a size rather than a ratio.
+    """
+
+    #: Two pixels of error in a 1280-wide frame.
+    BLUR = 2.0 / 1280
+
+    POSES = {
+        "FIST": (CURLED, CURLED, CURLED, CURLED),
+        "POINT": (EXTENDED, CURLED, CURLED, CURLED),
+        "TWO_FINGER": (EXTENDED, EXTENDED, CURLED, CURLED),
+        "OPEN_PALM": (EXTENDED, EXTENDED, EXTENDED, EXTENDED),
+    }
+
+    def resized(self, points, wanted):
+        wrist = points[0]
+        scale = wanted / hand_state.hand_scale(points)
+
+        return [Point(wrist.x + (point.x - wrist.x) * scale,
+                      wrist.y + (point.y - wrist.y) * scale,
+                      wrist.z + (point.z - wrist.z) * scale)
+                for point in points]
+
+    def blurred(self, points, rng):
+        return [Point(point.x + rng.gauss(0, self.BLUR),
+                      point.y + rng.gauss(0, self.BLUR),
+                      point.z + rng.gauss(0, self.BLUR))
+                for point in points]
+
+    def accuracy(self, wanted, scale, trials=40, seed=3):
+        rng = random.Random(seed)
+        base = self.resized(make_hand(*self.POSES[wanted]), scale)
+        right = 0
+
+        for _ in range(trials):
+            vision.reset_state()
+
+            for _ in range(6):
+                got = gestures.detect_gesture(self.blurred(base, rng), HAND)
+
+            right += got == wanted
+
+        return right / trials
+
+    def test_every_pose_holds_up_close(self):
+        for wanted in self.POSES:
+            with self.subTest(pose=wanted):
+                self.assertGreater(self.accuracy(wanted, 0.12), 0.95)
+
+    def test_pointing_and_two_fingers_reach_across_a_room(self):
+        """A hand a twentieth of the frame: a metre and a half or so on a
+        laptop webcam.  Two fingers carries four of the seven commands,
+        so this is the one that matters most."""
+
+        for wanted in ("POINT", "TWO_FINGER"):
+            with self.subTest(pose=wanted):
+                self.assertGreater(self.accuracy(wanted, 0.05), 0.90)
+
+    def test_two_fingers_reaches_furthest(self):
+        self.assertGreater(self.accuracy("TWO_FINGER", 0.035), 0.90)
+
+    def test_an_open_hand_is_the_shortest_ranged_of_them(self):
+        """Worth stating, because brightness rides on it.
+
+        It asks the most of the reading: every finger has to be not
+        merely out but properly straight, and one finger misread by
+        enough is all it takes.  That strictness is not removable -- a
+        hand at rest is told from an open one by the pinky alone, on the
+        calibration that prompted this -- so an open hand simply has to
+        be nearer.
+        """
+
+        self.assertGreater(self.accuracy("OPEN_PALM", 0.08), 0.95)
+        self.assertLess(self.accuracy("OPEN_PALM", 0.03), 0.50)
+
+    def test_nothing_is_secretly_measured_in_pixels(self):
+        """A threshold that is a size rather than a ratio shows up here as
+        a pose that works at one distance and not another with no noise
+        involved at all."""
+
+        for wanted in self.POSES:
+            for scale in (0.20, 0.10, 0.05, 0.03):
+                with self.subTest(pose=wanted, scale=scale):
+                    vision.reset_state()
+                    hand = self.resized(make_hand(*self.POSES[wanted]), scale)
+
+                    for _ in range(6):
+                        got = gestures.detect_gesture(hand, HAND)
+
+                    self.assertEqual(got, wanted)
 
 
 class TestBrightnessOnAnOpenPalm(GestureTestCase):
