@@ -90,15 +90,23 @@ OPEN_RATIO = 0.90
 PALM_CERTAINTY = 0.12
 
 #: Smallest a hand can look on screen and still be read, as a fraction of
-#: the frame width.  This is a range limit, so it wants to be low: a palm
-#: is about a tenth of the frame at a metre and a thirtieth at three, and
-#: the point of the thing is to work from across a room.  At 0.035 it
-#: reaches roughly three metres, while still ignoring someone at the far
-#: side of a hall.
+#: the frame width.  Anything smaller is discarded before a gesture is
+#: looked for at all, so this is the range limit and nothing else is.
+#:
+#: Measured at the size the camera now gives, with landmark error added:
+#: every pose reads correctly every time down to 0.028, and at 0.022 the
+#: worst of them -- an open hand, which asks the most -- is still right
+#: nine times in ten.  Below that they fall away quickly.  So the line
+#: goes at 0.022, which is a hand about two metres off on a laptop
+#: webcam, against 0.035 for one at a metre and a third.
+#:
+#: Lowering it cannot cost anything close up.  It only ever decides which
+#: hands are too small to bother with, so a hand near the camera is
+#: unaffected by where it sits.
 #:
 #: It was 0.09 briefly, to cut down false positives, which quietly capped
 #: the whole app at arm's length.
-MIN_HAND_ON_SCREEN = 0.035
+MIN_HAND_ON_SCREEN = 0.022
 
 
 # ---------------------------------------------------------

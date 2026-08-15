@@ -154,7 +154,7 @@ class Calibration:
         "swipe_lift_speed": (0.40, 4.50),
         "crosstalk_turn": (0.15, 0.95),
         "crosstalk_lift": (0.15, 1.20),
-        "min_hand_on_screen": (0.015, 0.035),
+        "min_hand_on_screen": (0.012, 0.022),
     }
 
     def sensible(self):

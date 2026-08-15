@@ -1060,6 +1060,34 @@ class TestEveryPoseAtADistance(GestureTestCase):
     def test_two_fingers_reaches_furthest(self):
         self.assertGreater(self.accuracy("TWO_FINGER", 0.035), 0.90)
 
+    def test_the_floor_sits_where_the_poses_fail_and_not_before(self):
+        """It is the range limit and nothing else is.
+
+        Reported as stopping at about 1.3 metres, which is exactly the
+        hand size the floor was set at -- so the vision was being cut off
+        well before it was failing.  Every pose reads correctly every
+        time down to the floor now, and it is only past it that they go.
+        """
+
+        for wanted in self.POSES:
+            with self.subTest(pose=wanted, at="the floor"):
+                self.assertGreater(
+                    self.accuracy(wanted, hand_state.MIN_HAND_ON_SCREEN), 0.85)
+
+        for wanted in ("FIST", "POINT", "TWO_FINGER"):
+            with self.subTest(pose=wanted, at="well inside it"):
+                self.assertEqual(self.accuracy(wanted, 0.030), 1.0)
+
+    def test_lowering_it_costs_nothing_close_up(self):
+        """Which is the whole reason it can be lowered at all: it decides
+        which hands are too small to bother with, and says nothing about
+        a hand near the camera."""
+
+        for wanted in self.POSES:
+            for scale in (0.25, 0.12, 0.06):
+                with self.subTest(pose=wanted, scale=scale):
+                    self.assertEqual(self.accuracy(wanted, scale), 1.0)
+
     def test_an_open_hand_is_the_shortest_ranged_of_them(self):
         """Worth stating, because brightness rides on it.
 

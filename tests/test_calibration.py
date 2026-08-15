@@ -591,11 +591,11 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
         self.assertTrue(any("min_hand_on_screen" in note for note in pulled))
 
     def test_sensible_values_are_left_alone(self):
-        fine = Calibration(0.80, 0.92, 1.10, 0.55, 0.30, 0.80, 0.60, 1.20, 0.60, 0.80, 0.030)
+        fine = Calibration(0.80, 0.92, 1.10, 0.55, 0.30, 0.80, 0.60, 1.20, 0.60, 0.80, 0.018)
 
         kept, pulled = fine.sensible()
 
-        self.assertEqual(kept.min_hand_on_screen, 0.030)
+        self.assertEqual(kept.min_hand_on_screen, 0.018)
         self.assertEqual(pulled, ())
 
     def test_the_range_floor_never_ends_up_stricter_than_shipped(self):
