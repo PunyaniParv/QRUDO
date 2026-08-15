@@ -52,10 +52,20 @@ class GestureStabiliser:
 #: half hidden behind the hand, which is every finger that is folded.
 FINGER_BAND = 0.07
 
-#: How many readings a finger's answer is taken from.  Three: enough that
-#: one frame cannot decide anything, few enough that the delay is not felt
-#: -- two frames at thirty a second, under a tenth of a second.
-FINGER_FRAMES = 3
+#: How many readings a finger's answer is taken from.
+#:
+#: Five, so that two bad readings in a row still decide nothing.  This is
+#: what pays for keeping three fingers apart from two: told only that a
+#: finger reads as out, there is no distinguishing a third finger held up
+#: from a folded one misread, and the only thing that separates them is
+#: that one of them persists.  Five readings is long enough for the
+#: persistence to show.
+#:
+#: The cost is that a genuine change takes three frames to be believed --
+#: a tenth of a second at thirty a second, on a pose that is held anyway.
+#: Nothing about a swipe is delayed by it: this decides which fingers are
+#: out, not where the hand is going.
+FINGER_FRAMES = 5
 
 
 class FingerMemory:

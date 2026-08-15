@@ -142,26 +142,25 @@ def detect_gesture(hand, handedness=None):
 
 
 def _two_up(fingers):
-    """Index and middle out, and not both of the others.
+    """Index and middle out, both of the others down.
 
-    Not "and both of the others in", which is what this asked for and
-    what made the pose fragile.  Held up, the ring and pinky are folded
-    down behind the raised two, and a folded finger behind a hand is the
-    one a camera reads worst -- so the pose was resting on the two
-    readings least worth resting on, and either of them going wrong for a
-    frame lost it.
+    Exactly two, not "at most one of the others is wrong".  It was the
+    looser rule briefly, because the folded fingers are the ones a camera
+    reads worst and the pose rested on both of them being right at once.
+    But the looser rule cannot tell three fingers from two with a misread
+    ring finger -- they read identically -- and lumping them together
+    spends a pose that is worth keeping to buy steadiness that can be got
+    another way.
 
-    This is the rule a fist already uses, for the same reason: it asks for
-    the index and two of the other three, because requiring all four
-    failed whenever one was misread.  One finger may be wrong here too.
-    Three fingers up reads as this pose, which is the price and a fair
-    one -- it is nearer to what someone holding three fingers up means
-    than nothing at all is.
+    The steadiness comes from time instead: a finger answers from several
+    readings rather than one, so a misread has to persist to be believed,
+    while three fingers held up persists by definition.
     """
 
     return (fingers["index"]
             and fingers["middle"]
-            and not (fingers["ring"] and fingers["pinky"]))
+            and not fingers["ring"]
+            and not fingers["pinky"])
 
 
 def pose_kind(hand):
