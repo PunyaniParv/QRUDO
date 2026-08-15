@@ -219,9 +219,8 @@ class TestTheOverlayIsWhole(unittest.TestCase):
     def test_every_drawing_function_the_app_uses_exists(self):
         import ui
 
-        for name in ("dim_edges", "draw_gesture", "draw_hint", "draw_legend",
-                     "draw_prompt", "draw_result", "draw_tuning",
-                     "legend_height"):
+        for name in ("draw_gesture", "draw_hint", "draw_legend",
+                     "draw_prompt", "draw_result", "draw_tuning"):
             with self.subTest(name=name):
                 self.assertTrue(callable(getattr(ui, name, None)))
 

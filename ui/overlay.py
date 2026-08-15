@@ -7,10 +7,10 @@ threshold to adjust rather than a guess.
 
 The preview is a room, not a page: whatever is behind the text is
 whatever you happen to be standing in front of, and pale text on a pale
-wall is not readable.  So the top and bottom of the picture are shaded
-down where the lines sit, and each line carries a shadow of its own.
-Between them the text reads against a white wall and a dark one without
-putting a box over either.
+wall is not readable.  Shading the edges of the picture fixed that and
+cost more than it fixed -- it is your camera, and it looked like
+something was wrong with it.  So the text carries its own dark edge
+instead and nothing is done to the picture at all.
 
 cv2 is passed in rather than imported, so this module stays importable --
 and testable -- without OpenCV present.
@@ -32,88 +32,31 @@ FONT = 0  # cv2.FONT_HERSHEY_SIMPLEX
 MARGIN = 20
 
 
-#: How far the shading takes to disappear once it is past the text.
-FADE = 58
-
-
-def dim_edges(cv2, frame, top=94, bottom=92):
-    """Darken the top and bottom of the picture, fading into the middle.
-
-    Text over a camera has no background of its own, and the one it gets
-    is whatever the room is.  A shadow copes with a busy wall; it does not
-    cope with a bright one, where pale text has nothing to be paler than.
-
-    ``top`` and ``bottom`` are how much room the text needs, not how far
-    the shading reaches: each is held at full strength across its own
-    lines and then fades out over ``FADE`` rows beyond them.  Giving the
-    band the fade to share instead leaves the text sitting in the weakest
-    part of the very thing put there to hold it.
-
-    Nothing is hidden -- it is a darker picture at the edges, not a panel
-    over it.
-    """
-
-    height = frame.shape[0]
-
-    _shade(frame, 0, min(top, height), from_top=True)
-    _shade(frame, max(0, height - bottom), height, from_top=False)
-
-
-def _shade(frame, top, bottom, from_top, strength=0.45):
-    """Darken these rows, and fade back out over the rows beyond them.
-
-    A row at a time rather than in a few blocks: shading in blocks leaves
-    visible steps across a plain wall, which reads as a rendering fault
-    rather than as shading.
-
-    numpy is imported here rather than at the top so this module keeps
-    loading -- and its lines keep being testable -- on a machine with
-    neither it nor OpenCV.
-    """
-
-    import numpy
-
-    height = frame.shape[0]
-
-    if bottom - top < 1:
-        return
-
-    solid = numpy.full(bottom - top, strength)
-    fade = numpy.linspace(strength, 0.0, FADE)
-
-    if from_top:
-        rows, first = numpy.concatenate([solid, fade]), top
-    else:
-        rows, first = numpy.concatenate([fade[::-1], solid]), top - FADE
-
-    # Clip to the picture, in case the bands are asked to overlap the edge.
-    start = max(0, first)
-    rows = rows[start - first:start - first + height - start]
-
-    keep = (1.0 - rows).reshape(len(rows), 1, 1)
-
-    frame[start:start + len(rows)] = (
-        frame[start:start + len(rows)] * keep).astype(frame.dtype)
-
-
 def text(cv2, frame, line, at, scale=0.6, colour=GREY, weight=1):
     """One line, with its own contrast.
 
-    A dark copy sits a couple of pixels down and right, and the colour
-    goes on top.  Without something the overlay is legible against a dark
+    The line is drawn in black four times, a pixel out in each direction,
+    and in colour on top -- so every letter keeps a thin dark rim whatever
+    is behind it.  Without something the overlay is legible against a dark
     room and invisible against a white wall, and which one you get is not
     something the app chooses.
 
-    Offset rather than an outline: an outline around a letter this size is
-    thicker than the strokes of the letter, so it fills the counters in
-    and the text turns into a smear that is still, technically, legible.
+    Four copies rather than one heavier one underneath, which is the
+    obvious way to do it and does not work: OpenCV spaces letters further
+    apart as the stroke thickens, so the heavier copy is a good deal wider
+    than the text it is meant to sit behind.  The two start together and
+    drift, and by the end of a sentence the black is a legible second copy
+    of the last few words.  Offsetting at the same thickness keeps every
+    letter where it was.
     """
 
     x, y = at
     away = 2 if weight > 1 else 1
 
-    cv2.putText(frame, line, (x + away, y + away), cv2.FONT_HERSHEY_SIMPLEX,
-                scale, SHADOW, weight, cv2.LINE_AA)
+    for dx, dy in ((-away, 0), (away, 0), (0, -away), (0, away)):
+        cv2.putText(frame, line, (x + dx, y + dy), cv2.FONT_HERSHEY_SIMPLEX,
+                    scale, SHADOW, weight, cv2.LINE_AA)
+
     cv2.putText(frame, line, at, cv2.FONT_HERSHEY_SIMPLEX, scale,
                 colour, weight, cv2.LINE_AA)
 
@@ -136,7 +79,7 @@ def draw_result(cv2, frame, result):
         return
 
     text(cv2, frame, f"{result.command}  {result.detail or result.error}",
-         (MARGIN, 82), 0.55, LIVE if result.ok else ALERT)
+         (MARGIN, 82), 0.58, LIVE if result.ok else ALERT)
 
 
 def draw_hint(cv2, frame, line):
@@ -150,7 +93,7 @@ def draw_hint(cv2, frame, line):
     if not line:
         return
 
-    text(cv2, frame, line, (MARGIN, frame.shape[0] - 20), 0.55, ALERT)
+    text(cv2, frame, line, (MARGIN, frame.shape[0] - 20), 0.58, ALERT)
 
 
 def legend_lines(mapping):
@@ -184,41 +127,33 @@ def legend_lines(mapping):
 #: Where the command column starts, in pixels.  Padding the description
 #: out with spaces lines nothing up: the font is proportional, so a row of
 #: spaces is a different width on every line.
-COMMAND_AT = 250
+COMMAND_AT = 275
 
-#: Room one legend line takes, and what the whole list needs.
-LINE = 24
-
-
-def legend_height(mapping):
-    """How much of the bottom the legend needs, hint line included."""
-
-    return 52 + len(legend_lines(mapping)) * LINE
+#: Room one legend line takes.
+LINE = 26
 
 
 def draw_legend(cv2, frame, mapping, showing=True):
     """The mapping up the bottom-left, above the hint line.
 
-    ``showing`` is the h key.  When it is off the reminder that h exists
-    takes its place, in one dim line, so the list is findable without
-    being permanent.
+    ``showing`` is the h key, and off is the whole of what is drawn then.
+    A line on the picture reminding you that h exists is one more thing
+    over your own face; the terminal says it once at startup, which is
+    where you already are when you type the command.
     """
 
-    height = frame.shape[0]
-
     if not showing:
-        text(cv2, frame, "h  what the gestures do", (MARGIN, height - 44),
-             0.45, DIM)
         return
 
+    height = frame.shape[0]
     lines = legend_lines(mapping)
     top = height - 52 - (len(lines) - 1) * LINE
 
     for number, (gesture, command) in enumerate(lines):
         at = top + number * LINE
 
-        text(cv2, frame, gesture, (MARGIN, at), 0.5, GREY)
-        text(cv2, frame, command, (MARGIN + COMMAND_AT, at), 0.5, DIM)
+        text(cv2, frame, gesture, (MARGIN, at), 0.55, GREY)
+        text(cv2, frame, command, (MARGIN + COMMAND_AT, at), 0.55, DIM)
 
 
 def draw_prompt(cv2, frame, prompt, note, remaining, hand_seen, purpose=""):

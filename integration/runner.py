@@ -127,11 +127,6 @@ def run(engine, args, tuning=False):
             if not show_window:
                 continue
 
-            # The legend needs more room at the bottom than the one line
-            # that stands in for it.
-            overlay.dim_edges(cv2, frame, bottom=(
-                overlay.legend_height(router.mapping()) if show_legend
-                else 96))
             overlay.draw_gesture(cv2, frame, gesture)
             overlay.draw_result(cv2, frame, last_result)
             overlay.draw_legend(cv2, frame, router.mapping(), show_legend)

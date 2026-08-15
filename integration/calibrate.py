@@ -192,7 +192,6 @@ class _Session:
             self.gestures.detect_gesture(hand)
             self.motion.detect_swipe(hand)
 
-        self.overlay.dim_edges(self.cv2, frame, top=150, bottom=60)
         self.overlay.draw_prompt(self.cv2, frame, prompt, note, remaining,
                                  hand is not None, purpose)
 
