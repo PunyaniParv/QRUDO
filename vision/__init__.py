@@ -33,6 +33,9 @@ __all__ = [
 ]
 
 
+from . import motion  # noqa: E402  (for main to set the cooldown)
+
+
 def reset_state():
     """Forget everything remembered about the hand.
 

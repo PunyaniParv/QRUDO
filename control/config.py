@@ -109,6 +109,23 @@ class ControlConfig:
     ``"track"`` = previous/next track (HID media keys)."""
 
     # --- safety / behaviour ------------------------------------------------
+    gesture_cooldown_seconds: float = 0.6
+    """How long after a swipe before another can be seen at all.
+
+    One movement crosses many frames, and without this each of them would
+    be a command -- one raise would be five volume steps.  It is not the
+    only thing preventing that, and not the main one: a raise must also
+    come back to where it started before another counts, a turn must go
+    quiet, and a held pose must be dropped and made again.  Those do not
+    depend on time, so they hold however long the movement takes.
+
+    Measured with the volume gesture repeated as fast as a hand can make
+    it: at 0.6 a command lands every 1.5s, because the movement and its
+    return take that long anyway.  At 1.0 it is every 1.8s.  Raising it
+    slows deliberate repeats and prevents nothing that is not already
+    prevented, which is why it is 0.6.
+    """
+
     cooldown_seconds: float = 0.6
     """Minimum gap between two accepted commands.  Gesture recognition fires
     many frames per second; without this, one hand pose becomes 30 volume

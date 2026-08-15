@@ -84,6 +84,10 @@ def main(argv=None):
 
     measured = vision.load_and_apply()
 
+    # The one gesture threshold that is a preference rather than a
+    # measurement, so it lives with the settings and not the calibration.
+    vision.motion.SWIPE_COOLDOWN = config.gesture_cooldown_seconds
+
     for note in getattr(measured, "pulled", ()):
         print(f"  ! {note}"
               f"\n    (outside the range SARV trusts, so it was pulled back)\n")

@@ -232,6 +232,31 @@ class TestSelfTestRestores(unittest.TestCase):
         self.assertEqual(downs, 1, f"no-op was undone anyway: {controller.calls}")
 
 
+class TestTheGestureCooldownIsASetting(unittest.TestCase):
+    """One movement crosses many frames, and each of them is a chance to
+    fire the same command again.
+
+    Time is the weakest of the guards against that and the only one worth
+    making adjustable: the others -- a raise having to come back where it
+    started, a turn having to go quiet, a held pose having to be dropped
+    and made again -- do not depend on how long the movement took.
+    """
+
+    def test_it_defaults_to_six_tenths(self):
+        self.assertAlmostEqual(ControlConfig().gesture_cooldown_seconds, 0.6)
+
+    def test_it_can_be_set(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        path = Path(tempfile.mkdtemp()) / "sarv_config.json"
+        path.write_text(json.dumps({"gesture_cooldown_seconds": 1.0}))
+
+        self.assertAlmostEqual(
+            ControlConfig.load(path).gesture_cooldown_seconds, 1.0)
+
+
 class TestSeekConfig(unittest.TestCase):
     def test_press_count_matches_player_granularity(self):
         self.assertEqual(ControlConfig(seek_seconds=10, seek_step_seconds=5).seek_presses, 2)

@@ -85,6 +85,9 @@
       "Bash(.venv/bin/python main.py --command BRIGHTNESS_DOWN)",
       "Bash(.venv/bin/python main.py --far --check)",
       "Bash(pmset -g assertions)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }
