@@ -360,21 +360,19 @@ class MacOSController(Controller):
     def _media_play_pause(self, name: str, pid: int) -> str:
         """Play or pause, by whichever route is safe just now.
 
-        The keyboard's own play/pause key reaches whatever is genuinely
-        playing, whichever site or app that is, and needs no shortcut
-        guessed for it.  Its one fault is that it is a message to the
-        system rather than to a player: with nothing playing at all,
-        macOS answers by opening Music.
+        Only reached when someone asks for the media key by name.  It is
+        no longer the default, and the reason is worth keeping:
 
-        So the system key goes out only while something is playing, which
-        is precisely when it cannot open Music.  With nothing playing
-        there is nothing for it to reach anyway, and starting something
-        is a different job -- that goes to the app itself, as its own
-        shortcut, where it can neither be diverted nor open anything.
+        Whether audio is playing and whether an app has claimed the
+        system's now-playing role are different questions, and only the
+        second decides where this key goes.  Sound can be coming out of
+        something that never claimed it -- and with the role unclaimed,
+        macOS answers the key by opening Music, which then holds the role
+        and takes every media key after that.
 
-        Refusing that second case was the earlier answer and it was the
-        wrong one: it meant a fist could pause a video and never start
-        one, so nothing could be set going without the keyboard.
+        So the check below is a proxy for the thing that matters, and a
+        proxy is what let Music open again after it had been fixed.  The
+        honest answer is not to send a key the system may redirect.
         """
 
         if self._audio_playing():

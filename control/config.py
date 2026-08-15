@@ -79,15 +79,26 @@ class ControlConfig:
     Empty means "send to whatever has focus", the old behaviour.
     """
 
-    browser_play_key: str = "media"
+    browser_play_key: str = "k"
     """Which key plays and pauses inside a browser.
 
-    The keyboard's own play/pause key by default: it reaches whatever is
-    actually playing, whichever site that is.  Sending a letter instead
-    means guessing the site's shortcut, and a wrong guess is not a no-op
-    -- k is play/pause on YouTube and skips a track elsewhere.
+    YouTube's own shortcut, sent to the browser and nowhere else.  Its
+    fault is that it is a letter: land it while the keyboard focus is in
+    a search box and a k is typed there instead.
 
-    "k" or "space" force a particular key for anyone who wants one.
+    "media" is the keyboard's own play/pause key, which reaches whatever
+    is actually playing whichever site it is on, and needs no shortcut
+    guessed for it.  It is not the default and should not be, because it
+    is a message to the system rather than to a player: when no app has
+    claimed the system's now-playing role, macOS answers it by opening
+    Music -- which then holds that role and takes every media key
+    afterwards.  Guarding it on whether audio is playing is not enough,
+    because audio playing and an app having claimed that role are
+    different things.
+
+    A letter typed in the wrong place is a nuisance.  Music opening takes
+    the app over until it is quit.  "space" is the other letter, and
+    scrolls the page when the player is not selected.
     """
 
     browser_seek_keys: str = "arrows"

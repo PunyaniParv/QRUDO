@@ -133,6 +133,48 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
         self.assertEqual(controller.media_keys, [])
 
 
+class TestNothingReachesMusic(unittest.TestCase):
+    """Music opening has been reported, fixed, and reported again three
+    times.  Each fix guarded the system-wide media key instead of not
+    sending it, and the last guard asked CoreAudio whether audio was
+    playing -- which is a different question from whether any app has
+    claimed the system's now-playing role, and it is the second that
+    decides where the key goes.  Sound can come from something that never
+    claimed it, and with the role unclaimed macOS answers the key by
+    opening Music.
+
+    So the key is not sent.  Play/pause goes to the app, as the app's own
+    shortcut, on every path.
+    """
+
+    def controller(self, **kwargs):
+        kwargs.setdefault("play_key", ControlConfig().browser_play_key)
+        return FakeMac(target="Google Chrome", **kwargs)
+
+    def test_the_default_never_sends_a_system_key(self):
+        for running in ({"Google Chrome"}, {"Google Chrome", "Music"}):
+            for playing in (True, False):
+                with self.subTest(open=sorted(running), playing=playing):
+                    controller = self.controller(running=running,
+                                                 playing=playing)
+                    controller.play_pause()
+
+                    self.assertEqual(controller.media_keys, [])
+
+    def test_nor_any_apple_event_to_music(self):
+        controller = self.controller(running={"Google Chrome", "Music"},
+                                     playing=True)
+        controller.play_pause()
+
+        self.assertFalse([said for said in controller.told if "Music" in said])
+
+    def test_it_reaches_the_browser_instead(self):
+        controller = self.controller(running={"Google Chrome"}, playing=False)
+
+        self.assertIn("Chrome", controller.play_pause())
+        self.assertEqual(controller.keyed, [4242])
+
+
 class TestPlayPauseTakesWhicheverRouteIsSafe(unittest.TestCase):
     """Two jobs that look like one, and they need different routes.
 
