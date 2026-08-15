@@ -221,7 +221,7 @@ class MacOSController(Controller):
         running = self._running_apps()
 
         for name in self.SCRIPTABLE:
-            if name not in running:
+            if name not in running or name in self.NOT_BY_ACCIDENT:
                 continue
 
             played = self._play_pause_app(name)
@@ -241,6 +241,16 @@ class MacOSController(Controller):
 
     #: Players that can simply be told, without being brought forward.
     SCRIPTABLE = ("Spotify", "Music", "VLC", "QuickTime Player", "TV")
+
+    #: Players that being open is no evidence for.  macOS opens Music by
+    #: itself in answer to a media key with nothing playing, and once it
+    #: is open it is the first scriptable player found -- so every fist
+    #: from then on drives Music, which is what happened.  It was not
+    #: chosen and its being open does not mean it was.
+    #:
+    #: Naming one as target_app still reaches it.  This is only about
+    #: what gets picked when nothing was named.
+    NOT_BY_ACCIDENT = ("Music", "TV")
 
     #: Browsers, which take the video player's own keyboard shortcut.
     BROWSERS = ("Google Chrome", "Safari", "Firefox", "Microsoft Edge",
@@ -301,8 +311,23 @@ class MacOSController(Controller):
         wanted = self.config.browser_play_key.strip().lower()
 
         if wanted == "media":
-            self._post_media_key(NX_KEYTYPE_PLAY)
-            return "sent play/pause media key"
+            open_now = self._running_apps() & set(self.NOT_BY_ACCIDENT)
+
+            if not open_now:
+                self._post_media_key(NX_KEYTYPE_PLAY)
+                return "sent play/pause media key"
+
+            # The media key is a message to the system, not to this
+            # browser, and while Music is open the system gives it to
+            # Music -- so a fist plays Music instead of the video, and
+            # having played something Music stays the answer.  There is
+            # no aiming it, so use the browser's own shortcut instead and
+            # say why, rather than doing the wrong thing quietly.
+            which = ", ".join(sorted(open_now))
+
+            self._post_key(KEY_K, to_pid=pid)
+
+            return f"play/pause (k) to {name} -- {which} open, media key unsafe"
 
         key = KEY_SPACE if wanted in ("space", "spacebar") else KEY_K
 

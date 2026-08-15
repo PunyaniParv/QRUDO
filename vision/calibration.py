@@ -22,6 +22,11 @@ from pathlib import Path
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "sarv_calibration.json"
 
+#: The fingers that get measured, in the order they are named everywhere
+#: else.  Kept here rather than imported so this module still loads
+#: without the rest of vision.
+FINGERS = ("index", "middle", "ring", "pinky")
+
 
 @dataclass
 class Calibration:
@@ -218,13 +223,26 @@ def from_samples(poses, moves, current):
     # A finger is out above this.  Curled fingers come from the fist,
     # straight ones from the open hand -- so the line goes between the
     # straightest curled finger and the most bent straight one.
-    curled = [score
-              for reading in poses.get("fist", [])
-              for score in reading["ext"].values()]
+    #
+    # And from the two-finger pose, which is where the hard case is.  A
+    # fist is fingers shut; two fingers up is the other two merely held
+    # down, which is a good deal straighter, and it is *that* the line has
+    # to sit above.  Measured from a fist alone it comes out low -- 0.65
+    # on the run that prompted this -- and then a peace sign reads as four
+    # fingers out and matches nothing at all.
+    two = poses.get("two", [])
 
-    straight = [score
-                for reading in poses.get("open", [])
-                for score in reading["ext"].values()]
+    def among(readings, *names):
+        return [reading["ext"][name]
+                for reading in readings
+                for name in names
+                if name in reading["ext"]]
+
+    curled = (among(poses.get("fist", []), *FINGERS)
+              + among(two, "ring", "pinky"))
+
+    straight = (among(poses.get("open", []), *FINGERS)
+                + among(two, "index", "middle"))
 
     # Each of these has its own scale, so what counts as a usable gap
     # differs: finger extension runs from about 0.4 to 1.0, and the fist
@@ -234,7 +252,7 @@ def from_samples(poses, moves, current):
         current.extended_ratio, least=0.10)
 
     if not ok:
-        warnings.append("could not tell a straight finger from a curled one")
+        warnings.append("could not tell a finger held out from one held down")
 
     # A hand is open above this, which is a different question: the other
     # side is not a fist but a hand at rest, whose fingers are straighter

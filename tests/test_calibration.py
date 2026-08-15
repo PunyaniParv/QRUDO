@@ -18,11 +18,32 @@ from vision import hand_state, motion
 from vision.calibration import Calibration, between, current, from_samples
 
 
+#: The names the app actually records readings under.  These were "imrp"
+#: here, which no real reading has ever used -- so a threshold worked out
+#: per finger passed its tests and found nothing on the day.
+FINGERS = ("index", "middle", "ring", "pinky")
+
+
 def readings(ext, reach, scale=0.15, count=20):
     """A pose held still, every finger reading the same."""
 
-    return [{"ext": dict.fromkeys("imrp", ext),
-             "reach": dict.fromkeys("imrp", reach),
+    return [{"ext": dict.fromkeys(FINGERS, ext),
+             "reach": dict.fromkeys(FINGERS, reach),
+             "scale": scale}
+            for _ in range(count)]
+
+
+def two_fingers(out=0.95, down=0.78, reach=1.55, scale=0.15, count=20):
+    """Index and middle up, the other two just held down.
+
+    Held down is not shut: a fist curls them to about 0.45 and this is
+    0.78, which is most of the way to straight.  It is the case a
+    threshold has to get right, and the one a fist does not show.
+    """
+
+    return [{"ext": {"index": out, "middle": out, "ring": down,
+                     "pinky": down},
+             "reach": dict.fromkeys(FINGERS, reach),
              "scale": scale}
             for _ in range(count)]
 
@@ -50,9 +71,23 @@ class TestFromSamples(unittest.TestCase):
         return {
             "fist": readings(fist_ext, fist_reach, scale),
             "open": readings(open_ext, 1.60, scale),
-            "two": readings(open_ext, 1.55, scale),
+            "two": two_fingers(open_ext, scale=scale),
             "rest": readings(0.75, rest_reach, scale),
         }
+
+    def test_it_clears_two_fingers_held_down(self):
+        """Reported as "it is not recognising 2 finger".
+
+        Worked out from a fist against an open hand, the line landed at
+        0.65 -- below where a ring finger sits when it is merely held
+        down.  So a peace sign read as four fingers out and matched
+        nothing at all.  The pose was being recorded the whole time and
+        thrown away.
+        """
+
+        measured, _ = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertGreater(measured.extended_ratio, 0.78)
 
     def test_finger_threshold_lands_between_the_two(self):
         measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
@@ -74,7 +109,7 @@ class TestFromSamples(unittest.TestCase):
         measured, warnings = from_samples(poses, {}, DEFAULTS)
 
         self.assertEqual(measured.extended_ratio, DEFAULTS.extended_ratio)
-        self.assertTrue(any("straight finger" in w for w in warnings))
+        self.assertTrue(any("held out" in w for w in warnings))
 
     def test_movement_thresholds_sit_under_the_weakest_attempt(self):
         """A gesture that only works when made emphatically will fail on

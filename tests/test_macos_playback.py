@@ -129,6 +129,58 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
         self.assertEqual(controller.media_keys, [])
 
 
+class TestMusicIsNeverChosenForYou(unittest.TestCase):
+    """Reported as "fist always triggers apple music", and it did.
+
+    macOS opens Music by itself in answer to a media key with nothing
+    playing.  Once it is open it is the first scriptable player found, so
+    every fist from then on drove Music -- and the media key kept going
+    there too, which kept it open.  Its being open was never evidence
+    that anybody wanted it.
+    """
+
+    def test_an_open_music_is_not_picked(self):
+        controller = FakeMac(running={"Music", "Google Chrome"},
+                             play_key="k")
+        detail = controller.play_pause()
+
+        self.assertIn("Chrome", detail)
+        self.assertFalse([said for said in controller.told if "Music" in said])
+
+    def test_naming_music_still_reaches_it(self):
+        """Skipped when guessing, honoured when asked for."""
+
+        controller = FakeMac(running={"Music"}, target="Music")
+
+        self.assertIn("Music", controller.play_pause())
+
+    def test_music_alone_and_unasked_for_refuses(self):
+        controller = FakeMac(running={"Music"})
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+    def test_the_media_key_is_not_sent_while_music_is_open(self):
+        """It is a message to the system, and the system gives it to Music.
+
+        Which is how Music came to be open in the first place -- the loop
+        this closes.
+        """
+
+        controller = FakeMac(running={"Music", "Google Chrome"})
+        detail = controller.play_pause()
+
+        self.assertEqual(controller.media_keys, [])
+        self.assertEqual(controller.keyed, [4242])
+        self.assertIn("Music", detail)
+
+    def test_with_music_shut_the_media_key_is_still_the_default(self):
+        controller = FakeMac(running={"Google Chrome"})
+        controller.play_pause()
+
+        self.assertEqual(len(controller.media_keys), 1)
+
+
 class TestWhichKeySeeks(unittest.TestCase):
     """Reported: seeking worked on YouTube in Chrome but not YouTube Music.
 
