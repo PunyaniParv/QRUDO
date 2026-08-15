@@ -251,19 +251,30 @@ class TestMusicIsNeverChosenForYou(unittest.TestCase):
         with self.assertRaises(UnsupportedCommand):
             controller.play_pause()
 
-    def test_the_media_key_is_not_sent_while_music_is_open(self):
-        """It is a message to the system, and the system gives it to Music.
+    def test_music_being_open_does_not_divert_to_a_letter(self):
+        """Music open used to send the browser's own shortcut instead, so
+        as not to hand the media key to Music.
 
-        Which is how Music came to be open in the first place -- the loop
-        this closes.
+        That is only a danger for a media key sent with nothing playing,
+        which is refused now -- and the diversion typed a letter into
+        whatever had the keyboard focus, which is worse than the thing it
+        avoided.
         """
 
-        controller = FakeMac(running={"Music", "Google Chrome"})
-        detail = controller.play_pause()
+        controller = FakeMac(running={"Music", "Google Chrome"}, playing=True)
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [], "a letter was typed")
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_music_open_with_nothing_playing_still_refuses(self):
+        controller = FakeMac(running={"Music", "Google Chrome"}, playing=False)
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
 
         self.assertEqual(controller.media_keys, [])
-        self.assertEqual(controller.keyed, [4242])
-        self.assertIn("Music", detail)
+        self.assertEqual(controller.keyed, [])
 
     def test_with_music_shut_the_media_key_is_still_the_default(self):
         controller = FakeMac(running={"Google Chrome"}, playing=True)

@@ -311,22 +311,14 @@ class MacOSController(Controller):
         wanted = self.config.browser_play_key.strip().lower()
 
         if wanted == "media":
-            open_now = self._running_apps() & set(self.NOT_BY_ACCIDENT)
-
-            if not open_now:
-                return self._media_play_pause()
-
-            # The media key is a message to the system, not to this
-            # browser, and while Music is open the system gives it to
-            # Music -- so a fist plays Music instead of the video, and
-            # having played something Music stays the answer.  There is
-            # no aiming it, so use the browser's own shortcut instead and
-            # say why, rather than doing the wrong thing quietly.
-            which = ", ".join(sorted(open_now))
-
-            self._post_key(KEY_K, to_pid=pid)
-
-            return f"play/pause (k) to {name} -- {which} open, media key unsafe"
+            # Music being open used to divert this to the browser's own
+            # shortcut, on the grounds that the system would hand the
+            # media key to Music.  That is only true of a media key sent
+            # with nothing playing, which is now refused outright -- and
+            # the diversion is what typed a letter into whatever had the
+            # keyboard focus.  When something is playing, the key goes to
+            # the thing that is playing, which is the whole point of it.
+            return self._media_play_pause()
 
         key = KEY_SPACE if wanted in ("space", "spacebar") else KEY_K
 
