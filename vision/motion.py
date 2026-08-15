@@ -34,6 +34,23 @@ SWIPE_TURN_SPEED = 0.80   # per second
 SWIPE_CONSISTENCY = 0.65  # how directly the motion got where it ended up
 SWIPE_MIN_SAMPLES = 3     # a fast flick is only a few frames long
 
+#: A movement must also clear this many times the reading's own jitter,
+#: measured as the median step between consecutive frames of the window.
+#: On a good camera this floor sits far below the calibrated bar and
+#: decides nothing -- the bar is 8x to 33x the wander of a still hand,
+#: measured across the working range.  On a bad one -- dim light, a poor
+#: webcam, a hand at the edge of readability -- the jitter grows to meet
+#: the bar, and this floor rises with it, so the failure is "gestures
+#: need to be bigger" rather than "the volume moves on its own".
+#:
+#: It can only ever raise the bar, never lower it, which is what makes it
+#: safe to apply everywhere.  Four, because a clean movement spanning n
+#: frames has a median step of about 1/(n-1) of itself: at four, even a
+#: six-frame flick clears its own floor with a fifth to spare, while a
+#: still hand's floor overtakes the bar once the camera gets about twice
+#: as bad as the worst distance measured today.
+NOISE_MARGIN = 4
+
 #: How many frames a movement must be visible across before it is
 #: believed.  A hand cannot cross a gesture's worth of ground between one
 #: frame and the next; a misread landmark can, and did -- it arrives as a
@@ -193,6 +210,25 @@ def measure(times, values):
 #: catch a hand that turned back on itself, few enough that each is
 #: averaged over several frames.
 STRETCHES = 4
+
+
+def _median_step(values):
+    """The typical frame-to-frame step: the reading's own jitter.
+
+    The median, not the mean: during a real movement a few steps are the
+    movement, and the median ignores them so long as most of the window
+    is quiet -- and a movement's own steps are each a small fraction of
+    the whole, so even a window that is all movement estimates a floor
+    well under the movement itself.
+    """
+
+    if len(values) < 3:
+        return 0.0
+
+    steps = sorted(abs(values[i + 1] - values[i])
+                   for i in range(len(values) - 1))
+
+    return steps[len(steps) // 2]
 
 
 def _stretches(values):
@@ -414,9 +450,18 @@ def detect_swipe(hand, handedness=None):
 
         return None
 
+    # The reading's own jitter, from the same window the movement is
+    # measured on.  See NOISE_MARGIN.
+    aim_floor = NOISE_MARGIN * _median_step(
+        [sample[1]["aim"] for sample in window])
+    lift_floor = NOISE_MARGIN * _median_step(
+        [sample[1]["y"] / mean_scale for sample in window])
+
+    _debug.update(noise=round(max(aim_floor, lift_floor), 2))
+
     turned = (
         _state.armed_kind == gestures.POSE_TWO_FINGER
-        and abs(turn) >= SWIPE_TURN
+        and abs(turn) >= max(SWIPE_TURN, aim_floor)
         and turn_speed >= SWIPE_TURN_SPEED
         and turn_agree >= SWIPE_CONSISTENCY
         # Turning back is the same movement as turning the other way, and
@@ -436,7 +481,7 @@ def detect_swipe(hand, handedness=None):
         _state.raised = False
 
     raised = (
-        abs(lift) >= SWIPE_LIFT
+        abs(lift) >= max(SWIPE_LIFT, lift_floor)
         and lift_speed >= SWIPE_LIFT_SPEED
         and lift_agree >= SWIPE_CONSISTENCY
         and not _state.raised

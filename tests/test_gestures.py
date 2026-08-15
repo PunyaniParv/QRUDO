@@ -819,6 +819,105 @@ class TestAMovementSeenFromAcrossTheRoom(GestureTestCase):
         self.assertLess(direct, motion.SWIPE_CONSISTENCY)
 
 
+class TestTheFloorRisesWithTheNoise(GestureTestCase):
+    """A movement must clear the reading's own jitter, not only the bar.
+
+    The calibrated bar assumes the camera the calibration was made on.
+    On a worse one -- dim light, a poor webcam, a hand at the edge of
+    readability -- the jitter grows toward the bar, and a still hand
+    starts to fire.  So the bar is joined by a floor of four times the
+    window's median frame-to-frame step, which is the jitter itself.
+
+    The floor can only raise the bar, never lower it: on a good camera it
+    sits far beneath and decides nothing, which is what makes it safe to
+    apply everywhere.
+    """
+
+    SCALE = 0.022          # a hand about two metres off
+
+    def hand(self, dy, share, rng):
+        base = make_hand(EXTENDED, EXTENDED, CURLED, CURLED)
+        wrist = base[0]
+        k = self.SCALE / hand_state.hand_scale(base)
+        sigma = self.SCALE * share
+
+        return [Point(wrist.x + (p.x - wrist.x) * k + rng.gauss(0, sigma),
+                      wrist.y + (p.y - wrist.y) * k + dy + rng.gauss(0, sigma),
+                      wrist.z + (p.z - wrist.z) * k + rng.gauss(0, sigma))
+                for p in base]
+
+    def watch(self, share, seconds=12, movement=None, seed=11):
+        rng = random.Random(seed)
+        fired = []
+
+        for i in range(int(seconds * 30)):
+            dy = movement(i) if movement else 0.0
+            hand = self.hand(dy, share, rng)
+            gestures.detect_gesture(hand, HAND)
+            got = motion.detect_swipe(hand, HAND)
+
+            if got:
+                fired.append(got)
+
+            self.clock.tick(1 / 30)
+
+        return fired
+
+    def lowered_bar(self, to=0.36):
+        """A gentle calibration, which is where the bar alone failed."""
+
+        motion.SWIPE_LIFT = to
+        motion.SWIPE_TURN = 0.30 * (to / 0.60)
+
+    def setUp(self):
+        super().setUp()
+        self.was = (motion.SWIPE_LIFT, motion.SWIPE_TURN)
+
+    def tearDown(self):
+        motion.SWIPE_LIFT, motion.SWIPE_TURN = self.was
+        super().tearDown()
+
+    def test_a_still_hand_on_an_awful_camera_fires_nothing(self):
+        """Even against a bar a gentle calibration would set.
+
+        This exact case fired two or three times in twenty seconds on the
+        bar alone.
+        """
+
+        self.lowered_bar()
+
+        self.assertEqual(self.watch(0.08), [])
+
+    def test_and_nothing_when_the_noise_doubles_again(self):
+        self.lowered_bar()
+
+        self.assertEqual(self.watch(0.16), [])
+
+    def test_a_real_raise_still_clears_its_own_floor(self):
+        """The floor is a fraction of the movement's own size, so it can
+        refuse a still hand without refusing a moving one."""
+
+        def raising(i):
+            if i < 24:
+                return 0.0
+
+            return -self.SCALE * 1.6 * min(1.0, (i - 24) / 13)
+
+        self.assertIn("SWIPE_UP", self.watch(0.05, seconds=3, movement=raising))
+
+    def test_on_a_good_camera_it_decides_nothing(self):
+        """The bar is 8x to 33x the wander there; the floor sits far
+        below it, and the full suite passing unchanged is the proof."""
+
+        def raising(i):
+            if i < 24:
+                return 0.0
+
+            return -self.SCALE * 1.6 * min(1.0, (i - 24) / 13)
+
+        self.assertIn("SWIPE_UP", self.watch(0.02, seconds=3, movement=raising))
+
+
 class TestOneFrameCannotBeAGesture(GestureTestCase):
     """A hand cannot cross a gesture's worth of ground in a single frame.
 
