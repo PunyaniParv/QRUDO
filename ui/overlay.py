@@ -9,8 +9,9 @@ The preview is a room, not a page: whatever is behind the text is
 whatever you happen to be standing in front of, and pale text on a pale
 wall is not readable.  Shading the edges of the picture fixed that and
 cost more than it fixed -- it is your camera, and it looked like
-something was wrong with it.  So the text carries its own dark edge
-instead and nothing is done to the picture at all.
+something was wrong with it.  So the small text carries a thin dark edge
+of its own instead, the headings are large enough not to need one, and
+nothing is done to the picture at all.
 
 cv2 is passed in rather than imported, so this module stays importable --
 and testable -- without OpenCV present.
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 #: Softer than full-brightness primaries, which glare against a lit room
 #: and bloom on a webcam's own exposure.
-LIVE = (140, 255, 155)      # a hand is being read
+LIVE = (80, 220, 110)       # a hand is being read
 ALERT = (95, 95, 255)       # nothing is being read, or something failed
 GREY = (225, 225, 225)
 DIM = (195, 195, 195)
@@ -35,11 +36,11 @@ MARGIN = 20
 def text(cv2, frame, line, at, scale=0.6, colour=GREY, weight=1):
     """One line, with its own contrast.
 
-    The line is drawn in black four times, a pixel out in each direction,
-    and in colour on top -- so every letter keeps a thin dark rim whatever
-    is behind it.  Without something the overlay is legible against a dark
-    room and invisible against a white wall, and which one you get is not
-    something the app chooses.
+    Small lines are drawn in black four times, a pixel out in each
+    direction, and in colour on top, so each letter keeps a thin dark rim
+    whatever is behind it.  Without something they are legible against a
+    dark room and invisible against a white wall, and which one you get is
+    not something the app chooses.  Headings are left plain -- see below.
 
     Four copies rather than one heavier one underneath, which is the
     obvious way to do it and does not work: OpenCV spaces letters further
@@ -51,11 +52,16 @@ def text(cv2, frame, line, at, scale=0.6, colour=GREY, weight=1):
     """
 
     x, y = at
-    away = 2 if weight > 1 else 1
 
-    for dx, dy in ((-away, 0), (away, 0), (0, -away), (0, away)):
-        cv2.putText(frame, line, (x + dx, y + dy), cv2.FONT_HERSHEY_SIMPLEX,
-                    scale, SHADOW, weight, cv2.LINE_AA)
+    # Only the small text.  A rim around a heading is thick enough to read
+    # as a border drawn round the word, and a heading is already bold
+    # enough to hold its own against the room -- it is the body text that
+    # disappears into a pale wall.
+    if weight == 1:
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            cv2.putText(frame, line, (x + dx, y + dy),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale, SHADOW, weight,
+                        cv2.LINE_AA)
 
     cv2.putText(frame, line, at, cv2.FONT_HERSHEY_SIMPLEX, scale,
                 colour, weight, cv2.LINE_AA)
