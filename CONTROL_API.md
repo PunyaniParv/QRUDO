@@ -85,10 +85,15 @@ to a player, and the system answers one with nothing playing by opening Music.
 With nothing to pause, PLAY_PAUSE says so instead.
 
 `browser_play_key` is `"k"` by default — the site shortcut, sent to the browser
-and nowhere else. A shortcut is a letter, and a letter lands wherever the
-browser's keyboard focus is, so before sending it SARV asks Accessibility what
-element holds the keyboard: focus in a text field refuses the gesture with a
-message rather than typing into it. Click the video and fist again.
+and nowhere else. A shortcut is a letter, and a letter lands in the browser's
+**front tab**, wherever its keyboard focus is. So before sending it SARV asks
+two questions through Accessibility: is the focus something that takes typing
+(a chat box, a search field — refused with a message), and does the front tab's
+title look like the video (`browser_video_titles`, default `"youtube"`). A
+front tab that is not the video refuses too, because the letter can go nowhere
+else — a `k` once went into a ChatGPT composer exactly that way, with the
+browser in the background reporting no focus at all. Watching video on another
+site, add it: `"browser_video_titles": "youtube, vimeo"`.
 
 `"media"` sends the keyboard's own play/pause key instead. It is not the
 default because it is a message to the system rather than to a player: with

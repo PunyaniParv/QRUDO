@@ -401,16 +401,42 @@ class MacOSController(Controller):
         return None if device is None else audio.is_playing(device)
 
     def _refuse_to_type_into_a_text_box(self, pid: int) -> None:
-        """A shortcut is a letter, and a letter lands wherever the app's
-        keyboard focus is.  When that is known to be a text box, refusing
-        beats typing: the k in a search box was reported twice before the
-        focus was ever asked about.
+        """A letter lands in the browser's front tab, wherever its focus
+        is.  So it only goes when the front tab looks like the video and
+        the focus is not something that takes typing.
+
+        The first version refused only a focused text field, and a k
+        landed in ChatGPT anyway: the browser was in the background,
+        reporting no focus at all while still delivering the letter to a
+        chat box that focuses itself.  The front tab's title answers even
+        then, and it names the only place the letter can go -- so a tab
+        that is not the video refuses, whatever the focus, because the
+        letter is at best useless there and at worst typing.
         """
 
-        if pid and _focus_is_a_text_box(pid):
+        if not pid:
+            return
+
+        kind, title = _focus_report(pid)
+
+        if kind == "editable":
             raise UnsupportedCommand(
                 "the cursor is in a text box, so play/pause would type "
                 "into it -- click the video first")
+
+        if kind in ("none", "element"):
+            wanted = [part.strip().lower()
+                      for part in self.config.browser_video_titles.split(",")
+                      if part.strip()]
+
+            if title is None or not any(part in title.lower()
+                                        for part in wanted):
+                where = f'"{title}"' if title else "not the video"
+
+                raise UnsupportedCommand(
+                    f"the browser's front tab is {where}, and the "
+                    f"play/pause letter can only go there -- switch to "
+                    f"the video tab first")
 
     def _seek_key(self, forward: bool) -> tuple[int, str, int]:
         """Which key seeks, what to call it, and how far one press moves.
@@ -580,51 +606,80 @@ class MacOSController(Controller):
 _TEXT_ROLES = {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"}
 
 
-def _focus_is_a_text_box(pid: int) -> bool:
-    """Whether this app's keyboard focus sits in a text field right now.
+def _focus_report(pid: int) -> tuple:
+    """Where a letter posted to this app would land.
 
-    Asked through Accessibility, which SARV already holds the permission
-    for -- posting keys at all requires it.  Errors, including the app
-    having no focused element to report, answer False: the guard exists
-    to stop a letter landing in a text box that is known to be there, and
-    "cannot tell" is not that.
+    Returns (kind, front window title).  ``kind`` is "editable" when the
+    focus is known to take typing, "element" when it is known not to,
+    "none" when the app reports no focus at all -- which is what a
+    background browser says, while still delivering the letter to its
+    front tab -- and "unknown" when nothing could be asked.
+
+    Editable is judged by role and by whether the element's value can be
+    written.  Role alone missed the chat boxes -- WhatsApp's and
+    ChatGPT's composers are editable regions, not classic text fields,
+    and the first version of this guard let a k through into both.
+
+    The title answers even for a background app, and it names the front
+    tab -- which is the one place the letter can go.
     """
 
     try:
         ax = _ax_handles()
 
         if ax is None:
-            return False
+            return "unknown", None
 
         cf, services = ax
-        element = services.AXUIElementCreateApplication(pid)
 
-        if not element:
-            return False
+        def cfstr(text):
+            return cf.CFStringCreateWithCString(None, text, 0x08000100)
 
-        out = ctypes.c_void_p()
-        name = cf.CFStringCreateWithCString(
-            None, b"AXFocusedUIElement", 0x08000100)
+        def read(element, attribute):
+            out = ctypes.c_void_p()
+            err = services.AXUIElementCopyAttributeValue(
+                element, cfstr(attribute), ctypes.byref(out))
+            return err, out.value
 
-        if services.AXUIElementCopyAttributeValue(
-                element, name, ctypes.byref(out)) != 0 or not out.value:
-            return False
+        def as_text(ref):
+            buffer = ctypes.create_string_buffer(256)
+            if ref and cf.CFStringGetCString(ref, buffer, 256, 0x08000100):
+                return buffer.value.decode()
+            return None
 
-        role = ctypes.c_void_p()
-        name = cf.CFStringCreateWithCString(None, b"AXRole", 0x08000100)
+        app = services.AXUIElementCreateApplication(pid)
 
-        if services.AXUIElementCopyAttributeValue(
-                out.value, name, ctypes.byref(role)) != 0 or not role.value:
-            return False
+        if not app:
+            return "unknown", None
 
-        buffer = ctypes.create_string_buffer(128)
+        title = None
+        err, window = read(app, b"AXFocusedWindow")
 
-        if not cf.CFStringGetCString(role.value, buffer, 128, 0x08000100):
-            return False
+        if err == 0 and window:
+            _, ref = read(window, b"AXTitle")
+            title = as_text(ref)
 
-        return buffer.value.decode() in _TEXT_ROLES
+        err, focused = read(app, b"AXFocusedUIElement")
+
+        if err != 0 or not focused:
+            # kAXErrorNoValue is a successful "nothing has focus", which
+            # is what a background app says.  Anything else is a failure
+            # to ask.
+            return ("none" if err == -25212 else "unknown"), title
+
+        _, role_ref = read(focused, b"AXRole")
+        role = as_text(role_ref)
+
+        settable = ctypes.c_bool(False)
+        services.AXUIElementIsAttributeSettable(
+            focused, cfstr(b"AXValue"), ctypes.byref(settable))
+
+        if (role in _TEXT_ROLES) or settable.value:
+            return "editable", title
+
+        return "element", title
     except Exception:
-        return False
+        return "unknown", None
 
 
 _AX = None
@@ -656,6 +711,10 @@ def _ax_handles():
             services.AXUIElementCopyAttributeValue.argtypes = [
                 ctypes.c_void_p, ctypes.c_void_p,
                 ctypes.POINTER(ctypes.c_void_p)]
+            services.AXUIElementIsAttributeSettable.restype = ctypes.c_int
+            services.AXUIElementIsAttributeSettable.argtypes = [
+                ctypes.c_void_p, ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_bool)]
 
             _AX = (cf, services)
         except Exception:

@@ -115,6 +115,17 @@ class ControlConfig:
     which is generally what rewind and forward mean there.
     """
 
+    browser_video_titles: str = "youtube"
+    """Which front-tab titles the play/pause letter may be sent to.
+
+    Comma-separated substrings, matched case-insensitively against the
+    browser's front window title.  The letter can only land in the front
+    tab, so a front tab that is not the video means the letter is at best
+    useless and at worst typed into a chat box -- a k went into ChatGPT
+    exactly that way.  Watching video somewhere other than YouTube, add
+    the site: "youtube, vimeo".
+    """
+
     seek_mode: str = "seek"
     """``"seek"`` = move within the current track (arrow keys).
     ``"track"`` = previous/next track (HID media keys)."""

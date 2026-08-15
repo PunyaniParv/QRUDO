@@ -210,13 +210,109 @@ class TestNoLetterIntoATextBox(unittest.TestCase):
         self.assertEqual(controller.keyed, [4242])
 
     def test_not_being_able_to_tell_sends_the_letter(self):
-        """The real query answers False on any error, including the app
-        having no focused element to report.  The guard is for a text box
-        known to be there; "cannot tell" keeps today's behaviour."""
+        """A machine where the question cannot be asked keeps the old
+        behaviour -- the report comes back unknown, and unknown sends."""
 
         from control.backends import macos
 
-        self.assertFalse(macos._focus_is_a_text_box(99999999))
+        kind, _ = macos._focus_report(99999999)
+
+        self.assertIn(kind, ("unknown", "none"))
+
+
+class TestTheLetterOnlyGoesToTheVideo(unittest.TestCase):
+    """The letter lands in the browser's front tab, and nowhere else.
+
+    Reported: a k typed into ChatGPT's chat box, with the browser in the
+    background.  A background browser reports no keyboard focus at all --
+    the first guard read that as safe -- while still delivering the
+    letter to a composer that focuses itself.  The front tab's title
+    still answers, and it names the only place the letter can go.
+    """
+
+    def controller(self, report):
+        from control.backends import macos
+
+        made = FakeMac(running={"Google Chrome"}, target="Google Chrome")
+        # the real refusal logic, fed a controlled focus report
+        made._refuse_to_type_into_a_text_box = (
+            lambda pid: macos.MacOSController._refuse_to_type_into_a_text_box(
+                made, pid))
+        self._patch(macos, report)
+
+        return made
+
+    def _patch(self, macos, report):
+        self._was = macos._focus_report
+        macos._focus_report = lambda pid: report
+        self.addCleanup(lambda: setattr(macos, "_focus_report", self._was))
+
+    def test_a_background_browser_on_a_chat_tab_refuses(self):
+        """The reported failure, exactly."""
+
+        controller = self.controller(("none", "ChatGPT - Google Chrome"))
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+        self.assertEqual(controller.keyed, [], "the letter was sent anyway")
+
+    def test_a_background_browser_on_the_video_still_pauses(self):
+        controller = self.controller(
+            ("none", "Some Video - YouTube - Google Chrome"))
+
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242])
+
+    def test_an_editable_focus_refuses_whatever_the_tab(self):
+        controller = self.controller(
+            ("editable", "Search - YouTube - Google Chrome"))
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+        self.assertEqual(controller.keyed, [])
+
+    def test_the_video_tab_with_ordinary_focus_gets_the_letter(self):
+        controller = self.controller(
+            ("element", "Some Video - YouTube - Google Chrome"))
+
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242])
+
+    def test_a_front_tab_that_is_not_the_video_refuses(self):
+        """Even with harmless focus: the letter can only go to that tab,
+        where it is at best useless."""
+
+        controller = self.controller(("element", "ChatGPT - Google Chrome"))
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+    def test_unknown_keeps_the_old_behaviour(self):
+        controller = self.controller(("unknown", None))
+
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242])
+
+    def test_other_sites_are_a_setting_away(self):
+        from control.backends import macos
+
+        made = FakeMac(running={"Google Chrome"}, target="Google Chrome")
+        made.config = ControlConfig(target_app="Google Chrome",
+                                    browser_play_key="k",
+                                    browser_video_titles="youtube, vimeo")
+        made._refuse_to_type_into_a_text_box = (
+            lambda pid: macos.MacOSController._refuse_to_type_into_a_text_box(
+                made, pid))
+        self._patch(macos, ("element", "A Film on Vimeo - Google Chrome"))
+
+        made.play_pause()
+
+        self.assertEqual(made.keyed, [4242])
 
 
 class TestPlayPauseTakesWhicheverRouteIsSafe(unittest.TestCase):
