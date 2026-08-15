@@ -6,6 +6,7 @@ decides where the lines go, which does not.
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -15,7 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from vision import hand_state, motion
-from vision.calibration import Calibration, between, current, from_samples
+from vision.calibration import (Calibration, Profile, between, current,
+                                from_samples, load_and_apply)
 
 
 #: The names the app actually records readings under.  These were "imrp"
@@ -48,7 +50,154 @@ def two_fingers(out=0.95, down=0.78, reach=1.55, scale=0.15, count=20):
             for _ in range(count)]
 
 
-DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.035)
+DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20, 0.035)
+
+
+class TestTheReadingsAreKept(unittest.TestCase):
+    """A calibration stores what was measured, not only what was concluded.
+
+    Twice in one day the arithmetic that turns readings into thresholds
+    turned out to be wrong, and both times the recording was gone -- so
+    the only way to benefit from the correction was to record it again.
+    Keeping the readings makes a correction free.
+    """
+
+    def poses(self):
+        return {
+            "fist": readings(0.45, 1.02),
+            "open": readings(0.95, 1.60),
+            "two": two_fingers(),
+            "rest": readings(0.75, 1.40),
+        }
+
+    def moves(self):
+        return {"turn left": [(0.90, 3.0), (0.85, 2.9)],
+                "turn right": [(0.45, 1.6), (0.50, 1.8)],
+                "raise": [(0.80, 2.2), (0.75, 2.0)],
+                "lower": [(0.60, 1.7), (0.65, 1.8)]}
+
+    def saved(self):
+        """A calibration written to a temporary file, profile and all."""
+
+        profile = Profile.from_samples(self.poses(), self.moves())
+        measured, _ = profile.derive(DEFAULTS)
+
+        path = Path(tempfile.mkdtemp()) / "sarv_calibration.json"
+        measured.save(path, profile=profile)
+
+        return path, measured
+
+    def test_what_was_measured_survives_the_round_trip(self):
+        path, measured = self.saved()
+
+        again, _ = Profile.load(path).derive(DEFAULTS)
+
+        self.assertEqual(again, measured)
+
+    def test_the_thresholds_are_still_written_at_the_top_level(self):
+        """So a build from before profiles existed reads the file."""
+
+        path, measured = self.saved()
+        stored = json.loads(path.read_text())
+
+        for name in Calibration.thresholds():
+            self.assertIn(name, stored)
+
+        self.assertEqual(stored["swipe_lift"], measured.swipe_lift)
+
+    def test_a_file_without_readings_still_works(self):
+        """Every calibration anyone has already done."""
+
+        path = Path(tempfile.mkdtemp()) / "sarv_calibration.json"
+        path.write_text(json.dumps({
+            "extended_ratio": 0.80, "open_ratio": 0.91, "fist_reach": 1.12,
+            "swipe_turn": 0.40, "swipe_turn_speed": 1.70,
+            "min_hand_on_screen": 0.03}) + "\n")
+
+        self.assertIsNone(Profile.load(path))
+
+        loaded = load_and_apply(path)
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.extended_ratio, 0.80)
+
+    def test_a_correction_reaches_a_session_already_recorded(self):
+        """The whole point.  Nobody has to stand in front of a camera.
+
+        Stood in for here by deriving the same readings against a
+        different set of current values, which is what a correction to
+        the arithmetic amounts to from the file's point of view.
+        """
+
+        path, _ = self.saved()
+        profile = Profile.load(path)
+
+        loose = Calibration(0.50, 0.50, 1.00, 0.10, 0.10, 0.10, 0.10, 0.035)
+        derived, _ = profile.derive(loose)
+
+        self.assertGreater(derived.extended_ratio, 0.78)
+
+
+class TestPoseAndMovementAreSeparate(unittest.TestCase):
+    """So a gesture added later is a line, not another calibration.
+
+    A gesture is a pose and a movement.  How straight your fingers go is
+    one fact about you and how far your hand travels is another, and
+    neither depends on the other -- so four fingers raised needs no new
+    recording, only the two measurements this already holds.
+    """
+
+    def profile(self):
+        return Profile.from_samples(
+            {"fist": readings(0.45, 1.02), "open": readings(0.95, 1.60),
+             "two": two_fingers(), "rest": readings(0.75, 1.40)},
+            {"turn left": [(0.90, 3.0)], "turn right": [(0.45, 1.6)],
+             "raise": [(0.80, 2.2)], "lower": [(0.60, 1.7)]})
+
+    def test_the_vertical_movement_is_measured_at_last(self):
+        """It never was.  Those two numbers decide every volume gesture."""
+
+        measured, warnings = self.profile().derive(DEFAULTS)
+
+        self.assertNotEqual(measured.swipe_lift, DEFAULTS.swipe_lift)
+        self.assertFalse([w for w in warnings if "raise" in w])
+
+    def test_the_weaker_direction_sets_the_vertical_bar_too(self):
+        """An arm does not rise as far as it falls, or the other way."""
+
+        measured, _ = self.profile().derive(DEFAULTS)
+
+        self.assertLess(measured.swipe_lift, 0.60)
+
+    def test_open_never_ends_up_looser_than_a_single_finger(self):
+        """The open-hand line is there to be the stricter of the two.
+
+        They are measured against different poses, so they can come out
+        the wrong way round -- and then a hand only just open enough for
+        one test sails through the one meant to catch it.
+        """
+
+        measured, _ = self.profile().derive(DEFAULTS)
+
+        self.assertGreaterEqual(measured.open_ratio, measured.extended_ratio)
+
+    def test_not_recording_the_vertical_is_reported(self):
+        profile = Profile.from_samples(
+            {"fist": readings(0.45, 1.02)}, {"turn left": [(0.9, 3.0)]})
+
+        measured, warnings = profile.derive(DEFAULTS)
+
+        self.assertEqual(measured.swipe_lift, DEFAULTS.swipe_lift)
+        self.assertTrue(any("raise or lower" in w for w in warnings))
+
+    def test_four_fingers_raised_needs_nothing_new_recorded(self):
+        """The pose is measured, the movement is measured; that is all
+        such a gesture is."""
+
+        profile = self.profile()
+
+        self.assertTrue(profile.among(["open"], profile.LOW))
+        self.assertTrue(profile.moves_like("raise", "lower"))
 
 
 class TestWhereTheLineGoes(unittest.TestCase):
@@ -171,7 +320,7 @@ class TestApplying(unittest.TestCase):
         self.before.apply()
 
     def test_apply_moves_the_thresholds_the_detectors_read(self):
-        Calibration(0.7, 0.88, 1.3, 0.2, 0.5, 0.02).apply()
+        Calibration(0.7, 0.88, 1.3, 0.2, 0.5, 0.5, 1.0, 0.02).apply()
 
         self.assertEqual(hand_state.EXTENDED_RATIO, 0.7)
         self.assertEqual(hand_state.FIST_REACH, 1.3)
@@ -299,7 +448,7 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
     """
 
     def test_a_pinch_threshold_near_an_open_hand_is_pulled_in(self):
-        wild = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.90)
+        wild = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20, 0.90)
 
         kept, pulled = wild.sensible()
 
@@ -307,7 +456,7 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
         self.assertTrue(any("min_hand_on_screen" in note for note in pulled))
 
     def test_sensible_values_are_left_alone(self):
-        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.030)
+        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.60, 1.20, 0.030)
 
         kept, pulled = fine.sensible()
 
@@ -329,7 +478,7 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
 
         from vision import hand_state
 
-        close_up = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.0964)
+        close_up = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.60, 1.20, 0.0964)
 
         kept, pulled = close_up.sensible()
 

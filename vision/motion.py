@@ -299,10 +299,12 @@ def detect_swipe(hand, handedness=None):
         settling=False,
         turn=round(abs(turn), 2),
         lift=round(lift, 2),
+        lift_speed=round(lift_speed, 2),
         speed=round(turn_speed, 2),
         agree=round(turn_agree, 2),
         peak_turn=round(_peak("turn", abs(turn), moment), 2),
         peak_speed=round(_peak("speed", turn_speed, moment), 2),
+        peak_lift_speed=round(_peak("lift_speed", lift_speed, moment), 2),
         peak_agree=round(_peak("agree", turn_agree, moment), 2),
     )
 

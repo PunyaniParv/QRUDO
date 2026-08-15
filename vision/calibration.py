@@ -37,6 +37,8 @@ class Calibration:
     fist_reach: float
     swipe_turn: float
     swipe_turn_speed: float
+    swipe_lift: float
+    swipe_lift_speed: float
     min_hand_on_screen: float
 
     #: Notes about the loading rather than thresholds, so they are kept
@@ -92,11 +94,21 @@ class Calibration:
 
         return {f.name for f in fields(cls) if f.compare}
 
-    def save(self, path=None):
+    def save(self, path=None, profile=None):
+        """Write the thresholds, and the readings they came from.
+
+        The thresholds stay at the top level, where they have always
+        been, so an older build reads this file unchanged.  The readings
+        go beside them, so a newer one can work them out again.
+        """
+
         path = Path(path) if path else DEFAULT_PATH
 
         kept = {name: value for name, value in asdict(self).items()
                 if name in self.thresholds()}
+
+        if profile is not None:
+            kept["profile"] = profile.to_dict()
 
         path.write_text(json.dumps(kept, indent=2) + "\n")
 
@@ -116,6 +128,8 @@ class Calibration:
         "extended_ratio": (0.60, 0.95),
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
+        "swipe_lift": (0.25, 1.20),
+        "swipe_lift_speed": (0.40, 3.00),
         "min_hand_on_screen": (0.015, 0.035),
     }
 
@@ -155,6 +169,8 @@ class Calibration:
 
         motion.SWIPE_TURN = self.swipe_turn
         motion.SWIPE_TURN_SPEED = self.swipe_turn_speed
+        motion.SWIPE_LIFT = self.swipe_lift
+        motion.SWIPE_LIFT_SPEED = self.swipe_lift_speed
 
     def describe(self):
         return [
@@ -162,6 +178,7 @@ class Calibration:
             f"hand open above       {self.open_ratio:.2f}",
             f"fist below            {self.fist_reach:.2f}",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
+            f"hand raised           {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
             f"smallest hand read    {self.min_hand_on_screen:.3f} of the frame",
         ]
 
@@ -206,136 +223,250 @@ def between(low, high, defaults_to, fraction=0.5, least=0.08):
     return low + (high - low) * fraction, True
 
 
-def from_samples(poses, moves, current):
-    """Work thresholds out from what was recorded.
+#: Where a summary is taken.  Not the extremes: a run of a hundred frames
+#: holds a few where the hand was arriving, leaving or half read, and one
+#: of those is enough to put an edge somewhere absurd.
+EDGES = (0.10, 0.50, 0.90)
 
-    ``poses`` maps a pose name to the readings taken while it was held,
-    ``moves`` maps a movement name to the peak of each repetition, and
-    ``current`` is what the thresholds are now, used wherever a
-    measurement did not separate cleanly.
 
-    Returns the calibration and a list of anything that could not be
-    measured, which is worth telling the user rather than hiding.
+@dataclass
+class Profile:
+    """What your hand measured, rather than what was concluded from it.
+
+    Thresholds are conclusions, and a conclusion is only as good as the
+    arithmetic that reached it.  Twice in one day that arithmetic turned
+    out to be wrong -- once taking the hand-size floor from a close-up
+    session, once working out a finger threshold from poses that did not
+    include the hard case -- and both times the recording was gone, so
+    the only way to benefit from the fix was to stand in front of the
+    camera again.
+
+    Keeping the readings makes a fix free: the thresholds are worked out
+    again at startup from what was already recorded.
+
+    It is also what lets gestures be combined later.  A pose and a
+    movement are measured separately, because that is what they are: how
+    straight your fingers go is one fact about you and how far your hand
+    travels is another.  Four fingers raised is a pose already measured
+    and a movement already measured, so it needs no new recording -- only
+    a line saying the two go together.
     """
 
-    warnings = []
+    #: pose -> finger -> {"ext": [low, middle, high], "reach": [...]}
+    poses: dict
 
-    # A finger is out above this.  Curled fingers come from the fist,
-    # straight ones from the open hand -- so the line goes between the
-    # straightest curled finger and the most bent straight one.
-    #
-    # And from the two-finger pose, which is where the hard case is.  A
-    # fist is fingers shut; two fingers up is the other two merely held
-    # down, which is a good deal straighter, and it is *that* the line has
-    # to sit above.  Measured from a fist alone it comes out low -- 0.65
-    # on the run that prompted this -- and then a peace sign reads as four
-    # fingers out and matches nothing at all.
-    two = poses.get("two", [])
+    #: movement -> [[size, speed], ...], the peak of each repetition
+    moves: dict
 
-    def among(readings, *names):
-        return [reading["ext"][name]
-                for reading in readings
-                for name in names
-                if name in reading["ext"]]
+    #: how big the hand looked, [low, middle, high]
+    scale: list
 
-    curled = (among(poses.get("fist", []), *FINGERS)
-              + among(two, "ring", "pinky"))
+    @classmethod
+    def from_samples(cls, poses, moves):
+        """Summarise a calibration session."""
 
-    straight = (among(poses.get("open", []), *FINGERS)
-                + among(two, "index", "middle"))
+        summary = {}
 
-    # Each of these has its own scale, so what counts as a usable gap
-    # differs: finger extension runs from about 0.4 to 1.0, and the fist
-    # reach from 1.0 to 1.6.
-    extended_ratio, ok = between(
-        edge(curled, 0.90, 0.0), edge(straight, 0.10, 1.0),
-        current.extended_ratio, least=0.10)
+        for name, readings in poses.items():
+            fingers = {}
 
-    if not ok:
-        warnings.append("could not tell a finger held out from one held down")
+            for finger in FINGERS:
+                measured = {
+                    kind: [reading[kind][finger]
+                           for reading in readings
+                           if finger in reading.get(kind, {})]
+                    for kind in ("ext", "reach")
+                }
 
-    # A hand is open above this, which is a different question: the other
-    # side is not a fist but a hand at rest, whose fingers are straighter
-    # than a fist and slacker than a spread hand.  With only the line
-    # above to fall on, a resting hand landed on "open" and asked for
-    # something.
-    slack = [score
-             for reading in poses.get("rest", [])
-             for score in reading["ext"].values()]
+                if any(measured.values()):
+                    fingers[finger] = {
+                        kind: [round(edge(values, share, 0.0), 3)
+                               for share in EDGES]
+                        for kind, values in measured.items()
+                    }
 
-    open_ratio, ok = between(
-        edge(slack, 0.90, 0.0), edge(straight, 0.10, 1.0),
-        current.open_ratio, least=0.06)
+            summary[name] = fingers
 
-    if not ok:
-        warnings.append("could not tell an open hand from a resting one")
+        sizes = [reading["scale"]
+                 for readings in poses.values()
+                 for reading in readings
+                 if "scale" in reading]
 
-    # A fist is below this.  The other side is a hand at rest, which is
-    # the case that matters: it is what the camera sees most of the time.
-    fist = [score
-            for reading in poses.get("fist", [])
-            for score in reading["reach"].values()]
+        return cls(
+            poses=summary,
+            moves={name: [[round(size, 3), round(speed, 3)]
+                          for size, speed in peaks]
+                   for name, peaks in moves.items()},
+            scale=[round(edge(sizes, share, 0.1), 4) for share in EDGES],
+        )
 
-    resting = [score
-               for reading in poses.get("rest", [])
-               for score in reading["reach"].values()]
+    # Which end of a finger's summary answers which question.
+    LOW, HIGH = 0, 2
 
-    fist_reach, ok = between(
-        edge(fist, 0.90, 0.0), edge(resting, 0.10, 99.0),
-        current.fist_reach, least=0.12)
+    def among(self, poses, end, kind="ext", fingers=FINGERS):
+        """One end of the readings, across some fingers of some poses."""
 
-    if not ok:
-        warnings.append("could not tell a fist from a resting hand")
+        return [self.poses[pose][finger][kind][end]
+                for pose in poses
+                if pose in self.poses
+                for finger in fingers
+                if finger in self.poses[pose]]
 
-    # Movements: take the weakest repetition and sit comfortably under it,
-    # so the gentlest gesture you actually made still counts.
-    #
-    # Both directions go in together, because a wrist does not turn as far
-    # one way as the other.  Measuring only the easy direction sets a bar
-    # the hard one never clears, which reads as "swipe right does not
-    # work" -- it was working, and being asked for more than the joint had.
-    turns = [peak
-             for name, peaks in moves.items()
-             if name.startswith("turn")
-             for peak in peaks]
+    def moves_like(self, *prefixes):
+        """Every repetition of the movements whose names start like this.
 
-    swipe_turn, swipe_turn_speed, missed = _movement(
-        turns, current.swipe_turn, current.swipe_turn_speed)
+        Both directions go in together, because a wrist does not turn as
+        far one way as the other and an arm does not rise as far as it
+        falls.  Measuring only the easy direction sets a bar the hard one
+        never clears, which reads as "it does not detect that way".
+        """
 
-    if not turns:
-        warnings.append("no wrist turn was recorded")
-    elif missed:
-        warnings.append("one of the wrist turns barely moved, and was ignored")
+        return [tuple(peak)
+                for name, peaks in self.moves.items()
+                if name.startswith(prefixes)
+                for peak in peaks]
 
-    # How small a hand may look and still be read.  Taken from how large
-    # yours looked while calibrating, so calibrating across the room lets
-    # SARV reach that far.
-    #
-    # It can only ever loosen the limit, never tighten it: calibrating at
-    # the keyboard would otherwise set the floor at a hand's size there
-    # and quietly stop the thing working from across the room, which is
-    # the point of it.
-    #
-    # Comparing against ``current`` is most of that and not all of it.
-    # ``current`` is whatever is loaded, which after one close-up
-    # calibration is already the tightened number -- so the two agree,
-    # nothing is loosened, and it stays tightened.  BOUNDS holds the line
-    # that matters: never stricter than shipped.
-    sizes = [reading["scale"]
-             for readings in poses.values()
-             for reading in readings]
+    def derive(self, current):
+        """Work the thresholds out.  Returns them and anything unmeasured.
 
-    min_hand = (min(edge(sizes, 0.10, 0.1) * 0.6, current.min_hand_on_screen)
-                if sizes else current.min_hand_on_screen)
+        ``current`` is what the thresholds are now, used wherever a
+        measurement did not separate cleanly -- which is worth saying
+        rather than hiding, because it means that one was not measured.
+        """
 
-    return Calibration(
-        extended_ratio=round(extended_ratio, 3),
-        open_ratio=round(open_ratio, 3),
-        fist_reach=round(fist_reach, 3),
-        swipe_turn=round(swipe_turn, 3),
-        swipe_turn_speed=round(swipe_turn_speed, 3),
-        min_hand_on_screen=round(min_hand, 4),
-    ), warnings
+        warnings = []
+
+        # A finger is out above this.  Curled fingers come from the fist,
+        # straight ones from the open hand -- so the line goes between the
+        # straightest curled finger and the most bent straight one.
+        #
+        # And from the two-finger pose, which is where the hard case is.
+        # A fist is fingers shut; two fingers up is the other two merely
+        # held down, which is a good deal straighter, and it is *that* the
+        # line has to sit above.  Measured from a fist alone it came out
+        # at 0.65, and a peace sign then read as four fingers out and
+        # matched nothing at all.
+        curled = (self.among(["fist"], self.HIGH)
+                  + self.among(["two"], self.HIGH, fingers=("ring", "pinky")))
+
+        straight = (self.among(["open"], self.LOW)
+                    + self.among(["two"], self.LOW,
+                                 fingers=("index", "middle")))
+
+        # Each of these has its own scale, so what counts as a usable gap
+        # differs: finger extension runs from about 0.4 to 1.0, and the
+        # fist reach from 1.0 to 1.6.
+        extended_ratio, ok = between(
+            max(curled, default=0.0), min(straight, default=1.0),
+            current.extended_ratio, least=0.10)
+
+        if not ok:
+            warnings.append("could not tell a finger held out from one held down")
+
+        # A hand is open above this, which is a different question: the
+        # other side is not a fist but a hand at rest, whose fingers are
+        # straighter than a fist and slacker than a spread hand.  With
+        # only the line above to fall on, a resting hand landed on "open"
+        # and asked for something.
+        open_ratio, ok = between(
+            max(self.among(["rest"], self.HIGH), default=0.0),
+            min(self.among(["open"], self.LOW), default=1.0),
+            current.open_ratio, least=0.06)
+
+        if not ok:
+            warnings.append("could not tell an open hand from a resting one")
+
+        # An open hand is one whose every finger is out and then some, so
+        # this line cannot sit below the one for a single finger.  The two
+        # are measured against different poses and can come out the wrong
+        # way round, and when they do the second test is not a stricter
+        # one -- it is no test at all, and a slack hand reads as open.
+        open_ratio = max(open_ratio, extended_ratio)
+
+        # A fist is below this.  The other side is a hand at rest, which
+        # is the case that matters: it is what the camera sees most.
+        fist_reach, ok = between(
+            max(self.among(["fist"], self.HIGH, "reach"), default=0.0),
+            min(self.among(["rest"], self.LOW, "reach"), default=99.0),
+            current.fist_reach, least=0.12)
+
+        if not ok:
+            warnings.append("could not tell a fist from a resting hand")
+
+        turns = self.moves_like("turn")
+        lifts = self.moves_like("raise", "lower", "lift")
+
+        swipe_turn, swipe_turn_speed, missed = _movement(
+            turns, current.swipe_turn, current.swipe_turn_speed)
+
+        if not turns:
+            warnings.append("no wrist turn was recorded")
+        elif missed:
+            warnings.append("one of the wrist turns barely moved, and was ignored")
+
+        swipe_lift, swipe_lift_speed, missed = _movement(
+            lifts, current.swipe_lift, current.swipe_lift_speed)
+
+        if not lifts:
+            warnings.append("no raise or lower was recorded")
+        elif missed:
+            warnings.append("one of the raises barely moved, and was ignored")
+
+        # How small a hand may look and still be read.  Taken from how
+        # large yours looked while calibrating, so calibrating across the
+        # room lets SARV reach that far.  It can only ever loosen the
+        # limit, never tighten it -- see BOUNDS, which is what actually
+        # holds that line.
+        min_hand = (min(self.scale[self.LOW] * 0.6, current.min_hand_on_screen)
+                    if self.scale else current.min_hand_on_screen)
+
+        return Calibration(
+            extended_ratio=round(extended_ratio, 3),
+            open_ratio=round(open_ratio, 3),
+            fist_reach=round(fist_reach, 3),
+            swipe_turn=round(swipe_turn, 3),
+            swipe_turn_speed=round(swipe_turn_speed, 3),
+            swipe_lift=round(swipe_lift, 3),
+            swipe_lift_speed=round(swipe_lift_speed, 3),
+            min_hand_on_screen=round(min_hand, 4),
+        ), warnings
+
+    def to_dict(self):
+        return {"poses": self.poses, "moves": self.moves, "scale": self.scale}
+
+    @classmethod
+    def load(cls, path=None):
+        """The profile inside a saved calibration, or None if it has none.
+
+        Files written before profiles existed hold only the thresholds.
+        They keep working -- see load_and_apply -- they simply cannot be
+        worked out again.
+        """
+
+        path = Path(path) if path else DEFAULT_PATH
+
+        if not path.exists():
+            return None
+
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+
+        stored = data.get("profile")
+
+        if not isinstance(stored, dict) or "poses" not in stored:
+            return None
+
+        return cls(poses=stored.get("poses", {}),
+                   moves=stored.get("moves", {}),
+                   scale=stored.get("scale", []))
+
+
+def from_samples(poses, moves, current):
+    """Summarise a session and work the thresholds out of it."""
+
+    return Profile.from_samples(poses, moves).derive(current)
 
 
 #: An attempt smaller than this share of the best is treated as one that
@@ -374,9 +505,21 @@ def _movement(peaks, default_size, default_speed, margin=0.55):
 
 
 def load_and_apply(path=None):
-    """Use a saved calibration if there is one.  Returns it, or None."""
+    """Use a saved calibration if there is one.  Returns it, or None.
 
-    calibration = Calibration.load(path)
+    Worked out again from the readings whenever the file has them, so a
+    correction to the arithmetic reaches a session recorded before it was
+    written -- without anyone standing in front of the camera again.
+    Files from before that keep working on their stored thresholds.
+    """
+
+    profile = Profile.load(path)
+
+    if profile is not None:
+        calibration, unmeasured = profile.derive(current())
+        calibration.incomplete = tuple(unmeasured)
+    else:
+        calibration = Calibration.load(path)
 
     if calibration is None:
         return None
@@ -399,5 +542,7 @@ def current():
         fist_reach=hand_state.FIST_REACH,
         swipe_turn=motion.SWIPE_TURN,
         swipe_turn_speed=motion.SWIPE_TURN_SPEED,
+        swipe_lift=motion.SWIPE_LIFT,
+        swipe_lift_speed=motion.SWIPE_LIFT_SPEED,
         min_hand_on_screen=hand_state.MIN_HAND_ON_SCREEN,
     )

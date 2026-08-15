@@ -14,23 +14,35 @@ import sys
 import time
 
 #: name, what to ask for, what it is for, seconds of recording
+#:
+#: Asked for as the things they do, not as shapes to hold.  People make a
+#: gesture differently when told to pause a video than when told to close
+#: their hand, and it is the first one the app has to recognise later.
 POSES = [
-    ("fist", "Make a FIST, palm toward the camera",
-     "this plays and pauses", 3.0),
+    ("fist", "PLAY OR PAUSE:  make a fist",
+     "the shape that plays and pauses", 3.0),
+    ("two", "READY TO SEEK:  hold up two fingers",
+     "the shape every swipe is made from", 3.0),
     ("open", "Hold your hand OPEN, fingers spread",
-     "so a hand doing nothing is not read as one", 3.0),
-    ("two", "Hold up TWO FINGERS",
-     "the pose you swipe with", 3.0),
+     "so a spread hand can be told from a slack one", 3.0),
     ("rest", "Let your hand REST naturally, however it falls",
      "so a hand doing nothing is left alone", 3.0),
 ]
 
-#: name, what to ask for, what it is for, how many times
+#: name, what to ask for, what it is for, how many times, what to measure
+#:
+#: Both directions of each, because a wrist does not turn as far one way
+#: as the other and an arm does not rise as far as it falls.  Measuring
+#: only the easy direction sets a bar the hard one never clears.
 MOVES = [
-    ("turn left", "Two fingers up: TURN YOUR WRIST left, then back",
-     "this rewinds", 2),
-    ("turn right", "Two fingers up: TURN YOUR WRIST right, then back",
-     "this skips forward", 2),
+    ("turn left", "REWIND:  two fingers up, turn your wrist left, then back",
+     "how far your wrist turns", 2, ("turn", "speed")),
+    ("turn right", "SKIP FORWARD:  two fingers up, turn your wrist right, then back",
+     "the other way, which does not go as far", 2, ("turn", "speed")),
+    ("raise", "VOLUME UP:  two fingers up, raise your hand, then lower it",
+     "how far your hand travels, and how briskly", 2, ("lift", "lift_speed")),
+    ("lower", "VOLUME DOWN:  hand up, lower it, then raise it",
+     "the same going down, which is not the same", 2, ("lift", "lift_speed")),
 ]
 
 READY_SECONDS = 2.0
@@ -66,8 +78,8 @@ def run(args):
         poses = {name: session.record_pose(prompt, purpose, seconds)
                  for name, prompt, purpose, seconds in POSES}
 
-        moves = {name: session.record_move(prompt, purpose, times)
-                 for name, prompt, purpose, times in MOVES}
+        moves = {name: session.record_move(prompt, purpose, times, reads)
+                 for name, prompt, purpose, times, reads in MOVES}
     except _Cancelled:
         print("\n  cancelled -- nothing was saved.")
         return 1
@@ -79,8 +91,8 @@ def run(args):
         tracker.close()
         cv2.destroyAllWindows()
 
-    measured, warnings = calibration.from_samples(
-        poses, moves, calibration.current())
+    profile = calibration.Profile.from_samples(poses, moves)
+    measured, warnings = profile.derive(calibration.current())
 
     # Checked before it is saved rather than on the way back in, so what
     # is printed here is what will actually be used, and anything that
@@ -97,7 +109,11 @@ def run(args):
         print(f"\n  ! {warning}"
               f"\n    keeping the existing value for it")
 
-    path = measured.save()
+    # The readings go in beside the thresholds, so that a correction to
+    # how they are worked out reaches this session without it having to
+    # be recorded again -- and so a gesture added later can be built from
+    # a pose and a movement already measured here.
+    path = measured.save(profile=profile)
 
     print(f"\n  saved to {path.name} -- it is used from now on.")
     print("  delete that file to go back to the defaults.\n")
@@ -149,8 +165,14 @@ class _Session:
 
         return readings
 
-    def record_move(self, prompt, purpose, times):
-        """Move: collect the largest reading reached in each repetition."""
+    def record_move(self, prompt, purpose, times, reads=("turn", "speed")):
+        """Move: collect the largest reading reached in each repetition.
+
+        ``reads`` names the two measurements this movement is about --
+        how far the wrist turned, or how far the hand travelled -- since
+        the same recording carries both and only one of them is the
+        gesture being asked for.
+        """
 
         peaks = []
 
@@ -172,8 +194,8 @@ class _Session:
 
                 state = self.motion.debug_state()
 
-                if "turn" in state:
-                    biggest = _bigger(biggest, state, prompt)
+                if reads[0] in state:
+                    biggest = _bigger(biggest, state, reads)
 
             if biggest[0] > 0:
                 peaks.append(biggest)
@@ -209,10 +231,14 @@ class _Session:
         return hand
 
 
-def _bigger(biggest, state, prompt):
-    """The larger of what we have and what this frame shows."""
+def _bigger(biggest, state, reads):
+    """The larger of what we have and what this frame shows.
 
-    size, speed = abs(state.get("turn", 0)), state.get("speed", 0)
+    Both taken as sizes without a sign: lowering a hand is a negative
+    lift, and it is as much of a movement as raising one.
+    """
+
+    size, speed = (abs(state.get(reads[0], 0)), abs(state.get(reads[1], 0)))
 
     return (max(biggest[0], size), max(biggest[1], speed))
 
@@ -222,7 +248,7 @@ def banner():
         "",
         "  SARV setup",
         "",
-        "  Four poses to hold, then two movements to repeat.  Stand where",
+        "  Four shapes to hold, then four movements to repeat.  Stand where",
         "  you actually intend to use it -- the numbers depend on how big",
         "  your hand looks, so calibrating close up will not suit a demo",
         "  from across the room.",
