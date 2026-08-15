@@ -77,6 +77,11 @@ def run(engine, args, tuning=False):
 
     show_window = not args.no_window
 
+    # Off by default: a list of gestures along the bottom of the preview
+    # stops being a reference after the first minute and starts being
+    # something to look past.
+    show_legend = False
+
     try:
         for frame in camera.frames():
             frame_times.append(time.time())
@@ -122,11 +127,16 @@ def run(engine, args, tuning=False):
             if not show_window:
                 continue
 
+            # The legend needs more room at the bottom than the one line
+            # that stands in for it.
+            overlay.dim_edges(cv2, frame, bottom=(
+                overlay.legend_height(router.mapping()) if show_legend
+                else 96))
             overlay.draw_gesture(cv2, frame, gesture)
-            overlay.draw_hint(cv2, frame, out_of_range(time.time() - last_hand_at,
-                                                       args))
             overlay.draw_result(cv2, frame, last_result)
-            overlay.draw_legend(cv2, frame, router.mapping())
+            overlay.draw_legend(cv2, frame, router.mapping(), show_legend)
+            overlay.draw_hint(cv2, frame,
+                              out_of_range(time.time() - last_hand_at, args))
 
             if tuning:
                 state = motion.debug_state()
@@ -135,8 +145,13 @@ def run(engine, args, tuning=False):
 
             cv2.imshow("SARV", frame)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord("q"):
                 break
+
+            if key == ord("h"):
+                show_legend = not show_legend
 
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -198,8 +213,8 @@ def banner(engine, router, args, tuning):
         lines.append("")
 
     lines += [
-        "  q in the window to stop" if not args.no_window else
-        "  ctrl+c to stop",
+        "  q in the window to stop, h for the gesture list"
+        if not args.no_window else "  ctrl+c to stop",
         "",
     ]
 
