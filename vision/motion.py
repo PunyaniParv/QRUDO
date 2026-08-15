@@ -136,14 +136,30 @@ def measure(times, values):
 
     change = values[-1] - values[0]
 
-    steps = [
-        values[i + 1] - values[i]
-        for i in range(len(values) - 1)
-    ]
+    # How far it ended up, against how far it travelled getting there.  A
+    # clean movement scores near 1; a hand that goes out and comes most
+    # of the way back covers ground and arrives nowhere, so it scores low
+    # however fast it went.
+    #
+    # Measured over a handful of stretches rather than frame by frame.
+    # Frame by frame, every frame's error goes into the sum, so the
+    # measure grows with the length of the window and with how noisy the
+    # reading is -- and a small movement seen from across a room, where
+    # the error is a large share of each step, comes out looking like a
+    # hand shaking rather than a hand moving.  It was the first thing to
+    # fail at a distance, before the pose itself did.
+    #
+    # Averaging each stretch first cancels most of that, and costs
+    # nothing real: a hand cannot change direction inside a stretch this
+    # short, so anything that does is the reading and not the hand.
+    # Both halves come off the same smoothed series, or the ratio is
+    # comparing the whole of the movement against part of its path and
+    # can exceed one, which passes everything.
+    means = _stretches(values)
+    walked = sum(abs(means[i + 1] - means[i]) for i in range(len(means) - 1))
+    arrived = abs(means[-1] - means[0]) if means else 0.0
 
-    path = sum(abs(step) for step in steps)
-
-    directness = abs(change) / path if path > 0 else 0.0
+    directness = arrived / walked if walked > 0 else 0.0
 
     # Trim the still parts off each end.  A hand that never moved has
     # nothing to trim, so it keeps the whole window and stays slow.
@@ -171,6 +187,34 @@ def measure(times, values):
     speed = abs(change) / elapsed if elapsed > 0 else 0.0
 
     return change, speed, directness
+
+
+#: How many stretches a movement is measured across.  Four: enough to
+#: catch a hand that turned back on itself, few enough that each is
+#: averaged over several frames.
+STRETCHES = 4
+
+
+def _stretches(values):
+    """Where the signal was, on average, across each stretch of the window.
+
+    A reading that is wrong for a frame moves its stretch's average by a
+    fraction of its error, instead of contributing the whole of it twice
+    to a frame-by-frame path.
+    """
+
+    if len(values) < STRETCHES:
+        return list(values)
+
+    size = len(values) / STRETCHES
+    means = []
+
+    for part in range(STRETCHES):
+        first = int(part * size)
+        chunk = values[first:max(int((part + 1) * size), first + 1)]
+        means.append(sum(chunk) / len(chunk))
+
+    return means
 
 
 def _height(window, screen, mean_scale, moment):

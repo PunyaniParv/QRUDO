@@ -736,6 +736,89 @@ class TestATurnCountsTheSameWhereverItStarts(GestureTestCase):
                              math.pi / 2)
 
 
+class TestAMovementSeenFromAcrossTheRoom(GestureTestCase):
+    """A small movement, read with the error a distant hand comes with.
+
+    Reported as two fingers raised not registering from far away.  The
+    pose held; the movement was refused, and what refused it was the
+    measure of how directly it travelled.  That was a sum of every
+    frame's step, so every frame's error went into it -- and the further
+    away the hand, the larger a share of each step the error is.  A clean
+    raise came out looking like a hand shaking.
+    """
+
+    def peace(self, dy=0.0, scale=0.022):
+        hand = make_hand(EXTENDED, EXTENDED, CURLED, CURLED)
+        wrist = hand[0]
+        factor = scale / hand_state.hand_scale(hand)
+
+        return [Point(wrist.x + (point.x - wrist.x) * factor,
+                      wrist.y + (point.y - wrist.y) * factor + dy,
+                      wrist.z + (point.z - wrist.z) * factor)
+                for point in hand]
+
+    def noisy(self, hand, share, rng, scale=0.022):
+        return [Point(point.x + rng.gauss(0, scale * share),
+                      point.y + rng.gauss(0, scale * share),
+                      point.z + rng.gauss(0, scale * share))
+                for point in hand]
+
+    def raise_it(self, share, scale=0.022, seed=5):
+        rng = random.Random(seed)
+
+        for _ in range(24):
+            hand = self.noisy(self.peace(scale=scale), share, rng, scale)
+            gestures.detect_gesture(hand, HAND)
+            motion.detect_swipe(hand, HAND)
+            self.clock.tick(1 / 30)
+
+        fired = None
+
+        for i in range(14):
+            hand = self.noisy(self.peace(-scale * 1.6 * i / 13, scale),
+                              share, rng, scale)
+            gestures.detect_gesture(hand, HAND)
+            fired = fired or motion.detect_swipe(hand, HAND)
+            self.clock.tick(0.35 / 13)
+
+        return fired
+
+    def test_a_raise_survives_the_error_a_distant_hand_comes_with(self):
+        for share in (0.02, 0.05):
+            with self.subTest(error=share):
+                self.setUp()
+
+                self.assertEqual(self.raise_it(share), "SWIPE_UP")
+
+    def test_and_most_of_the_way_past_it(self):
+        self.assertEqual(self.raise_it(0.08), "SWIPE_UP")
+
+    def test_directness_is_not_a_sum_of_every_frame(self):
+        """The measure that was refusing them.
+
+        A ramp with error on every frame is a movement; frame by frame it
+        scored as a shake, because the error was added up and the signal
+        was not.
+        """
+
+        ramp = [i / 13 for i in range(14)]
+        noisy = [value + (0.06 if i % 2 else -0.06)
+                 for i, value in enumerate(ramp)]
+        times = [i / 30 for i in range(14)]
+
+        _, _, direct = motion.measure(times, noisy)
+
+        self.assertGreater(direct, motion.SWIPE_CONSISTENCY)
+
+    def test_but_a_movement_that_arrives_nowhere_still_scores_nothing(self):
+        values = [0, .5, 1.0, 1.4, 1.0, .5, 0.05]
+        times = [i / 30 for i in range(len(values))]
+
+        _, _, direct = motion.measure(times, values)
+
+        self.assertLess(direct, motion.SWIPE_CONSISTENCY)
+
+
 class TestOneFrameCannotBeAGesture(GestureTestCase):
     """A hand cannot cross a gesture's worth of ground in a single frame.
 
@@ -776,11 +859,20 @@ class TestOneFrameCannotBeAGesture(GestureTestCase):
             self.play(heights=[0.55, 0.55, 0.30, 0.55, 0.55, 0.55],
                       seconds=0.20))
 
-    def test_a_waggle_that_happens_to_end_turned_fires_nothing(self):
-        """Its first leg was one frame wide, and that leg was what fired."""
+    def test_a_waggle_that_trends_one_way_does_count(self):
+        """A trade, and worth naming.
 
-        self.assertIsNone(
-            self.play(rolls=[-25, 10, -20, 12, -18, 15, 22], seconds=0.40))
+        This used to be refused, by a directness measured frame by frame
+        -- which also refused a clean movement seen from across the room,
+        where each frame's error is a large share of each step.  Measured
+        across stretches instead, a hand that wandered but ended up a
+        long way to one side reads as having gone there, which is not an
+        unreasonable thing to say about it.
+        """
+
+        self.assertEqual(
+            self.play(rolls=[-25, 10, -20, 12, -18, 15, 22], seconds=0.40),
+            "SWIPE_RIGHT")
 
     def test_a_quick_flick_still_counts(self):
         """The point is to refuse one frame, not to refuse speed.
