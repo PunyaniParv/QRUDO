@@ -50,6 +50,18 @@ class Calibration:
     incomplete: tuple = field(default=(), compare=False, repr=False)
     pulled: tuple = field(default=(), compare=False, repr=False)
 
+    #: Thresholds that were recorded but could not be told apart, in
+    #: words.  Separate from ``incomplete``, which is about a file too old
+    #: to hold them at all -- the two need different things said about
+    #: them, and putting these in there produced a sentence saying the
+    #: calibration predated a piece of advice.
+    notes: tuple = field(default=(), compare=False, repr=False)
+
+    #: Worth knowing but not a fault: nothing here is guessed because of
+    #: it.  Said after a calibration run, where it can be acted on, and
+    #: not at every startup afterwards.
+    advice: tuple = field(default=(), compare=False, repr=False)
+
     @classmethod
     def load(cls, path=None):
         """Read a saved calibration, or None if there is not one.
@@ -118,6 +130,12 @@ class Calibration:
     #: measurement can be wrong -- a hand held badly, a landmark the camera
     #: guessed at -- and a threshold far outside these does not fail
     #: gently: it reads everything, or nothing, as the gesture.
+    #: The ceiling on how briskly a raise must be made was 3.00, guessed
+    #: with nothing to go on.  The first real calibration measured 3.15
+    #: and had it pulled back -- a bound that trims the first honest
+    #: measurement it meets is measuring the guess, not the hand.  These
+    #: are here to catch the absurd, so it has room now.
+    #:
     #: The hand-size floor is capped at the shipped default rather than
     #: at anything roomier.  Calibrating is allowed to reach further than
     #: the default, never less far: measured from a hand held near the
@@ -129,7 +147,7 @@ class Calibration:
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
         "swipe_lift": (0.25, 1.20),
-        "swipe_lift_speed": (0.40, 3.00),
+        "swipe_lift_speed": (0.40, 4.50),
         "min_hand_on_screen": (0.015, 0.035),
     }
 
@@ -435,13 +453,15 @@ class Profile:
         # read from across the room, so the limit stays where it was --
         # and somebody who calibrated in order to gain range has gained
         # none, which is not visible from the numbers.
-        if self.scale and min_hand >= current.min_hand_on_screen:
-            warnings.append(
-                "calibrated close to the camera, so the range is unchanged"
-                " -- run it again from where you mean to stand to reach"
-                " further")
+        advice = []
 
-        return Calibration(
+        if self.scale and min_hand >= current.min_hand_on_screen:
+            advice.append(
+                "you calibrated close to the camera, so the range is"
+                " unchanged -- run it again from where you mean to stand"
+                " to reach further")
+
+        derived = Calibration(
             extended_ratio=round(extended_ratio, 3),
             open_ratio=round(open_ratio, 3),
             fist_reach=round(fist_reach, 3),
@@ -450,7 +470,11 @@ class Profile:
             swipe_lift=round(swipe_lift, 3),
             swipe_lift_speed=round(swipe_lift_speed, 3),
             min_hand_on_screen=round(min_hand, 4),
-        ), warnings
+        )
+
+        derived.advice = tuple(advice)
+
+        return derived, warnings
 
     def to_dict(self):
         return {"poses": self.poses, "moves": self.moves, "scale": self.scale}
@@ -538,7 +562,7 @@ def load_and_apply(path=None):
 
     if profile is not None:
         calibration, unmeasured = profile.derive(current())
-        calibration.incomplete = tuple(unmeasured)
+        calibration.notes = tuple(unmeasured)
     else:
         calibration = Calibration.load(path)
 

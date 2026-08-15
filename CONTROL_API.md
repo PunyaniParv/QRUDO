@@ -197,6 +197,11 @@ to `main.py`:
 
 Or in code: `ControlEngine(config=ControlConfig(volume_step=10))`.
 
+`volume_step` is 10 rather than the 5 a keyboard uses. Tapping a volume key
+again is nothing; making a gesture again means raising your hand, moving it,
+and bringing it back before the next one counts — so the step is bigger
+because asking is more expensive.
+
 `dry_run: true` logs every command without touching the machine — use it while
 tuning gesture recognition so a shaky hand doesn't blind you with a brightness
 change.

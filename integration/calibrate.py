@@ -109,6 +109,9 @@ def run(args):
         print(f"\n  ! {warning}"
               f"\n    keeping the existing value for it")
 
+    for note in measured.advice:
+        print(f"\n  - {note}")
+
     # The readings go in beside the thresholds, so that a correction to
     # how they are worked out reaches this session without it having to
     # be recorded again -- and so a gesture added later can be built from

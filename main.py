@@ -83,7 +83,11 @@ def main(argv=None):
 
     for note in getattr(measured, "pulled", ()):
         print(f"  ! {note}"
-              f"\n    that one did not measure cleanly; run --calibrate again\n")
+              f"\n    (outside the range SARV trusts, so it was pulled back)\n")
+
+    for note in getattr(measured, "notes", ()):
+        print(f"  ! {note}"
+              f"\n    that one is still the built-in guess\n")
 
     if measured is not None and getattr(measured, "incomplete", ()):
         print(f"  ! your calibration predates "

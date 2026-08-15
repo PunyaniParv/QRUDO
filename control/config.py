@@ -17,8 +17,15 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "sarv_config.json
 @dataclass
 class ControlConfig:
     # --- volume ------------------------------------------------------------
-    volume_step: int = 5
-    """Percentage points added/removed per VOLUME_UP / VOLUME_DOWN."""
+    volume_step: int = 10
+    """Percentage points added/removed per VOLUME_UP / VOLUME_DOWN.
+
+    Ten rather than the five a keyboard uses, because the cost of asking
+    is not the same.  Tapping a volume key again is nothing; making a
+    gesture again means raising your hand, moving it, and bringing it
+    back to where it started before the next one counts.  A step that
+    suits a key that can be held down makes a gesture into a chore.
+    """
 
     unmute_on_volume_up: bool = True
     """VOLUME_UP on a muted machine unmutes it instead of silently doing nothing."""

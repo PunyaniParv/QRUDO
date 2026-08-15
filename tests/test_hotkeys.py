@@ -52,7 +52,8 @@ class TestFiring(unittest.TestCase):
             deadline = time.monotonic() + 2
             while not controller.calls and time.monotonic() < deadline:
                 time.sleep(0.01)
-        self.assertEqual(controller.calls, ["volume +5%"])
+        self.assertEqual(controller.calls,
+                         [f"volume +{ControlConfig().volume_step}%"])
 
     def test_fire_is_non_blocking(self):
         """The OS gives the keyboard callback a deadline; macOS disables a tap

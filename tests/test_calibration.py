@@ -216,9 +216,14 @@ class TestPoseAndMovementAreSeparate(unittest.TestCase):
         near = Profile.from_samples(
             {"fist": readings(0.45, 1.02, scale=0.24)}, {})
 
-        _, warnings = near.derive(DEFAULTS)
+        measured, warnings = near.derive(DEFAULTS)
 
-        self.assertTrue(any("range is unchanged" in w for w in warnings))
+        self.assertTrue(any("range is unchanged" in note
+                            for note in measured.advice))
+
+        # Advice, not a fault: nothing is guessed because of it, so it is
+        # not among the things startup complains about.
+        self.assertFalse([w for w in warnings if "range" in w])
 
     def test_open_never_ends_up_looser_than_a_single_finger(self):
         """The open-hand line is there to be the stricter of the two.
