@@ -654,6 +654,14 @@ def _movement(peaks, default_size, default_speed, margin=0.55):
     the others was not a gentle gesture, it was a missed one -- the prompt
     came while the hand was out of frame, or halfway through moving back --
     and letting that set the bar puts it on the floor.
+
+    Speed is given more room than size, and how much more is taken from
+    the repetitions themselves.  Asked to do the same thing four times,
+    people vary how fast they do it more than how far -- measured, and
+    true of both movements on the recording this came from -- so a single
+    margin under the weakest attempt leaves the speed bar too high.  It
+    was: a raise had to finish inside a third of a second, and one made
+    at a normal pace never counted.
     """
 
     if not peaks:
@@ -663,12 +671,21 @@ def _movement(peaks, default_size, default_speed, margin=0.55):
 
     real = [(size, speed) for size, speed in peaks if size >= best * BOTCHED]
 
-    size = min(s for s, _ in real) * margin
-    speed = min(v for _, v in real) * margin
+    sizes = [size for size, _ in real]
+    speeds = [speed for _, speed in real]
+
+    size = min(sizes) * margin
+    speed = min(speeds) * margin * _spread(speeds) / max(_spread(sizes), 1e-6)
 
     return (max(size, default_size * FLOOR),
             max(speed, default_speed * FLOOR),
             len(real) < len(peaks))
+
+
+def _spread(values):
+    """How alike the repetitions were: 1.0 identical, lower the less so."""
+
+    return min(values) / max(values) if values and max(values) > 0 else 1.0
 
 
 def load_and_apply(path=None):

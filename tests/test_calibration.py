@@ -396,6 +396,39 @@ class TestFromSamples(unittest.TestCase):
         self.assertLess(measured.swipe_turn, 0.60)
         self.assertFalse([w for w in warnings if "wrist turn" in w])
 
+    def test_speed_is_given_more_room_than_size(self):
+        """Asked to do the same thing four times, people vary how fast
+        they do it more than how far.
+
+        Measured on the recording that prompted this, and true of both
+        movements on it.  One margin under the weakest attempt therefore
+        leaves the speed bar too high -- a raise had to finish inside a
+        third of a second, and one made at a normal pace never counted.
+        """
+
+        # Sizes all alike, speeds all over the place.
+        moves = {"turn left": [(0.80, 6.0), (0.78, 2.4)],
+                 "turn right": [(0.79, 5.0), (0.80, 3.0)]}
+
+        measured, _ = from_samples(self.poses(), moves, DEFAULTS)
+
+        weakest_size, weakest_speed = 0.78, 2.4
+
+        self.assertAlmostEqual(measured.swipe_turn, weakest_size * 0.55, places=2)
+        self.assertLess(measured.swipe_turn_speed, weakest_speed * 0.55)
+
+    def test_repetitions_that_agree_are_taken_at_their_word(self):
+        """Someone whose speed is as steady as their reach gets the same
+        margin for both -- there is nothing to make room for."""
+
+        moves = {"turn left": [(0.80, 4.0), (0.78, 3.9)],
+                 "turn right": [(0.79, 3.95), (0.80, 4.0)]}
+
+        measured, _ = from_samples(self.poses(), moves, DEFAULTS)
+
+        self.assertAlmostEqual(measured.swipe_turn_speed, 3.9 * 0.55,
+                               delta=0.05)
+
     def test_no_movement_recorded_is_reported(self):
         measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
 
