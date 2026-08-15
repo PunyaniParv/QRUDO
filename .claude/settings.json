@@ -84,7 +84,13 @@
       "Bash(.venv/bin/python main.py --command BRIGHTNESS_UP)",
       "Bash(.venv/bin/python main.py --command BRIGHTNESS_DOWN)",
       "Bash(.venv/bin/python main.py --far --check)",
-      "Bash(pmset -g assertions)"
+      "Bash(pmset -g assertions)",
+      "Bash(.venv_missing)",
+      "Bash(/Users/mac/SARV-1/.venv/bin/python -)",
+      "Bash(open -g -a \"QuickTime Player\" probe.wav)",
+      "Bash(osascript -e 'tell application \"QuickTime Player\" to play document 1')",
+      "Bash(osascript -e 'tell application \"QuickTime Player\" to quit saving no')",
+      "Bash(/Users/mac/SARV-1/.venv/bin/pip list *)"
     ],
     "additionalDirectories": [
       "/tmp"

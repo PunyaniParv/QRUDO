@@ -322,6 +322,7 @@ class MacOSController(Controller):
 
         key = KEY_SPACE if wanted in ("space", "spacebar") else KEY_K
 
+        self._refuse_to_type_into_a_text_box(pid)
         self._post_key(key, to_pid=pid)
 
         return f"play/pause ({wanted}) to {name}"
@@ -382,6 +383,7 @@ class MacOSController(Controller):
             return "paused what was playing"
 
         self._paused_it = False
+        self._refuse_to_type_into_a_text_box(pid)
         self._post_key(KEY_K, to_pid=pid)
 
         return f"play/pause (k) to {name} -- nothing was playing"
@@ -397,6 +399,18 @@ class MacOSController(Controller):
         device = audio.device()
 
         return None if device is None else audio.is_playing(device)
+
+    def _refuse_to_type_into_a_text_box(self, pid: int) -> None:
+        """A shortcut is a letter, and a letter lands wherever the app's
+        keyboard focus is.  When that is known to be a text box, refusing
+        beats typing: the k in a search box was reported twice before the
+        focus was ever asked about.
+        """
+
+        if pid and _focus_is_a_text_box(pid):
+            raise UnsupportedCommand(
+                "the cursor is in a text box, so play/pause would type "
+                "into it -- click the video first")
 
     def _seek_key(self, forward: bool) -> tuple[int, str, int]:
         """Which key seeks, what to call it, and how far one press moves.
@@ -558,6 +572,96 @@ class MacOSController(Controller):
             return bool(check()) if check else True
         except Exception:  # API missing on this OS version
             return True
+
+
+#: Focused-element roles that swallow letters.  A keystroke posted to a
+#: browser lands wherever its keyboard focus is, and if that is a text
+#: box the "shortcut" is typing.
+_TEXT_ROLES = {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"}
+
+
+def _focus_is_a_text_box(pid: int) -> bool:
+    """Whether this app's keyboard focus sits in a text field right now.
+
+    Asked through Accessibility, which SARV already holds the permission
+    for -- posting keys at all requires it.  Errors, including the app
+    having no focused element to report, answer False: the guard exists
+    to stop a letter landing in a text box that is known to be there, and
+    "cannot tell" is not that.
+    """
+
+    try:
+        ax = _ax_handles()
+
+        if ax is None:
+            return False
+
+        cf, services = ax
+        element = services.AXUIElementCreateApplication(pid)
+
+        if not element:
+            return False
+
+        out = ctypes.c_void_p()
+        name = cf.CFStringCreateWithCString(
+            None, b"AXFocusedUIElement", 0x08000100)
+
+        if services.AXUIElementCopyAttributeValue(
+                element, name, ctypes.byref(out)) != 0 or not out.value:
+            return False
+
+        role = ctypes.c_void_p()
+        name = cf.CFStringCreateWithCString(None, b"AXRole", 0x08000100)
+
+        if services.AXUIElementCopyAttributeValue(
+                out.value, name, ctypes.byref(role)) != 0 or not role.value:
+            return False
+
+        buffer = ctypes.create_string_buffer(128)
+
+        if not cf.CFStringGetCString(role.value, buffer, 128, 0x08000100):
+            return False
+
+        return buffer.value.decode() in _TEXT_ROLES
+    except Exception:
+        return False
+
+
+_AX = None
+
+
+def _ax_handles():
+    """The CoreFoundation and Accessibility libraries, loaded once."""
+
+    global _AX
+
+    if _AX is None:
+        try:
+            cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation"
+                             ".framework/CoreFoundation")
+            services = ctypes.CDLL("/System/Library/Frameworks/"
+                                   "ApplicationServices.framework/"
+                                   "ApplicationServices")
+
+            cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+            cf.CFStringCreateWithCString.argtypes = [
+                ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+            cf.CFStringGetCString.restype = ctypes.c_bool
+            cf.CFStringGetCString.argtypes = [
+                ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long,
+                ctypes.c_uint32]
+            services.AXUIElementCreateApplication.restype = ctypes.c_void_p
+            services.AXUIElementCreateApplication.argtypes = [ctypes.c_int]
+            services.AXUIElementCopyAttributeValue.restype = ctypes.c_int
+            services.AXUIElementCopyAttributeValue.argtypes = [
+                ctypes.c_void_p, ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_void_p)]
+
+            _AX = (cf, services)
+        except Exception:
+            _AX = False
+
+    return _AX or None
 
 
 class _CoreAudio:

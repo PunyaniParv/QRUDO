@@ -43,9 +43,14 @@ class FakeMac(MacOSController):
         self._quartz = object()
         self._workspace = None
         self.playing = playing      # what the speakers are doing
+        self.focus_in_text_box = False
 
     def _audio_playing(self):
         return self.playing
+
+    def _refuse_to_type_into_a_text_box(self, pid):
+        if self.focus_in_text_box:
+            raise UnsupportedCommand("the cursor is in a text box")
 
     def _running_apps(self):
         return self.running
@@ -173,6 +178,45 @@ class TestNothingReachesMusic(unittest.TestCase):
 
         self.assertIn("Chrome", controller.play_pause())
         self.assertEqual(controller.keyed, [4242])
+
+
+class TestNoLetterIntoATextBox(unittest.TestCase):
+    """The letter lands wherever the browser's keyboard focus is.
+
+    Reported twice as a fist typing k.  The letter is the only safe way
+    to reach a player -- the system media key opens Music -- so it stays,
+    and the focus is asked about first: Accessibility says what element
+    has the keyboard, and a text field refuses the letter rather than
+    receiving it.
+    """
+
+    def test_focus_in_a_text_box_refuses_rather_than_types(self):
+        controller = FakeMac(running={"Google Chrome"},
+                             target="Google Chrome")
+        controller.focus_in_text_box = True
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+        self.assertEqual(controller.keyed, [], "the letter was typed anyway")
+        self.assertEqual(controller.media_keys, [])
+
+    def test_focus_anywhere_else_gets_the_letter(self):
+        controller = FakeMac(running={"Google Chrome"},
+                             target="Google Chrome")
+
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242])
+
+    def test_not_being_able_to_tell_sends_the_letter(self):
+        """The real query answers False on any error, including the app
+        having no focused element to report.  The guard is for a text box
+        known to be there; "cannot tell" keeps today's behaviour."""
+
+        from control.backends import macos
+
+        self.assertFalse(macos._focus_is_a_text_box(99999999))
 
 
 class TestPlayPauseTakesWhicheverRouteIsSafe(unittest.TestCase):

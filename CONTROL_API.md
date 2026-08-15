@@ -84,9 +84,16 @@ what paused it — CoreAudio is asked. It is a message to the system rather than
 to a player, and the system answers one with nothing playing by opening Music.
 With nothing to pause, PLAY_PAUSE says so instead.
 
-`browser_play_key` can still be set to `"k"` or `"space"` to force a site
-shortcut, but a site shortcut lands wherever the keyboard focus is — a search
-box gets a literal `k`.
+`browser_play_key` is `"k"` by default — the site shortcut, sent to the browser
+and nowhere else. A shortcut is a letter, and a letter lands wherever the
+browser's keyboard focus is, so before sending it SARV asks Accessibility what
+element holds the keyboard: focus in a text field refuses the gesture with a
+message rather than typing into it. Click the video and fist again.
+
+`"media"` sends the keyboard's own play/pause key instead. It is not the
+default because it is a message to the system rather than to a player: with
+the now-playing role unclaimed, macOS answers it by opening Music, which then
+holds that role and takes every media key afterwards.
 
 macOS matches the app name; Windows matches any part of the window title (so
 `"YouTube"` works). The keys are then delivered to that app whether or not it
