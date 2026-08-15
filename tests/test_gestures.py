@@ -1287,6 +1287,18 @@ class TestTwoFingersSurvivesAMisread(GestureTestCase):
     def two(self, ring=CURLED, pinky=CURLED):
         return make_hand(EXTENDED, EXTENDED, ring, pinky)
 
+    def frame(self, hand):
+        """One frame, taken as the app takes it: read once, then asked.
+
+        A test that drove pose_kind alone used to feed the memory by
+        accident, which is the double-counting that made five readings
+        cover under two frames.
+        """
+
+        gestures.observe(hand)
+
+        return gestures.pose_kind(hand)
+
     def test_the_plain_pose(self):
         self.assertEqual(gestures.classify(self.two(), HAND), "TWO_FINGER")
         self.assertIsNotNone(gestures.pose_kind(self.two()))
@@ -1301,12 +1313,12 @@ class TestTwoFingersSurvivesAMisread(GestureTestCase):
         """
 
         for _ in range(6):
-            gestures.pose_kind(self.two())
+            self.frame(self.two())
 
         for _ in range(2):
-            self.assertIsNotNone(gestures.pose_kind(self.two(ring=EXTENDED)))
+            self.assertIsNotNone(self.frame(self.two(ring=EXTENDED)))
 
-        self.assertIsNotNone(gestures.pose_kind(self.two()))
+        self.assertIsNotNone(self.frame(self.two()))
 
     def test_a_finger_that_stays_out_is_believed(self):
         """And this is the same reading that does not stop: three fingers.
@@ -1316,12 +1328,12 @@ class TestTwoFingersSurvivesAMisread(GestureTestCase):
         """
 
         for _ in range(6):
-            gestures.pose_kind(self.two())
+            self.frame(self.two())
 
         for _ in range(4):
-            gestures.pose_kind(self.two(ring=EXTENDED))
+            self.frame(self.two(ring=EXTENDED))
 
-        self.assertIsNone(gestures.pose_kind(self.two(ring=EXTENDED)))
+        self.assertIsNone(self.frame(self.two(ring=EXTENDED)))
 
     def test_both_being_out_is_a_different_hand(self):
         """Where the line still is.  Four fingers out is an open hand,

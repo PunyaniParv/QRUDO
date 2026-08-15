@@ -28,17 +28,28 @@ def reset():
     _fingers.clear()
 
 
-def _fingers_out(hand):
-    """Which fingers are out, steadied against a finger on the line.
+def observe(hand):
+    """Take this frame's reading of every finger.  Once per frame.
 
-    Every pose here is a statement about which fingers are out, so a
-    single finger flickering is a pose flickering.  Asked through the
-    memory rather than measured afresh each frame, so one near the
-    threshold settles on an answer instead of alternating.
+    detect_gesture is where a frame arrives, so that is where this is
+    done; everything else asks what has already been worked out.
     """
 
     return _fingers.update(hand_state.finger_span(hand),
                            hand_state.EXTENDED_RATIO)
+
+
+def _fingers_out(hand):
+    """Which fingers are out, steadied against a finger on the line.
+
+    Every pose here is a statement about which fingers are out, so a
+    single finger flickering is a pose flickering.  Read from the memory
+    rather than measured afresh, so one near the threshold settles on an
+    answer instead of alternating.
+    """
+
+    return _fingers.read(hand_state.finger_span(hand),
+                         hand_state.EXTENDED_RATIO)
 
 
 def _open_enough(hand):
@@ -55,8 +66,6 @@ def _open_enough(hand):
     comes down, one finger is misread, and the pose disappears in the
     middle of the movement it was arming.
     """
-
-    _fingers_out(hand)          # steadies this frame's readings
 
     steady = _fingers.steady
 
@@ -163,6 +172,8 @@ def detect_gesture(hand, handedness=None):
     two are mirror images, so which hand it is decides which is which.
     It is read from the hand itself when there is one.
     """
+
+    observe(hand)
 
     return _stabiliser.update(classify(hand, handedness))
 

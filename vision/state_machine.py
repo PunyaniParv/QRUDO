@@ -95,13 +95,20 @@ class FingerMemory:
         self.frames = frames
         self.recent = {}
         self.out = {}
+        self._last = None
 
         #: The steadied reading behind each answer, for whoever wants to
         #: ask a different question of the same finger.
         self.steady = {}
 
     def update(self, spans, threshold):
-        """Feed this frame's readings, get what each finger counts as."""
+        """Feed this frame's readings, get what each finger counts as.
+
+        Called once a frame.  Three questions are put to this in the
+        course of one -- what the pose is, what a movement could be made
+        from, and why -- and only the first of them is a new reading; see
+        ``read`` for the others.
+        """
 
         for name, span in spans.items():
             recent = self.recent.setdefault(name, deque(maxlen=self.frames))
@@ -124,10 +131,29 @@ class FingerMemory:
 
         return dict(self.out)
 
+    def read(self, spans, threshold):
+        """The answer already worked out, without counting the frame again.
+
+        Asking twice about one frame does not make it two frames.  Each
+        question was pushing the same reading in again, so five readings
+        covered under two frames of history and the steadying barely
+        steadied anything -- which is what stopped two fingers being
+        recognised.
+
+        Falls back to asking plainly when nothing has been fed yet, so
+        that anything driving the detectors directly still gets an answer.
+        """
+
+        if len(self.out) < len(spans):
+            return {name: span > threshold for name, span in spans.items()}
+
+        return dict(self.out)
+
     def clear(self):
         self.out.clear()
         self.recent.clear()
         self.steady.clear()
+        self._last = None
 
 
 class MotionHistory:
