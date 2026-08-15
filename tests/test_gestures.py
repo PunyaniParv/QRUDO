@@ -657,3 +657,170 @@ class TestVolumeOnTwoFingers(GestureTestCase):
             self.clock.tick(0.30 / 11)
 
         self.assertNotIn(result, ("SWIPE_UP", "SWIPE_DOWN"))
+
+
+class TestBringingTheWristBack(GestureTestCase):
+    """Reported: putting the wrist back counted as a second gesture.
+
+    Turning back is the same movement as turning the other way, and no
+    measurement of the movement itself separates them -- same size, same
+    speed, same steadiness, opposite sign.  What separates them is where
+    the wrist ends up: a deliberate turn leaves it somewhere new, and a
+    return puts it back where it began.
+    """
+
+    def restart(self):
+        """A fresh hand and a fresh clock, for looping over cases."""
+
+        self.setUp()
+
+    def peace(self, roll):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED,
+                         roll=math.radians(roll))
+
+    def sweep(self, start, end, seconds, frames=14):
+        """Turn the wrist from one angle to another, collecting what fires."""
+
+        fired = []
+
+        for i in range(frames):
+            roll = start + (end - start) * (i / (frames - 1))
+            got = motion.detect_swipe(self.peace(roll), HAND)
+
+            if got:
+                fired.append(got)
+
+            self.clock.tick(seconds / (frames - 1))
+
+        return fired
+
+    def there_and_back(self, out, back, pause):
+        """Hold the pose, turn, pause, and put the wrist back."""
+
+        fired = self.sweep(out, out, 0.9, 20)       # holding it, to arm
+        fired += self.sweep(out, back, 0.30)        # the turn
+        fired += self.sweep(back, back, pause, max(3, int(pause * 30)))
+        fired += self.sweep(back, out, 0.35)        # putting it back
+        fired += self.sweep(out, out, 0.8, 24)      # at rest again
+
+        return fired
+
+    def test_the_return_counts_for_nothing_one_way(self):
+        for pause in (0.2, 0.5, 1.0, 2.0, 4.0):
+            with self.subTest(paused_for=pause):
+                self.restart()
+
+                self.assertEqual(self.there_and_back(-25, 25, pause),
+                                 ["SWIPE_RIGHT"])
+
+    def test_the_return_counts_for_nothing_the_other_way(self):
+        for pause in (0.2, 0.5, 1.0, 2.0, 4.0):
+            with self.subTest(paused_for=pause):
+                self.restart()
+
+                self.assertEqual(self.there_and_back(25, -25, pause),
+                                 ["SWIPE_LEFT"])
+
+    def test_a_long_pause_does_not_make_the_turned_angle_the_resting_one(self):
+        """Where a gesture left the wrist is the one place it is not resting.
+
+        Wherever the wrist is held becomes the angle turns are judged
+        against, which it has to be -- there is no neutral to assume.  But
+        a wrist paused mid-gesture has not chosen to be there, and adopting
+        that angle is what made the way back a gesture of its own.
+        """
+
+        self.assertEqual(self.there_and_back(-25, 25, 4.0), ["SWIPE_RIGHT"])
+
+    def test_turning_again_still_counts(self):
+        """The point is to lose the return stroke, not the next gesture."""
+
+        fired = []
+
+        for _ in range(3):
+            fired += self.sweep(-25, -25, 0.9, 20)
+            fired += self.sweep(-25, 25, 0.30)
+            fired += self.sweep(25, 25, 0.4, 12)
+            fired += self.sweep(25, -25, 0.35)
+            fired += self.sweep(-25, -25, 0.8, 24)
+
+        self.assertEqual(fired, ["SWIPE_RIGHT"] * 3)
+
+    def test_turning_straight_back_out_again_counts(self):
+        """Seeking twice in a row, with no pause worth the name.
+
+        The first attempt at this waited for the hand to go still before
+        anything counted again, which loses nothing when there is a pause
+        and loses the whole of the next gesture when there is not.
+        """
+
+        fired = self.sweep(-25, -25, 0.9, 20)
+
+        for _ in range(3):
+            fired += self.sweep(-25, 25, 0.30)
+            fired += self.sweep(25, 25, 0.2, 6)
+            fired += self.sweep(25, -25, 0.35)
+            fired += self.sweep(-25, -25, 0.05, 3)
+
+        self.assertEqual(fired, ["SWIPE_RIGHT"] * 3)
+
+
+class TestAFingerOnTheLine(unittest.TestCase):
+    """A finger measured near the threshold, frame after frame.
+
+    Reported as pointing being recognised only sometimes.  Every pose here
+    is a statement about which fingers are out, so one finger crossing the
+    line and back is a pose alternating with another one -- and pointing
+    needs three fingers to stay down at once, which made it the worst
+    affected.
+    """
+
+    def setUp(self):
+        from vision.state_machine import FingerMemory
+
+        self.memory = FingerMemory(band=0.07)
+
+    def out(self, span, threshold=0.82):
+        return self.memory.update({"index": span}, threshold)["index"]
+
+    def test_with_nothing_remembered_it_simply_asks(self):
+        self.assertTrue(self.out(0.90))
+
+    def test_a_finger_clearly_down_reads_as_down(self):
+        self.assertFalse(self.out(0.40))
+
+    def test_wobble_around_the_line_does_not_flip_it(self):
+        """The reading moves; the hand does not."""
+
+        self.out(0.78)                       # settles as down
+
+        for span in (0.80, 0.79, 0.81, 0.78, 0.80):
+            self.assertFalse(self.out(span), span)
+
+    def test_a_finger_that_is_out_stays_out_through_a_dip(self):
+        self.out(0.95)
+
+        for span in (0.84, 0.80, 0.78, 0.81):
+            self.assertTrue(self.out(span), span)
+
+    def test_a_real_fold_still_registers_at_once(self):
+        """Only the wobble is refused, not the movement."""
+
+        self.out(0.95)
+
+        self.assertFalse(self.out(0.60))
+
+    def test_a_real_straightening_registers_at_once(self):
+        self.out(0.40)
+
+        self.assertTrue(self.out(0.95))
+
+    def test_forgetting_starts_it_over(self):
+        self.out(0.95)
+        self.memory.clear()
+
+        self.assertFalse(self.out(0.80))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

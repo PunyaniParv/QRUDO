@@ -188,6 +188,39 @@ def _height(window, screen, mean_scale, moment):
     return lift, speed
 
 
+def _neutral_aim(aim, turn, moment):
+    """Keep track of the aim a turn is judged against.
+
+    Wherever the wrist is held becomes it, the same way the resting height
+    works for the vertical gesture and for the same reason: there is no
+    fixed neutral to assume, because it depends on how someone is sitting.
+
+    Settling somewhere takes a full second -- and not at all while a turn
+    is outstanding.  There is always a pause at the end of a turn, and
+    adopting the angle it left the wrist at makes bringing the wrist back
+    a turn in its own right, which is the very thing this is here to
+    prevent.  A wrist held where a gesture put it has not chosen to rest
+    there; that is the one place it is certain not to have.
+    """
+
+    if _state.neutral_aim is None:
+        _state.neutral_aim = aim
+
+    if _state.turned:
+        _state.aim_still_since = None
+
+        return
+
+    if abs(turn) < SWIPE_QUIET:
+        if _state.aim_still_since is None:
+            _state.aim_still_since = moment
+
+        if moment - _state.aim_still_since >= REST_DWELL:
+            _state.neutral_aim = aim
+    else:
+        _state.aim_still_since = None
+
+
 def detect_swipe(hand, handedness=None):
     """Detect a two-finger swipe.  ``handedness`` is accepted and ignored."""
 
@@ -273,11 +306,38 @@ def detect_swipe(hand, handedness=None):
         peak_agree=round(_peak("agree", turn_agree, moment), 2),
     )
 
+    aim = window[-1][1]["aim"]
+
+    _neutral_aim(aim, turn, moment)
+
+    # Back near the aim it started from: ready to count again, either way.
+    #
+    # The return stroke is forgotten as it lands, rather than merely
+    # being allowed to end.  It is sitting in the window at full size at
+    # the moment the flag clears, so clearing the flag and then asking
+    # the usual question of the usual window is asking whether the return
+    # was a turn -- and it was, so it fires.  Emptying the window is what
+    # is wanted here and waiting for the hand to go quiet is not: quiet
+    # never comes if the next gesture follows straight on, and that one
+    # would be swallowed instead.  What is left of the return is by
+    # definition small, since this is the moment it arrived.
+    if _state.turned and abs(aim - _state.neutral_aim) < SWIPE_TURN * 0.5:
+        _state.turned = False
+        _state.history.clear()
+
+        return None
+
     turned = (
         _state.armed_kind == gestures.POSE_TWO_FINGER
         and abs(turn) >= SWIPE_TURN
         and turn_speed >= SWIPE_TURN_SPEED
         and turn_agree >= SWIPE_CONSISTENCY
+        # Turning back is the same movement as turning the other way, and
+        # no measurement of the movement itself can separate them.  What
+        # separates them is where it ends up: a deliberate turn leaves the
+        # aim somewhere new, and coming back returns it to where it began.
+        # So one turn is allowed per departure from the resting aim.
+        and not _state.turned
     )
 
     if _state.is_cooling(moment):

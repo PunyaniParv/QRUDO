@@ -14,15 +14,30 @@ counted.
 from __future__ import annotations
 
 from . import hand_state
-from .state_machine import GestureStabiliser
+from .state_machine import FingerMemory, GestureStabiliser
 
 POSE_TWO_FINGER = "two_finger"  # index and middle out: the pose a swipe is made from
 
 _stabiliser = GestureStabiliser()
+_fingers = FingerMemory()
 
 
 def reset():
     _stabiliser.clear()
+    _fingers.clear()
+
+
+def _fingers_out(hand):
+    """Which fingers are out, steadied against a finger on the line.
+
+    Every pose here is a statement about which fingers are out, so a
+    single finger flickering is a pose flickering.  Asked through the
+    memory rather than measured afresh each frame, so one near the
+    threshold settles on an answer instead of alternating.
+    """
+
+    return _fingers.update(hand_state.finger_span(hand),
+                           hand_state.EXTENDED_RATIO)
 
 
 def classify(hand, handedness=None):
@@ -46,7 +61,7 @@ def classify(hand, handedness=None):
     if hand_state.is_clenched(screen):
         return "UNKNOWN" if from_behind else "FIST"
 
-    fingers = hand_state.fingers_out(hand)
+    fingers = _fingers_out(hand)
     extended = sum(fingers.values())
 
     if extended == 0:
@@ -94,7 +109,7 @@ def explain(hand, handedness=None):
     shape = hand_state.shape_of(hand)
     handedness = getattr(hand, "handedness", handedness)
 
-    fingers = hand_state.fingers_out(hand)
+    fingers = _fingers_out(hand)
     out = [name for name, is_out in fingers.items() if is_out]
 
     reaches = hand_state.reach_scores(screen)
@@ -144,7 +159,7 @@ def pose_kind(hand):
     brightness already was.
     """
 
-    fingers = hand_state.fingers_out(hand)
+    fingers = _fingers_out(hand)
 
     two_out = (
         fingers["index"]

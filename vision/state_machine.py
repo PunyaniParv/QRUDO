@@ -47,6 +47,48 @@ class GestureStabiliser:
         self.history.clear()
 
 
+#: How far a finger has to fall back before it counts as down again.
+#: Roughly the width of the wobble MediaPipe puts on a finger that is
+#: half hidden behind the hand, which is every finger that is folded.
+FINGER_BAND = 0.07
+
+
+class FingerMemory:
+    """Which fingers are out, refusing to change its mind over nothing.
+
+    A finger held near the line crosses it and back several times a
+    second, and that is the measurement moving rather than the hand.  It
+    costs whichever pose needs that finger to stay put: pointing needs
+    three of them down at once, so it was the one that fumbled.
+
+    Once a finger is called out it stays out until it is clearly in, and
+    the other way round.  A real change clears the band in one frame and
+    is not delayed; only the wobble is refused.
+    """
+
+    def __init__(self, band=FINGER_BAND):
+        self.band = band
+        self.out = {}
+
+    def update(self, spans, threshold):
+        """Feed this frame's readings, get what each finger counts as."""
+
+        for name, span in spans.items():
+            was = self.out.get(name)
+
+            # Nothing remembered yet: the plain question, no band.
+            if was is None:
+                self.out[name] = span > threshold
+            else:
+                self.out[name] = (span > threshold - self.band if was
+                                  else span > threshold)
+
+        return dict(self.out)
+
+    def clear(self):
+        self.out.clear()
+
+
 class MotionHistory:
     """A short rolling record of where the hand has been.
 
@@ -102,6 +144,13 @@ class SwipeState:
         self.neutral_y: float | None = None
         self.still_since: float | None = None
         self.raised = False
+
+        # The same three for the sideways one: the aim it is judged
+        # against, how long it has pointed there, and whether it has
+        # already turned away from it and not yet come back.
+        self.neutral_aim: float | None = None
+        self.aim_still_since: float | None = None
+        self.turned = False
         self._seen_kind = None
         self._seen_since = 0.0
         self._last_pose_at = 0.0
@@ -163,6 +212,7 @@ class SwipeState:
         """
 
         self.settling = True
+        self.turned = True
         self.history.clear()
         self.armed_until = 0.0
         self.armed_kind = None
@@ -177,6 +227,9 @@ class SwipeState:
         self.neutral_y = None
         self.still_since = None
         self.raised = False
+        self.neutral_aim = None
+        self.aim_still_since = None
+        self.turned = False
         self._seen_kind = None
 
 

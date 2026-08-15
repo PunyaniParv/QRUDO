@@ -72,7 +72,13 @@
       "Bash(awk '{print \"  pid\", $2, \"cpu\", $3\"%\", \"started\", $9, \"  \", substr\\($0, index\\($0,$11\\), 60\\)}')",
       "Bash(.venv/bin/python main.py --command FORWARD)",
       "Bash(.venv/bin/python -m pyright .)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(sed -n '/^def classify/,/^def pose_kind/p' vision/gestures.py)",
+      "Bash(sed -n '/^def detect_fingers/,/^def is_open/p' vision/hand_state.py)",
+      "Bash(sed -n '/^def _height/,/^def _peak/p' vision/motion.py)",
+      "Bash(sed -n '/class SwipeState/,/def note_pose/p' vision/state_machine.py)",
+      "Bash(../.venv/bin/python -m unittest test_gestures.TestGunSwipe.test_swipe_allowed_again_after_cooldown -v)",
+      "Bash(../.venv/bin/python -)"
     ]
   }
 }

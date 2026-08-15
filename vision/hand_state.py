@@ -283,19 +283,34 @@ def detect_fingers(hand_landmarks):
     }
 
 
-def fingers_out(hand):
-    """Which fingers are out, asking both views of the hand.
+def finger_span(hand):
+    """How straight each finger is, taking the better of the two views.
 
-    A finger counts if either says so.  The screen view is exact for a
-    hand held flat and hopeless for one aimed at the camera; the world
-    view is the reverse.  Requiring both to agree loses real gestures --
-    which is what stopped two fingers registering at all.
+    The screen view is exact for a hand held flat and hopeless for one
+    aimed at the camera; the world view is the reverse.  Requiring both
+    to agree loses real gestures -- which is what stopped two fingers
+    registering at all -- so the larger reading wins.
+
+    A number rather than a yes or no, because whoever asks may want to
+    know how near the line it is.  ``fingers_out`` is the same thing
+    thresholded.
     """
 
-    shape = detect_fingers(shape_of(hand))
-    screen = detect_fingers(screen_of(hand))
+    shape = shape_of(hand)
+    screen = screen_of(hand)
 
-    return {name: shape[name] or screen[name] for name in FINGERS}
+    return {
+        name: max(finger_extension(shape, tip, pip, mcp),
+                  finger_extension(screen, tip, pip, mcp))
+        for name, (tip, pip, mcp) in FINGERS.items()
+    }
+
+
+def fingers_out(hand):
+    """Which fingers are out, asking both views of the hand."""
+
+    return {name: span > EXTENDED_RATIO
+            for name, span in finger_span(hand).items()}
 
 
 def is_open(hand_landmarks):
