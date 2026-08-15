@@ -35,6 +35,7 @@ class Calibration:
     extended_ratio: float
     open_ratio: float
     fist_reach: float
+    fist_curl: float
     swipe_turn: float
     swipe_turn_speed: float
     swipe_lift: float
@@ -147,6 +148,7 @@ class Calibration:
         "extended_ratio": (0.60, 0.95),
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
+        "fist_curl": (0.35, 0.75),
         "swipe_lift": (0.25, 1.20),
         "swipe_lift_speed": (0.40, 4.50),
         "crosstalk": (0.15, 0.95),
@@ -185,6 +187,7 @@ class Calibration:
         hand_state.EXTENDED_RATIO = self.extended_ratio
         hand_state.OPEN_RATIO = self.open_ratio
         hand_state.FIST_REACH = self.fist_reach
+        hand_state.FIST_CURL = self.fist_curl
         hand_state.MIN_HAND_ON_SCREEN = self.min_hand_on_screen
 
         motion.SWIPE_TURN = self.swipe_turn
@@ -197,7 +200,8 @@ class Calibration:
         return [
             f"finger out above      {self.extended_ratio:.2f}",
             f"hand open above       {self.open_ratio:.2f}",
-            f"fist below            {self.fist_reach:.2f}",
+            f"fist below            {self.fist_reach:.2f} reaching,"
+            f" or {self.fist_curl:.2f} curled",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
             f"hand raised           {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
             f"sideways vs upright   told apart below {self.crosstalk:.2f}",
@@ -493,6 +497,18 @@ class Profile:
         if not ok:
             warnings.append("could not tell a fist from a resting hand")
 
+        # The same question asked of how curled the fingers are, which is
+        # the measurement that survives a fist made casually: where the
+        # tips end up depends on how hard the hand is squeezed, and how
+        # folded a finger is barely does.
+        fist_curl, ok = between(
+            max(self.among(["fist"], self.HIGH), default=0.0),
+            min(self.among(["rest"], self.LOW), default=1.0),
+            current.fist_curl, least=0.10)
+
+        if not ok:
+            warnings.append("could not tell a closed hand from a slack one")
+
         turns = self.moves_like("turn")
         lifts = self.moves_like("raise", "lower", "lift")
 
@@ -547,6 +563,7 @@ class Profile:
             extended_ratio=round(extended_ratio, 3),
             open_ratio=round(open_ratio, 3),
             fist_reach=round(fist_reach, 3),
+            fist_curl=round(fist_curl, 3),
             swipe_turn=round(swipe_turn, 3),
             swipe_turn_speed=round(swipe_turn_speed, 3),
             swipe_lift=round(swipe_lift, 3),
@@ -668,6 +685,7 @@ def current():
         extended_ratio=hand_state.EXTENDED_RATIO,
         open_ratio=hand_state.OPEN_RATIO,
         fist_reach=hand_state.FIST_REACH,
+        fist_curl=hand_state.FIST_CURL,
         swipe_turn=motion.SWIPE_TURN,
         swipe_turn_speed=motion.SWIPE_TURN_SPEED,
         swipe_lift=motion.SWIPE_LIFT,

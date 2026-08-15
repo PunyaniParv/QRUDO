@@ -53,6 +53,17 @@ EXTENDED_RATIO = 0.82
 #: when a closed hand hides the fingers themselves.
 FIST_REACH = 1.15
 
+#: The other way of asking the same question: how curled the fingers
+#: themselves are.  A fist answers to both, and it takes only one.
+#:
+#: Reach alone was the whole test, and reach alone is a narrow thing to
+#: rest a gesture on.  It is measured from the fingertips, which are the
+#: landmarks a closed hand hides -- and it puts a tight fist and a loose
+#: one far apart, though both are plainly fists, because how far the tips
+#: end up depends on how hard the hand is squeezed.  Curl barely moves
+#: between the two: a folded finger is folded.
+FIST_CURL = 0.55
+
 #: How close the thumb and fingertip must come to count as a pinch, as a
 #: fraction of the palm's length.  Measured on the synthetic hands:
 #: pinched 0.24, a closed fist 0.41, and anything open 0.81.  Set nearer
@@ -322,7 +333,7 @@ def is_open(hand_landmarks):
     )
 
 
-def is_clenched(hand_landmarks):
+def is_clenched(hand):
     """Whether the hand is shut, not merely un-straight.
 
     The index finger has to be in, and two of the other three.  Requiring
@@ -330,11 +341,23 @@ def is_clenched(hand_landmarks):
     closed hand is often -- three of them are half hidden behind it.  The
     index is not optional because that is what separates a fist from a
     pinch: pinching holds it out to meet the thumb.
+
+    A finger is in if either measurement says so.  Where its tip ended up
+    is the sharper answer when the hand is squeezed shut; how curled the
+    finger is holds up better when it is not, and does not depend on the
+    fingertip, which is the landmark a closed hand hides.  Asking both was
+    what let a fist measured from a hard-clenched calibration go on
+    recognising a fist made casually -- reach put those two a long way
+    apart, and curl barely tells them apart at all.
     """
 
+    screen = screen_of(hand)
+    shape = shape_of(hand)
+
     closed = {
-        name: finger_reach(hand_landmarks, tip, mcp) < FIST_REACH
-        for name, (tip, _, mcp) in FINGERS.items()
+        name: (finger_reach(screen, tip, mcp) < FIST_REACH
+               or finger_extension(shape, tip, pip, mcp) < FIST_CURL)
+        for name, (tip, pip, mcp) in FINGERS.items()
     }
 
     if not closed["index"]:

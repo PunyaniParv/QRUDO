@@ -50,7 +50,7 @@ def two_fingers(out=0.95, down=0.78, reach=1.55, scale=0.15, count=20):
             for _ in range(count)]
 
 
-DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20, 0.60, 0.035)
+DEFAULTS = Calibration(0.82, 0.90, 1.15, 0.55, 0.30, 0.80, 0.60, 1.20, 0.60, 0.035)
 
 
 class TestTheReadingsAreKept(unittest.TestCase):
@@ -132,7 +132,7 @@ class TestTheReadingsAreKept(unittest.TestCase):
         path, _ = self.saved()
         profile = Profile.load(path)
 
-        loose = Calibration(0.50, 0.50, 1.00, 0.10, 0.10, 0.10, 0.10, 0.60, 0.035)
+        loose = Calibration(0.50, 0.50, 1.00, 0.55, 0.10, 0.10, 0.10, 0.10, 0.60, 0.035)
         derived, _ = profile.derive(loose)
 
         self.assertGreater(derived.extended_ratio, 0.78)
@@ -376,7 +376,7 @@ class TestApplying(unittest.TestCase):
         self.before.apply()
 
     def test_apply_moves_the_thresholds_the_detectors_read(self):
-        Calibration(0.7, 0.88, 1.3, 0.2, 0.5, 0.5, 1.0, 0.60, 0.02).apply()
+        Calibration(0.7, 0.88, 1.3, 0.55, 0.2, 0.5, 0.5, 1.0, 0.60, 0.02).apply()
 
         self.assertEqual(hand_state.EXTENDED_RATIO, 0.7)
         self.assertEqual(hand_state.FIST_REACH, 1.3)
@@ -504,7 +504,7 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
     """
 
     def test_a_pinch_threshold_near_an_open_hand_is_pulled_in(self):
-        wild = Calibration(0.82, 0.90, 1.15, 0.30, 0.80, 0.60, 1.20, 0.60, 0.90)
+        wild = Calibration(0.82, 0.90, 1.15, 0.55, 0.30, 0.80, 0.60, 1.20, 0.60, 0.90)
 
         kept, pulled = wild.sensible()
 
@@ -512,7 +512,7 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
         self.assertTrue(any("min_hand_on_screen" in note for note in pulled))
 
     def test_sensible_values_are_left_alone(self):
-        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.60, 1.20, 0.60, 0.030)
+        fine = Calibration(0.80, 0.92, 1.10, 0.55, 0.30, 0.80, 0.60, 1.20, 0.60, 0.030)
 
         kept, pulled = fine.sensible()
 
@@ -534,7 +534,7 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
 
         from vision import hand_state
 
-        close_up = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.60, 1.20, 0.60, 0.0964)
+        close_up = Calibration(0.80, 0.92, 1.10, 0.55, 0.30, 0.80, 0.60, 1.20, 0.60, 0.0964)
 
         kept, pulled = close_up.sensible()
 

@@ -59,7 +59,7 @@ def classify(hand, handedness=None):
 
     # The fist first: every finger shut is the least ambiguous thing a
     # hand can be, so nothing else has to work around it.
-    if hand_state.is_clenched(screen):
+    if hand_state.is_clenched(hand):
         return "UNKNOWN" if from_behind else "FIST"
 
     fingers = _fingers_out(hand)
@@ -113,7 +113,7 @@ def explain(hand, handedness=None):
     if hand_state.is_back_of_hand(screen, handedness):
         return "back of hand -- fist and open hand are not read from behind"
 
-    if hand_state.is_clenched(screen):
+    if hand_state.is_clenched(hand):
         return "shut -> FIST"
 
     closed = [name for name, reach in reaches.items()

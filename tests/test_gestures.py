@@ -751,6 +751,87 @@ class TestTheFourDirectionsAreDistinct(GestureTestCase):
         self.assertNotIn(fired, ("SWIPE_UP", "SWIPE_DOWN"))
 
 
+class TestAFistIsAFistHoweverItIsMade(GestureTestCase):
+    """Two measurements, either of which closes a finger.
+
+    Reported as the fist not being recognised from the side.  It was not
+    being recognised from anywhere: the calibration had been done with a
+    hard clench, which put the reach line at 0.99, and an ordinary fist
+    reaches 1.05.  The side view was never the difference -- reach reads
+    the same at every angle, which is what it was built to do.
+
+    What separates a hard fist from a casual one is exactly what reach
+    measures: how far the fingertips end up from the wrist.  How curled
+    each finger is barely moves between them, so it is asked as well.
+    """
+
+    def fist(self, **view):
+        return make_hand(CURLED, CURLED, CURLED, CURLED, **view)
+
+    def tight(self):
+        """The reach line a hard-clenched calibration produces."""
+
+        hand_state.FIST_REACH = 0.99
+
+    def setUp(self):
+        super().setUp()
+        self.was = (hand_state.FIST_REACH, hand_state.FIST_CURL)
+
+    def tearDown(self):
+        hand_state.FIST_REACH, hand_state.FIST_CURL = self.was
+        super().tearDown()
+
+    def test_an_ordinary_fist_against_a_hard_clenched_line(self):
+        """The reported failure, and the case that matters."""
+
+        self.tight()
+
+        self.assertEqual(self.settle(self.fist()), "FIST")
+
+    def test_from_every_angle_but_behind(self):
+        self.tight()
+
+        for degrees in (0, 20, 45, 70, 90, -45, -90):
+            with self.subTest(turned=degrees):
+                self.assertEqual(
+                    self.settle(self.fist(yaw=math.radians(degrees))), "FIST")
+
+    def test_the_back_of_a_hand_is_still_not_a_fist(self):
+        """What the camera sees of someone resting a hand on a desk."""
+
+        self.tight()
+
+        self.assertNotEqual(
+            self.settle(self.fist(yaw=math.radians(180))), "FIST")
+
+    def test_a_resting_hand_is_still_not_a_fist(self):
+        """The curl line has to stay above a fist and below a slack hand,
+        or this buys a false play/pause every time a hand lies still."""
+
+        self.tight()
+
+        self.assertNotEqual(
+            self.settle(make_hand(LOOSE, LOOSE, LOOSE, LOOSE)), "FIST")
+
+    def test_nor_are_the_poses_that_hold_fingers_out(self):
+        self.tight()
+
+        for name, fingers in (
+            ("two fingers", (EXTENDED, EXTENDED, CURLED, CURLED)),
+            ("point", (EXTENDED, CURLED, CURLED, CURLED)),
+            ("open palm", (EXTENDED, EXTENDED, EXTENDED, EXTENDED)),
+        ):
+            with self.subTest(pose=name):
+                self.assertNotEqual(self.settle(make_hand(*fingers)), "FIST")
+
+    def test_reach_alone_still_finds_a_tight_fist(self):
+        """The older route has not been replaced, only joined."""
+
+        hand_state.FIST_CURL = 0.0        # curl can answer for nothing
+
+        self.assertEqual(self.settle(self.fist()), "FIST")
+
+
 class TestEveryPoseAtADistance(GestureTestCase):
     """The same hands, shrunk, with landmark error added.
 
