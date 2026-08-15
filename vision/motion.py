@@ -33,6 +33,15 @@ SWIPE_TURN = 0.30         # how far the aim must swing
 SWIPE_TURN_SPEED = 0.80   # per second
 SWIPE_CONSISTENCY = 0.65  # how directly the motion got where it ended up
 SWIPE_MIN_SAMPLES = 3     # a fast flick is only a few frames long
+
+#: How many frames a movement must be visible across before it is
+#: believed.  A hand cannot cross a gesture's worth of ground between one
+#: frame and the next; a misread landmark can, and did -- it arrives as a
+#: single enormous step, which is fast by any measure and perfectly
+#: direct, because two points cannot disagree about a direction.  Three
+#: samples is a tenth of a second at thirty frames: well inside any real
+#: gesture, and outside anything one bad frame can fake.
+MOVING_SAMPLES = 3
 ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
 SWIPE_COOLDOWN = 0.60
 SWIPE_QUIET = 0.12        # how still the hand must go before the next one
@@ -142,6 +151,12 @@ def measure(times, values):
         if abs(values[-1] - values[i]) > edge:
             last = min(len(values) - 1, i + 1)
             break
+
+    # Too few frames to be a hand moving.  Reported as no speed and no
+    # directness rather than as a very fast, very clean gesture, which is
+    # what a single bad frame otherwise looks like to both measures.
+    if last - first + 1 < MOVING_SAMPLES:
+        return change, 0.0, 0.0
 
     elapsed = times[last] - times[first]
 

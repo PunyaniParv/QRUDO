@@ -668,6 +668,74 @@ class TestVolumeOnTwoFingers(GestureTestCase):
         self.assertNotIn(result, ("SWIPE_UP", "SWIPE_DOWN"))
 
 
+class TestOneFrameCannotBeAGesture(GestureTestCase):
+    """A hand cannot cross a gesture's worth of ground in a single frame.
+
+    A misread landmark can, and it arrives looking like the best gesture
+    the app has ever seen: one enormous step, so fast by any measure, and
+    perfectly direct, because two points cannot disagree about a
+    direction.  Speed and straightness both vouch for it.
+    """
+
+    def peace(self, roll=0.0, cy=0.55):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy,
+                         roll=math.radians(roll))
+
+    def play(self, rolls=None, heights=None, seconds=0.30):
+        count = len(rolls or heights)
+
+        for _ in range(20):
+            motion.detect_swipe(
+                self.peace((rolls or [0.0])[0], (heights or [0.55])[0]), HAND)
+            self.clock.tick(0.045)
+
+        fired = None
+
+        for i in range(count):
+            fired = fired or motion.detect_swipe(
+                self.peace(rolls[i] if rolls else 0.0,
+                           heights[i] if heights else 0.55), HAND)
+            self.clock.tick(seconds / max(1, count - 1))
+
+        return fired
+
+    def test_a_single_bad_frame_sideways_fires_nothing(self):
+        self.assertIsNone(
+            self.play(rolls=[-25, -25, 25, -25, -25, -25], seconds=0.20))
+
+    def test_a_single_bad_frame_vertically_fires_nothing(self):
+        self.assertIsNone(
+            self.play(heights=[0.55, 0.55, 0.30, 0.55, 0.55, 0.55],
+                      seconds=0.20))
+
+    def test_a_waggle_that_happens_to_end_turned_fires_nothing(self):
+        """Its first leg was one frame wide, and that leg was what fired."""
+
+        self.assertIsNone(
+            self.play(rolls=[-25, 10, -20, 12, -18, 15, 22], seconds=0.40))
+
+    def test_a_quick_flick_still_counts(self):
+        """The point is to refuse one frame, not to refuse speed.
+
+        Six frames in a sixth of a second is about as fast as a wrist
+        goes, and it has to keep working.
+        """
+
+        rolls = [-25 + 50 * i / 5 for i in range(6)]
+
+        self.assertEqual(self.play(rolls=rolls, seconds=0.16), "SWIPE_RIGHT")
+
+    def test_an_ordinary_turn_still_counts(self):
+        rolls = [-25 + 50 * i / 13 for i in range(14)]
+
+        self.assertEqual(self.play(rolls=rolls), "SWIPE_RIGHT")
+
+    def test_an_ordinary_raise_still_counts(self):
+        heights = [0.55 - 0.20 * i / 13 for i in range(14)]
+
+        self.assertEqual(self.play(heights=heights, seconds=0.35), "SWIPE_UP")
+
+
 class TestTheFourDirectionsAreDistinct(GestureTestCase):
     """Up, down, left and right, told apart on the same pose.
 
