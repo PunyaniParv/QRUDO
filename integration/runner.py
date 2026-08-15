@@ -41,7 +41,7 @@ def run(engine, args, tuning=False):
     import vision
     from ui import overlay
 
-    router = GestureRouter()
+    router = GestureRouter(cooldown=engine.config.gesture_cooldown_seconds)
     presence = Presence()
     frame_times = deque(maxlen=30)
     last_result = None

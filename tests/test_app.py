@@ -29,10 +29,49 @@ class TestSwipes(unittest.TestCase):
         self.assertIs(self.router.update(swipe="SWIPE_RIGHT"), Command.FORWARD)
 
     def test_swipes_repeat(self):
-        """Two swipes in a row are two seeks; the cooldown lives lower down."""
+        """Two swipes in a row are two seeks, once the cooldown has passed.
 
-        self.assertIsNotNone(self.router.update(swipe="SWIPE_LEFT"))
-        self.assertIsNotNone(self.router.update(swipe="SWIPE_LEFT"))
+        It used to live lower down, in the detector, where the four
+        directions share one.  It is here as well now, so that a gesture
+        added to the table inherits it rather than depending on which
+        route it happened to arrive by.
+        """
+
+        self.assertIsNotNone(self.router.update(swipe="SWIPE_LEFT",
+                                               now=1000.0))
+        self.assertIsNone(self.router.update(swipe="SWIPE_LEFT", now=1000.2),
+                          "the second came too soon after the first")
+        self.assertIsNotNone(self.router.update(swipe="SWIPE_LEFT",
+                                                now=1001.0))
+
+    def test_one_direction_holds_off_the_others(self):
+        """Which is what "global" means: a hand settling after a raise
+        passes through angles that read as a turn."""
+
+        self.assertIsNotNone(self.router.update(swipe="SWIPE_UP", now=1000.0))
+
+        for swipe in ("SWIPE_LEFT", "SWIPE_DOWN", "PALM_UP"):
+            with self.subTest(then=swipe):
+                self.assertIsNone(
+                    self.router.update(swipe=swipe, now=1000.2))
+
+    def test_a_pose_is_held_off_too(self):
+        self.assertIsNotNone(self.router.update(swipe="SWIPE_UP", now=1000.0))
+
+        self.assertIsNone(self.router.update("FIST", now=1000.2))
+
+    def test_and_a_swipe_after_a_pose(self):
+        self.assertIsNotNone(self.router.update("FIST", now=1000.0))
+
+        self.assertIsNone(self.router.update(swipe="SWIPE_UP", now=1000.2))
+
+    def test_the_hand_leaving_clears_it(self):
+        """A hand that left and came back is not one movement."""
+
+        self.assertIsNotNone(self.router.update(swipe="SWIPE_UP", now=1000.0))
+        self.router.forget()
+
+        self.assertIsNotNone(self.router.update(swipe="SWIPE_UP", now=1000.1))
 
 
 class TestHeldPoses(unittest.TestCase):
@@ -202,10 +241,14 @@ class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
         self.assertIsNotNone(self.fire("FIST"))
 
     def test_different_poses_are_unaffected_by_each_other(self):
+        """Each keeps its own repeat guard.  They still wait for the
+        cooldown between them, as everything does -- two different poses
+        a tenth of a second apart is a flicker, not two gestures."""
+
         router = GestureRouter(poses={"FIST": Command.PLAY_PAUSE,
                                       "POINT": Command.VOLUME_UP})
         self.assertIsNotNone(router.update("FIST", now=1000.0))
-        self.assertIsNotNone(router.update("POINT", now=1000.1))
+        self.assertIsNotNone(router.update("POINT", now=1001.0))
 
 
 class TestTheOverlayIsWhole(unittest.TestCase):

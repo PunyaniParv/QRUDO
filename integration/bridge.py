@@ -12,6 +12,19 @@ import time
 
 from control import Command
 
+#: How soon any command may follow any other, whichever gestures they
+#: came from.  One movement crosses many frames and a hand settling after
+#: one gesture passes through others, so something has to say that a
+#: person who just did a thing is not immediately doing another.
+#:
+#: It lives here, where gestures become commands, rather than in the
+#: detector.  The detector has its own -- one shared by the four
+#: directions, which is why they have never trodden on each other -- but
+#: a gesture added to the table below inherits nothing from it unless it
+#: happens to arrive by the same route.  Here, everything inherits it,
+#: including whatever is added next.
+GLOBAL_COOLDOWN = 0.6
+
 #: How soon the same held pose may fire again.  Making a fist twice in
 #: under a second is not something anyone does deliberately, and a
 #: misreading that flickers to another gesture and back is: the flicker
@@ -62,24 +75,34 @@ class GestureRouter:
     not what changed.
     """
 
-    def __init__(self, poses=None, swipes=None, repeat=POSE_REPEAT):
+    def __init__(self, poses=None, swipes=None, repeat=POSE_REPEAT,
+                 cooldown=GLOBAL_COOLDOWN):
         self.poses = POSE_COMMANDS if poses is None else poses
         self.swipes = SWIPE_COMMANDS if swipes is None else swipes
         self.repeat = repeat
+        self.cooldown = cooldown
         self._held = None
         self._fired_at = {}
+        self._last_command_at = -1e9
 
     def update(self, gesture=None, swipe=None, now=None):
         """Return the command this frame should run, or None."""
 
         now = time.time() if now is None else now
 
+        if now - self._last_command_at < self.cooldown:
+            # Still counting down from the last one.  The pose is dropped
+            # as well, so that a hand held through the wait does not fire
+            # the moment it ends -- it has to be made again.
+            self._held = None
+            return None
+
         # A swipe is a movement that already happened, so it always counts.
         if swipe is not None and swipe in self.swipes:
             # Whatever pose was being held was part of the swipe; make it
             # ask again rather than firing as the hand settles.
             self._held = None
-            return self.swipes[swipe]
+            return self._fire(self.swipes[swipe], now)
 
         # "UNKNOWN" is not a gesture, it is the vision side saying it is
         # unsure -- which happens for a frame or two whenever the picture is
@@ -104,18 +127,28 @@ class GestureRouter:
 
         self._fired_at[gesture] = now
 
+        return self._fire(command, now)
+
+    def _fire(self, command, now):
+        """Note when this went out, so the next one has to wait."""
+
+        self._last_command_at = now
+
         return command
 
     def forget(self):
         """Hand left the frame; the next pose is a new one.
 
-        The hand leaving is deliberate enough to clear the repeat guard as
-        well: making a fist, dropping your hand, and making another is two
-        gestures however quickly it is done.
+        The hand leaving is deliberate enough to clear both guards:
+        making a fist, dropping your hand, and making another is two
+        gestures however quickly it is done.  The cooldown is there to
+        stop one movement counting twice, and a hand that left and came
+        back is not one movement.
         """
 
         self._held = None
         self._fired_at.clear()
+        self._last_command_at = -1e9
 
     def mapping(self):
         """Everything bound, for showing the user what they can do."""
