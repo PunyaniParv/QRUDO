@@ -318,7 +318,7 @@ class MacOSController(Controller):
             # the diversion is what typed a letter into whatever had the
             # keyboard focus.  When something is playing, the key goes to
             # the thing that is playing, which is the whole point of it.
-            return self._media_play_pause()
+            return self._media_play_pause(name, pid)
 
         key = KEY_SPACE if wanted in ("space", "spacebar") else KEY_K
 
@@ -357,39 +357,36 @@ class MacOSController(Controller):
     #: Set when SARV was the one that paused, so it knows it may resume.
     _paused_it = False
 
-    def _media_play_pause(self) -> str:
-        """The keyboard's own play/pause key, sent only when it is safe.
+    def _media_play_pause(self, name: str, pid: int) -> str:
+        """Play or pause, by whichever route is safe just now.
 
-        It reaches whatever is genuinely playing, whichever site or app
-        that is, and needs no shortcut guessed for it.  Its one fault is
-        that it is a message to the system: with nothing playing at all,
+        The keyboard's own play/pause key reaches whatever is genuinely
+        playing, whichever site or app that is, and needs no shortcut
+        guessed for it.  Its one fault is that it is a message to the
+        system rather than to a player: with nothing playing at all,
         macOS answers by opening Music.
 
-        So it is sent when something is playing -- which it will then
-        pause -- or when SARV was the one that paused, since what it
-        paused is still the thing the system will offer the key to.  With
-        nothing playing that SARV did not stop, there is nothing to
-        pause, and pressing it is how Music ends up open.
+        So the system key goes out only while something is playing, which
+        is precisely when it cannot open Music.  With nothing playing
+        there is nothing for it to reach anyway, and starting something
+        is a different job -- that goes to the app itself, as its own
+        shortcut, where it can neither be diverted nor open anything.
+
+        Refusing that second case was the earlier answer and it was the
+        wrong one: it meant a fist could pause a video and never start
+        one, so nothing could be set going without the keyboard.
         """
 
-        playing = self._audio_playing()
-
-        if playing:
+        if self._audio_playing():
             self._paused_it = True
             self._post_media_key(NX_KEYTYPE_PLAY)
 
             return "paused what was playing"
 
-        if playing is False and not self._paused_it:
-            raise UnsupportedCommand(
-                "nothing is playing -- start the video first, or name the "
-                "app as target_app in sarv_config.json")
-
         self._paused_it = False
-        self._post_media_key(NX_KEYTYPE_PLAY)
+        self._post_key(KEY_K, to_pid=pid)
 
-        return "resumed what SARV paused" if playing is False else \
-            "sent play/pause media key"
+        return f"play/pause (k) to {name} -- nothing was playing"
 
     def _audio_playing(self) -> bool | None:
         """Whether anything is coming out of the speakers.  None if unknown."""
