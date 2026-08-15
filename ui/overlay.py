@@ -7,11 +7,13 @@ threshold to adjust rather than a guess.
 
 The preview is a room, not a page: whatever is behind the text is
 whatever you happen to be standing in front of, and pale text on a pale
-wall is not readable.  Shading the edges of the picture fixed that and
-cost more than it fixed -- it is your camera, and it looked like
-something was wrong with it.  So the small text carries a thin dark edge
-of its own instead, the headings are large enough not to need one, and
-nothing is done to the picture at all.
+wall is not readable.  Two attempts at fixing that -- shading the edges
+of the picture, then a dark rim on every letter -- both looked like
+something was wrong with the camera, which is worse than the problem.
+So nothing is done to the picture, and what stands on it is chosen to
+read on its own: strong colours, and dark where the room is bright.  The
+rim survives only for the two lists that appear when asked for, where
+there is a lot of small text and no room to lose any of it.
 
 cv2 is passed in rather than imported, so this module stays importable --
 and testable -- without OpenCV present.
@@ -22,7 +24,8 @@ from __future__ import annotations
 #: Softer than full-brightness primaries, which glare against a lit room
 #: and bloom on a webcam's own exposure.
 LIVE = (80, 220, 110)       # a hand is being read
-ALERT = (95, 95, 255)       # nothing is being read, or something failed
+ALERT = (95, 95, 255)       # something failed, or is about to
+MISSING = (30, 30, 165)     # no hand at all
 GREY = (225, 225, 225)
 DIM = (195, 195, 195)
 SHADOW = (0, 0, 0)
@@ -33,7 +36,7 @@ FONT = 0  # cv2.FONT_HERSHEY_SIMPLEX
 MARGIN = 20
 
 
-def text(cv2, frame, line, at, scale=0.6, colour=GREY, weight=1):
+def text(cv2, frame, line, at, scale=0.6, colour=GREY, weight=1, rim=False):
     """One line, with its own contrast.
 
     Small lines are drawn in black four times, a pixel out in each
@@ -53,11 +56,7 @@ def text(cv2, frame, line, at, scale=0.6, colour=GREY, weight=1):
 
     x, y = at
 
-    # Only the small text.  A rim around a heading is thick enough to read
-    # as a border drawn round the word, and a heading is already bold
-    # enough to hold its own against the room -- it is the body text that
-    # disappears into a pale wall.
-    if weight == 1:
+    if rim:
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             cv2.putText(frame, line, (x + dx, y + dy),
                         cv2.FONT_HERSHEY_SIMPLEX, scale, SHADOW, weight,
@@ -71,11 +70,17 @@ def draw_gesture(cv2, frame, gesture):
     """The gesture being seen, large, at the top."""
 
     text(cv2, frame, gesture or "no hand", (MARGIN, 52), 0.95,
-         LIVE if gesture else ALERT, 2)
+         LIVE if gesture else MISSING, 2)
 
 
 def draw_result(cv2, frame, result):
-    """What the last command did, under the gesture."""
+    """What the command just did, under the gesture.
+
+    Only just: the runner stops passing it after a couple of seconds.  It
+    is news, and news that stays on screen until the next one is not news
+    -- it is a label saying PLAY_PAUSE over your face while you are trying
+    to see whether your hand is being read.
+    """
 
     if result is None:
         return
@@ -158,8 +163,9 @@ def draw_legend(cv2, frame, mapping, showing=True):
     for number, (gesture, command) in enumerate(lines):
         at = top + number * LINE
 
-        text(cv2, frame, gesture, (MARGIN, at), 0.55, GREY)
-        text(cv2, frame, command, (MARGIN + COMMAND_AT, at), 0.55, DIM)
+        text(cv2, frame, gesture, (MARGIN, at), 0.55, GREY, rim=True)
+        text(cv2, frame, command, (MARGIN + COMMAND_AT, at), 0.55, DIM,
+             rim=True)
 
 
 def draw_prompt(cv2, frame, prompt, note, remaining, hand_seen, purpose=""):
@@ -237,4 +243,5 @@ def draw_tuning(cv2, frame, state, motion, hand_state):
     """Print those numbers down the left of the frame."""
 
     for number, line in enumerate(tuning_lines(state, motion, hand_state)):
-        text(cv2, frame, line, (MARGIN, 122 + number * 26), 0.55, GREY)
+        text(cv2, frame, line, (MARGIN, 122 + number * 26), 0.55, GREY,
+             rim=True)

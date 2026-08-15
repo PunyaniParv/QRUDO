@@ -272,12 +272,42 @@ class TestImplausibleValuesArePulledBack(unittest.TestCase):
         self.assertTrue(any("min_hand_on_screen" in note for note in pulled))
 
     def test_sensible_values_are_left_alone(self):
-        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.040)
+        fine = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.030)
 
         kept, pulled = fine.sensible()
 
-        self.assertEqual(kept.min_hand_on_screen, 0.040)
+        self.assertEqual(kept.min_hand_on_screen, 0.030)
         self.assertEqual(pulled, ())
+
+    def test_the_range_floor_never_ends_up_stricter_than_shipped(self):
+        """Reported as "it has stopped recognizing gestures".
+
+        Calibrating near the lens measures a large hand and sets the floor
+        under it, and everything past arm's length is then dropped before
+        any gesture code sees it.  Nothing says so, because from where the
+        user is standing a hand being discarded and a hand not being found
+        look the same.
+
+        Calibrating is allowed to reach further than the default.  It is
+        not allowed to reach less far.
+        """
+
+        from vision import hand_state
+
+        close_up = Calibration(0.80, 0.92, 1.10, 0.30, 0.80, 0.0964)
+
+        kept, pulled = close_up.sensible()
+
+        self.assertEqual(kept.min_hand_on_screen, hand_state.MIN_HAND_ON_SCREEN)
+        self.assertTrue(any("min_hand_on_screen" in note for note in pulled))
+
+    def test_the_cap_is_the_shipped_default_itself(self):
+        """So the two cannot drift apart unnoticed."""
+
+        from vision import hand_state
+
+        self.assertEqual(Calibration.BOUNDS["min_hand_on_screen"][1],
+                         hand_state.MIN_HAND_ON_SCREEN)
 
 
 class TestABadFrameOrTwo(unittest.TestCase):

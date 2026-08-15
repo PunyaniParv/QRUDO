@@ -101,11 +101,17 @@ class Calibration:
     #: measurement can be wrong -- a hand held badly, a landmark the camera
     #: guessed at -- and a threshold far outside these does not fail
     #: gently: it reads everything, or nothing, as the gesture.
+    #: The hand-size floor is capped at the shipped default rather than
+    #: at anything roomier.  Calibrating is allowed to reach further than
+    #: the default, never less far: measured from a hand held near the
+    #: lens it comes out around 0.10, and everything past arm's length is
+    #: then thrown away before any gesture code sees it -- which looks
+    #: exactly like the app having stopped working.
     BOUNDS = {
         "extended_ratio": (0.60, 0.95),
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
-        "min_hand_on_screen": (0.02, 0.12),
+        "min_hand_on_screen": (0.015, 0.035),
     }
 
     def sensible(self):
@@ -291,6 +297,12 @@ def from_samples(poses, moves, current):
     # the keyboard would otherwise set the floor at a hand's size there
     # and quietly stop the thing working from across the room, which is
     # the point of it.
+    #
+    # Comparing against ``current`` is most of that and not all of it.
+    # ``current`` is whatever is loaded, which after one close-up
+    # calibration is already the tightened number -- so the two agree,
+    # nothing is loosened, and it stays tightened.  BOUNDS holds the line
+    # that matters: never stricter than shipped.
     sizes = [reading["scale"]
              for readings in poses.values()
              for reading in readings]

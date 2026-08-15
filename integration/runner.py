@@ -16,6 +16,10 @@ from .bridge import GestureRouter
 #: How long a completed swipe stays on screen, in seconds.
 SWIPE_SHOWN_FOR = 0.8
 
+#: How long what a command did stays on screen.  Long enough to read,
+#: and then gone: it is news, and it stops being news.
+RESULT_SHOWN_FOR = 2.5
+
 #: How long with no hand at all before saying something about it.  Far
 #: enough away and the camera simply stops reporting one, which from where
 #: the user is standing looks exactly like the app having stopped.
@@ -41,13 +45,14 @@ def run(engine, args, tuning=False):
     presence = Presence()
     frame_times = deque(maxlen=30)
     last_result = None
+    last_result_at = 0.0
     last_swipe = None
     last_swipe_at = 0.0
     last_hand_at = time.time()
 
     def remember(result):
-        nonlocal last_result
-        last_result = result
+        nonlocal last_result, last_result_at
+        last_result, last_result_at = result, time.time()
 
     engine.on_result = remember
 
@@ -126,6 +131,9 @@ def run(engine, args, tuning=False):
 
             if not show_window:
                 continue
+
+            if last_result and time.time() - last_result_at > RESULT_SHOWN_FOR:
+                last_result = None
 
             overlay.draw_gesture(cv2, frame, gesture)
             overlay.draw_result(cv2, frame, last_result)

@@ -82,6 +82,12 @@ def run(args):
     measured, warnings = calibration.from_samples(
         poses, moves, calibration.current())
 
+    # Checked before it is saved rather than on the way back in, so what
+    # is printed here is what will actually be used, and anything that
+    # had to be pulled back is said while you are still standing there.
+    measured, pulled = measured.sensible()
+    warnings = list(warnings) + list(pulled)
+
     print("\n  measured:\n")
 
     for line in measured.describe():
