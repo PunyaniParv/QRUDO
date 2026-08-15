@@ -60,15 +60,23 @@ REST_DWELL = 1.00         # and must stay so this long to become the rest
 #: share of itself.  Seeking and volume share a pose, so every movement
 #: has to say which of the two it was.
 #:
-#: Asked of both alike.  It was asked of the raise only, against an
-#: absolute size rather than a share -- which made a movement that was
-#: half of each into a seek, because seeking was never asked the question.
-#: Asking both against a guessed number was worse: a wrist turned sideways
-#: really does raise the hand, so turns stopped registering.
+#: Both are asked, and they are asked different numbers, because the two
+#: movements do not bleed into each other equally.  Turning a wrist
+#: through fifty degrees barely moves the hand up or down.  Dropping a
+#: hand rotates the wrist a good deal -- fifteen degrees of it is enough
+#: to make the turn two thirds the size of the drop -- and that rotation
+#: is not a gesture, it is what an arm does when it comes down.
 #:
-#: Calibration measures it, from how much of the wrong movement your own
-#: turns and raises carry.  This is the fallback.
-CROSSTALK = 0.60
+#: One shared number cannot say that, and the one that was here refused a
+#: lower made in the ordinary way.
+#:
+#: Calibration measures both, from how much of the wrong movement your own
+#: turns and raises carry.  These are the fallbacks.
+#: Measured on the synthetic hands: a lower carrying up to twenty degrees
+#: of incidental wrist roll scores 0.00 to 0.67, and a diagonal anyone
+#: meant scores 1.08 or more.  The line goes between them.
+CROSSTALK_TURN = 0.60     # lift a turn may carry
+CROSSTALK_LIFT = 0.80     # turn a raise may carry
 
 #: Both scripts mirror the frame before detection, so x increases to the
 #: user's right and a rightward swipe is a rise in x.
@@ -399,7 +407,7 @@ def detect_swipe(hand, handedness=None):
     sideways = abs(turn) / SWIPE_TURN
     upright = abs(lift) / SWIPE_LIFT
 
-    if turned and upright <= sideways * CROSSTALK:
+    if turned and upright <= sideways * CROSSTALK_TURN:
         moving_right = turn > 0
 
         if not FRAME_IS_MIRRORED:
@@ -409,7 +417,7 @@ def detect_swipe(hand, handedness=None):
 
         return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
 
-    if raised and sideways <= upright * CROSSTALK:
+    if raised and sideways <= upright * CROSSTALK_LIFT:
         # Not fired(): that waits for the hand to stop, and a hand held up
         # is not going to.  Coming back down is what readies the next one.
         _state.raised = True

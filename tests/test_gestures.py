@@ -794,11 +794,36 @@ class TestTheFourDirectionsAreDistinct(GestureTestCase):
         self.assertEqual(self.move(roll_by=38, rise_by=0.05), "SWIPE_RIGHT")
 
     def test_half_of_each_fires_nothing(self):
-        for roll, rise in ((20, 0.12), (-20, 0.12), (20, -0.12)):
+        """Twenty degrees was used here and sat exactly on the boundary,
+        which is no way to test one.  Twenty-five is plainly a diagonal."""
+
+        for roll, rise in ((25, 0.12), (-25, 0.12), (25, -0.12)):
             with self.subTest(turn=roll, rise=rise):
                 self.setUp()
 
                 self.assertIsNone(self.move(roll_by=roll, rise_by=rise))
+
+    def test_a_drop_may_roll_the_wrist_without_losing_it(self):
+        """An arm coming down rotates the wrist, and that is not a
+        gesture -- it is what an arm does.
+
+        Reported as an open palm lowered being very hard to register.  A
+        turn through fifty degrees barely moves the hand up or down, so
+        the two were never going to want the same allowance, and the one
+        they shared refused an ordinary lower.
+        """
+
+        for roll in (0, 5, 10):
+            with self.subTest(rolling=roll):
+                self.setUp()
+
+                self.assertEqual(self.move(roll_by=roll, rise_by=-0.20),
+                                 "SWIPE_DOWN")
+
+    def test_a_turn_is_still_asked_the_stricter_question(self):
+        """It has no such excuse: a wrist turning does not raise a hand."""
+
+        self.assertIsNone(self.move(roll_by=25, rise_by=0.12))
 
     def test_a_lost_frame_cannot_move_the_volume(self):
         """The resting height is taken from several frames, not one.

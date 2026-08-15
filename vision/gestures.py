@@ -41,6 +41,31 @@ def _fingers_out(hand):
                            hand_state.EXTENDED_RATIO)
 
 
+def _open_enough(hand):
+    """Whether every finger is properly out, on the steadied readings.
+
+    The same question hand_state.is_open asks, of the same numbers, but
+    of the ones a few frames have agreed on rather than of this frame
+    alone.  It is the strictest test in the file -- every finger at once,
+    and properly straight rather than merely not curled -- so it is the
+    one a single bad reading is most likely to overturn, and it was the
+    only finger test still being asked afresh every frame.
+
+    An open hand lowered is where that showed: the hand relaxes as it
+    comes down, one finger is misread, and the pose disappears in the
+    middle of the movement it was arming.
+    """
+
+    _fingers_out(hand)          # steadies this frame's readings
+
+    steady = _fingers.steady
+
+    if len(steady) < len(hand_state.FINGERS):
+        return hand_state.is_open(hand_state.shape_of(hand))
+
+    return all(span > hand_state.OPEN_RATIO for span in steady.values())
+
+
 def classify(hand, handedness=None):
     """The shape this single frame shows, before stabilising."""
 
@@ -84,7 +109,7 @@ def classify(hand, handedness=None):
         # Properly open, not merely not-closed: a hand at rest has fingers
         # straighter than a fist and slacker than a spread hand, and it was
         # landing here.
-        if from_behind or not hand_state.is_open(hand_state.shape_of(hand)):
+        if from_behind or not _open_enough(hand):
             return "UNKNOWN"
 
         return "OPEN_PALM"
@@ -123,7 +148,7 @@ def explain(hand, handedness=None):
         return (f"half closed: {len(closed)} of 4 fingers in, need the index "
                 f"and two others for a fist")
 
-    if len(out) == 4 and not hand_state.is_open(shape):
+    if len(out) == 4 and not _open_enough(hand):
         weakest = min(hand_state.finger_scores(shape).values())
         return (f"open but slack: weakest finger {weakest:.2f}, "
                 f"needs {hand_state.OPEN_RATIO} to count as an open hand")
@@ -194,7 +219,7 @@ def pose_kind(hand):
     if hand_state.is_back_of_hand(screen, getattr(hand, "handedness", None)):
         return None
 
-    if not hand_state.is_open(hand_state.shape_of(hand)):
+    if not _open_enough(hand):
         return None
 
     return POSE_OPEN_PALM

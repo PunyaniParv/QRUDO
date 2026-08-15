@@ -40,7 +40,8 @@ class Calibration:
     swipe_turn_speed: float
     swipe_lift: float
     swipe_lift_speed: float
-    crosstalk: float
+    crosstalk_turn: float
+    crosstalk_lift: float
     min_hand_on_screen: float
 
     #: Notes about the loading rather than thresholds, so they are kept
@@ -151,7 +152,8 @@ class Calibration:
         "fist_curl": (0.35, 0.75),
         "swipe_lift": (0.25, 1.20),
         "swipe_lift_speed": (0.40, 4.50),
-        "crosstalk": (0.15, 0.95),
+        "crosstalk_turn": (0.15, 0.95),
+        "crosstalk_lift": (0.15, 1.20),
         "min_hand_on_screen": (0.015, 0.035),
     }
 
@@ -194,7 +196,8 @@ class Calibration:
         motion.SWIPE_TURN_SPEED = self.swipe_turn_speed
         motion.SWIPE_LIFT = self.swipe_lift
         motion.SWIPE_LIFT_SPEED = self.swipe_lift_speed
-        motion.CROSSTALK = self.crosstalk
+        motion.CROSSTALK_TURN = self.crosstalk_turn
+        motion.CROSSTALK_LIFT = self.crosstalk_lift
 
     def describe(self):
         return [
@@ -204,7 +207,8 @@ class Calibration:
             f" or {self.fist_curl:.2f} curled",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
             f"hand raised           {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
-            f"sideways vs upright   told apart below {self.crosstalk:.2f}",
+            f"a turn may carry      {self.crosstalk_turn:.2f} of a rise",
+            f"a rise may carry      {self.crosstalk_lift:.2f} of a turn",
             f"smallest hand read    {self.min_hand_on_screen:.3f} of the frame",
         ]
 
@@ -414,7 +418,7 @@ class Profile:
         meant and firing either would be a guess.
         """
 
-        shares = []
+        shares = {"turn": [], "lift": []}
 
         for name, peak in self.reps("turn", "raise", "lower", "lift"):
             if not isinstance(peak, dict):
@@ -423,19 +427,19 @@ class Profile:
             sideways = abs(peak.get("turn", 0.0)) / max(swipe_turn, 1e-6)
             upright = abs(peak.get("lift", 0.0)) / max(swipe_lift, 1e-6)
 
-            asked, other = ((sideways, upright)
-                            if self.asked_of(name) == "turn"
+            axis = self.asked_of(name)
+            asked, other = ((sideways, upright) if axis == "turn"
                             else (upright, sideways))
 
             if asked > 0:
-                shares.append(other / asked)
+                shares[axis].append(other / asked)
 
-        if not shares:
-            return None, False
+        if not (shares["turn"] and shares["lift"]):
+            return None, None, False
 
         # Room above the worst one seen, so a movement no worse than the
         # ones recorded is not turned away.
-        return max(shares) * 1.3, True
+        return (max(shares["turn"]) * 1.3, max(shares["lift"]) * 1.3, True)
 
     def derive(self, current):
         """Work the thresholds out.  Returns them and anything unmeasured.
@@ -550,13 +554,15 @@ class Profile:
         elif missed:
             warnings.append("one of the raises barely moved, and was ignored")
 
-        crosstalk, ok = self.crosstalk(swipe_turn, swipe_lift)
+        crosstalk_turn, crosstalk_lift, ok = self.crosstalk(
+            swipe_turn, swipe_lift)
 
         if not ok:
-            crosstalk = current.crosstalk
+            crosstalk_turn = current.crosstalk_turn
+            crosstalk_lift = current.crosstalk_lift
             warnings.append("turning and raising were not measured against"
                             " each other")
-        elif crosstalk >= 0.95:
+        elif crosstalk_turn >= 0.95:
             warnings.append("your turns and raises look much alike, so one"
                             " may be taken for the other")
 
@@ -590,7 +596,8 @@ class Profile:
             swipe_turn_speed=round(swipe_turn_speed, 3),
             swipe_lift=round(swipe_lift, 3),
             swipe_lift_speed=round(swipe_lift_speed, 3),
-            crosstalk=round(crosstalk, 3),
+            crosstalk_turn=round(crosstalk_turn, 3),
+            crosstalk_lift=round(crosstalk_lift, 3),
             min_hand_on_screen=round(min_hand, 4),
         )
 
@@ -729,6 +736,7 @@ def current():
         swipe_turn_speed=motion.SWIPE_TURN_SPEED,
         swipe_lift=motion.SWIPE_LIFT,
         swipe_lift_speed=motion.SWIPE_LIFT_SPEED,
-        crosstalk=motion.CROSSTALK,
+        crosstalk_turn=motion.CROSSTALK_TURN,
+        crosstalk_lift=motion.CROSSTALK_LIFT,
         min_hand_on_screen=hand_state.MIN_HAND_ON_SCREEN,
     )

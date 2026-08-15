@@ -96,6 +96,10 @@ class FingerMemory:
         self.recent = {}
         self.out = {}
 
+        #: The steadied reading behind each answer, for whoever wants to
+        #: ask a different question of the same finger.
+        self.steady = {}
+
     def update(self, spans, threshold):
         """Feed this frame's readings, get what each finger counts as."""
 
@@ -107,6 +111,7 @@ class FingerMemory:
             # a bad value in proportion to how bad it is, which is the
             # wrong response to one that is simply wrong.
             span = sorted(recent)[len(recent) // 2]
+            self.steady[name] = span
 
             was = self.out.get(name)
 
@@ -122,6 +127,7 @@ class FingerMemory:
     def clear(self):
         self.out.clear()
         self.recent.clear()
+        self.steady.clear()
 
 
 class MotionHistory:
