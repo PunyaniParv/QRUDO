@@ -314,8 +314,7 @@ class MacOSController(Controller):
             open_now = self._running_apps() & set(self.NOT_BY_ACCIDENT)
 
             if not open_now:
-                self._post_media_key(NX_KEYTYPE_PLAY)
-                return "sent play/pause media key"
+                return self._media_play_pause()
 
             # The media key is a message to the system, not to this
             # browser, and while Music is open the system gives it to
@@ -362,6 +361,55 @@ class MacOSController(Controller):
 
         return (f"seek {direction} ~{presses * step}s{where} "
                 f"({presses}x {name}, {seconds}s requested)")
+
+    #: Set when SARV was the one that paused, so it knows it may resume.
+    _paused_it = False
+
+    def _media_play_pause(self) -> str:
+        """The keyboard's own play/pause key, sent only when it is safe.
+
+        It reaches whatever is genuinely playing, whichever site or app
+        that is, and needs no shortcut guessed for it.  Its one fault is
+        that it is a message to the system: with nothing playing at all,
+        macOS answers by opening Music.
+
+        So it is sent when something is playing -- which it will then
+        pause -- or when SARV was the one that paused, since what it
+        paused is still the thing the system will offer the key to.  With
+        nothing playing that SARV did not stop, there is nothing to
+        pause, and pressing it is how Music ends up open.
+        """
+
+        playing = self._audio_playing()
+
+        if playing:
+            self._paused_it = True
+            self._post_media_key(NX_KEYTYPE_PLAY)
+
+            return "paused what was playing"
+
+        if playing is False and not self._paused_it:
+            raise UnsupportedCommand(
+                "nothing is playing -- start the video first, or name the "
+                "app as target_app in sarv_config.json")
+
+        self._paused_it = False
+        self._post_media_key(NX_KEYTYPE_PLAY)
+
+        return "resumed what SARV paused" if playing is False else \
+            "sent play/pause media key"
+
+    def _audio_playing(self) -> bool | None:
+        """Whether anything is coming out of the speakers.  None if unknown."""
+
+        audio = getattr(self, "_core_audio", None)
+
+        if audio is None:
+            return None
+
+        device = audio.device()
+
+        return None if device is None else audio.is_playing(device)
 
     def _seek_key(self, forward: bool) -> tuple[int, str, int]:
         """Which key seeks, what to call it, and how far one press moves.
@@ -555,6 +603,7 @@ class _CoreAudio:
         self._scope_output = _fourcc("outp")
         self._volume = _fourcc("volm")
         self._mute = _fourcc("mute")
+        self._running = _fourcc("gone")   # is anything playing right now
 
     def device(self) -> int | None:
         """The current default output device.
@@ -569,6 +618,24 @@ class _CoreAudio:
             self._SYSTEM_OBJECT, ctypes.byref(address), 0, None,
             ctypes.byref(size), ctypes.byref(device))
         return device.value if rc == 0 else None
+
+    def is_playing(self, device: int) -> bool | None:
+        """Whether any process is sending audio to this device.
+
+        None if the question could not be asked.  This is what makes the
+        play/pause media key safe to send: it is a message to the system
+        rather than to a player, and the system answers one with nothing
+        playing by opening Music.
+        """
+
+        value = ctypes.c_uint32()
+        size = ctypes.c_uint32(4)
+        address = self._Address(self._running, self._scope_global, 0)
+        rc = self._lib.AudioObjectGetPropertyData(
+            device, ctypes.byref(address), 0, None,
+            ctypes.byref(size), ctypes.byref(value))
+
+        return bool(value.value) if rc == 0 else None
 
     def get_volume(self, device: int) -> float | None:
         address = self._Address(self._volume, self._scope_output, 0)

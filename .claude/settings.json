@@ -83,7 +83,8 @@
       "Bash(sed -n '/def note_pose/,/def fired/p' vision/state_machine.py)",
       "Bash(.venv/bin/python main.py --command BRIGHTNESS_UP)",
       "Bash(.venv/bin/python main.py --command BRIGHTNESS_DOWN)",
-      "Bash(.venv/bin/python main.py --far --check)"
+      "Bash(.venv/bin/python main.py --far --check)",
+      "Bash(pmset -g assertions)"
     ]
   }
 }

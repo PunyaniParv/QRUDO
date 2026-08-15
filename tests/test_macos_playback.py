@@ -30,7 +30,7 @@ class FakeMac(MacOSController):
     """The routing, with everything that needs macOS replaced."""
 
     def __init__(self, running=(), target="", play_key="media",
-                 seek_keys="arrows"):
+                 seek_keys="arrows", playing=False):
         self.config = ControlConfig(target_app=target,
                                     browser_play_key=play_key,
                                     browser_seek_keys=seek_keys)
@@ -42,6 +42,10 @@ class FakeMac(MacOSController):
         self.media_keys = []    # system-wide media keys, which must stay empty
         self._quartz = object()
         self._workspace = None
+        self.playing = playing      # what the speakers are doing
+
+    def _audio_playing(self):
+        return self.playing
 
     def _running_apps(self):
         return self.running
@@ -103,7 +107,7 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
         elsewhere, which is how a fist came to change songs.
         """
 
-        controller = FakeMac(running={"Google Chrome"})
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
         controller.play_pause()
 
         self.assertEqual(len(controller.media_keys), 1)
@@ -126,6 +130,93 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
         controller.play_pause()
 
         self.assertEqual(controller.keyed, [])
+        self.assertEqual(controller.media_keys, [])
+
+
+class TestTheMediaKeyIsOnlySentWhenItIsSafe(unittest.TestCase):
+    """Reported as a fist typing the letter k.
+
+    It was: the media key had been swapped for YouTube's own shortcut to
+    stop macOS opening Music, and a site shortcut lands wherever the
+    focus is -- a search box gets a literal k.
+
+    The media key is the right thing to send.  It reaches whatever is
+    genuinely playing, whichever site or app that is, and needs no
+    shortcut guessed for it.  Its one fault is that it is a message to
+    the system, and the system answers one with nothing playing by
+    opening Music -- so it goes only when something is playing, or when
+    SARV was the one that stopped it.
+    """
+
+    def test_something_playing_gets_the_media_key(self):
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
+        detail = controller.play_pause()
+
+        self.assertEqual(len(controller.media_keys), 1)
+        self.assertEqual(controller.keyed, [], "no letter should be typed")
+        self.assertIn("paused", detail)
+
+    def test_nothing_playing_refuses_rather_than_opening_music(self):
+        controller = FakeMac(running={"Google Chrome"}, playing=False)
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+        self.assertEqual(controller.media_keys, [])
+
+    def test_what_sarv_paused_it_may_resume(self):
+        """Nothing is playing then, by definition -- but what it paused is
+        still what the system will offer the key to."""
+
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
+        controller.play_pause()
+
+        controller.playing = False
+        controller.media_keys.clear()
+
+        self.assertIn("resumed", controller.play_pause())
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_it_will_not_resume_twice(self):
+        """Having resumed, the next fist must find something playing."""
+
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
+        controller.play_pause()
+        controller.playing = False
+        controller.play_pause()
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
+
+    def test_no_letter_is_ever_typed_on_the_default_setting(self):
+        for playing in (True, False):
+            controller = FakeMac(running={"Google Chrome"}, playing=playing)
+
+            try:
+                controller.play_pause()
+            except UnsupportedCommand:
+                pass
+
+            self.assertEqual(controller.keyed, [], f"playing={playing}")
+
+    def test_a_machine_that_cannot_be_asked_still_works(self):
+        """Without CoreAudio the question has no answer, and the old
+        behaviour is better than refusing everything."""
+
+        controller = FakeMac(running={"Google Chrome"})
+        controller._audio_playing = lambda: None
+
+        controller.play_pause()
+
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_asking_for_a_letter_still_gets_one(self):
+        """The setting is still there for anyone who wants it."""
+
+        controller = FakeMac(running={"Google Chrome"}, play_key="k")
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242])
         self.assertEqual(controller.media_keys, [])
 
 
@@ -175,7 +266,7 @@ class TestMusicIsNeverChosenForYou(unittest.TestCase):
         self.assertIn("Music", detail)
 
     def test_with_music_shut_the_media_key_is_still_the_default(self):
-        controller = FakeMac(running={"Google Chrome"})
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
         controller.play_pause()
 
         self.assertEqual(len(controller.media_keys), 1)
@@ -260,7 +351,7 @@ class TestWhichAppItReaches(unittest.TestCase):
         be settled before saying anything at all.
         """
 
-        controller = FakeMac(running={"Google Chrome"})
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
         controller.play_pause()
 
         self.assertFalse([said for said in controller.told if "Music" in said])

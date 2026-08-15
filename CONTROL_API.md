@@ -79,6 +79,15 @@ a target named, play/pause goes to that app instead: a scriptable player like
 Spotify is told directly, and a browser is sent the keyboard's own play/pause
 key, which reaches whatever is actually playing.
 
+That key is sent only when something genuinely is playing, or when SARV was
+what paused it — CoreAudio is asked. It is a message to the system rather than
+to a player, and the system answers one with nothing playing by opening Music.
+With nothing to pause, PLAY_PAUSE says so instead.
+
+`browser_play_key` can still be set to `"k"` or `"space"` to force a site
+shortcut, but a site shortcut lands wherever the keyboard focus is — a search
+box gets a literal `k`.
+
 macOS matches the app name; Windows matches any part of the window title (so
 `"YouTube"` works). The keys are then delivered to that app whether or not it
 has focus — no window switching, and the simulator stops counting down. If the
