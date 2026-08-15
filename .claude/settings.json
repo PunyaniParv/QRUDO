@@ -78,7 +78,9 @@
       "Bash(sed -n '/^def _height/,/^def _peak/p' vision/motion.py)",
       "Bash(sed -n '/class SwipeState/,/def note_pose/p' vision/state_machine.py)",
       "Bash(../.venv/bin/python -m unittest test_gestures.TestGunSwipe.test_swipe_allowed_again_after_cooldown -v)",
-      "Bash(../.venv/bin/python -)"
+      "Bash(../.venv/bin/python -)",
+      "Bash(sed -n '/^def pose_kind/,/^def /p' vision/gestures.py)",
+      "Bash(sed -n '/def note_pose/,/def fired/p' vision/state_machine.py)"
     ]
   }
 }

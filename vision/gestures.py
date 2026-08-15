@@ -76,12 +76,7 @@ def classify(hand, handedness=None):
     ):
         return "POINT"
 
-    if (
-        fingers["index"]
-        and fingers["middle"]
-        and not fingers["ring"]
-        and not fingers["pinky"]
-    ):
+    if _two_up(fingers):
         return "TWO_FINGER"
 
     if extended == 4:
@@ -146,6 +141,29 @@ def detect_gesture(hand, handedness=None):
     return _stabiliser.update(classify(hand, handedness))
 
 
+def _two_up(fingers):
+    """Index and middle out, and not both of the others.
+
+    Not "and both of the others in", which is what this asked for and
+    what made the pose fragile.  Held up, the ring and pinky are folded
+    down behind the raised two, and a folded finger behind a hand is the
+    one a camera reads worst -- so the pose was resting on the two
+    readings least worth resting on, and either of them going wrong for a
+    frame lost it.
+
+    This is the rule a fist already uses, for the same reason: it asks for
+    the index and two of the other three, because requiring all four
+    failed whenever one was misread.  One finger may be wrong here too.
+    Three fingers up reads as this pose, which is the price and a fair
+    one -- it is nearer to what someone holding three fingers up means
+    than nothing at all is.
+    """
+
+    return (fingers["index"]
+            and fingers["middle"]
+            and not (fingers["ring"] and fingers["pinky"]))
+
+
 def pose_kind(hand):
     """Which pose a movement could be made from, or None.
 
@@ -159,13 +177,4 @@ def pose_kind(hand):
     brightness already was.
     """
 
-    fingers = _fingers_out(hand)
-
-    two_out = (
-        fingers["index"]
-        and fingers["middle"]
-        and not fingers["ring"]
-        and not fingers["pinky"]
-    )
-
-    return POSE_TWO_FINGER if two_out else None
+    return POSE_TWO_FINGER if _two_up(_fingers_out(hand)) else None

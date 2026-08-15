@@ -52,6 +52,11 @@ class GestureStabiliser:
 #: half hidden behind the hand, which is every finger that is folded.
 FINGER_BAND = 0.07
 
+#: How many readings a finger's answer is taken from.  Three: enough that
+#: one frame cannot decide anything, few enough that the delay is not felt
+#: -- two frames at thirty a second, under a tenth of a second.
+FINGER_FRAMES = 3
+
 
 class FingerMemory:
     """Which fingers are out, refusing to change its mind over nothing.
@@ -64,16 +69,35 @@ class FingerMemory:
     Once a finger is called out it stays out until it is clearly in, and
     the other way round.  A real change clears the band in one frame and
     is not delayed; only the wobble is refused.
+
+    The band alone is not enough, because not every bad reading is a small
+    one.  A finger folded behind the hand is half hidden, and what
+    MediaPipe reports for it is part measurement and part guess -- the
+    guess is occasionally not close, and a reading well past the line
+    walks straight through a band meant for wobble.  So each finger
+    answers from the middle of its last few readings rather than its
+    latest: one frame can then no longer decide anything, and it takes two
+    bad ones in a row to be believed.
     """
 
-    def __init__(self, band=FINGER_BAND):
+    def __init__(self, band=FINGER_BAND, frames=FINGER_FRAMES):
         self.band = band
+        self.frames = frames
+        self.recent = {}
         self.out = {}
 
     def update(self, spans, threshold):
         """Feed this frame's readings, get what each finger counts as."""
 
         for name, span in spans.items():
+            recent = self.recent.setdefault(name, deque(maxlen=self.frames))
+            recent.append(span)
+
+            # The middle reading, not the mean: an average is dragged by
+            # a bad value in proportion to how bad it is, which is the
+            # wrong response to one that is simply wrong.
+            span = sorted(recent)[len(recent) // 2]
+
             was = self.out.get(name)
 
             # Nothing remembered yet: the plain question, no band.
@@ -87,6 +111,7 @@ class FingerMemory:
 
     def clear(self):
         self.out.clear()
+        self.recent.clear()
 
 
 class MotionHistory:

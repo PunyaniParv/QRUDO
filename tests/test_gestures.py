@@ -765,6 +765,61 @@ class TestBringingTheWristBack(GestureTestCase):
         self.assertEqual(fired, ["SWIPE_RIGHT"] * 3)
 
 
+class TestTwoFingersSurvivesAMisread(GestureTestCase):
+    """The folded fingers are the ones the camera reads worst.
+
+    Held up, the ring and pinky are folded down behind the raised two,
+    and a folded finger behind a hand is half guessed at.  The pose used
+    to rest on both of those readings being right at once, which is the
+    two readings least worth resting on.
+    """
+
+    def two(self, ring=CURLED, pinky=CURLED):
+        return make_hand(EXTENDED, EXTENDED, ring, pinky)
+
+    def test_the_plain_pose(self):
+        self.assertEqual(gestures.classify(self.two(), HAND), "TWO_FINGER")
+        self.assertIsNotNone(gestures.pose_kind(self.two()))
+
+    def test_the_ring_finger_being_wrong_does_not_lose_it(self):
+        hand = self.two(ring=LOOSE)
+
+        self.assertEqual(gestures.classify(hand, HAND), "TWO_FINGER")
+        self.assertIsNotNone(gestures.pose_kind(hand))
+
+    def test_the_pinky_being_wrong_does_not_lose_it(self):
+        hand = self.two(pinky=LOOSE)
+
+        self.assertEqual(gestures.classify(hand, HAND), "TWO_FINGER")
+        self.assertIsNotNone(gestures.pose_kind(hand))
+
+    def test_both_being_out_is_a_different_hand(self):
+        """Where the line still is.  Four fingers out is an open hand,
+        and it must not arm a swipe."""
+
+        hand = make_hand(EXTENDED, EXTENDED, EXTENDED, EXTENDED)
+
+        self.assertEqual(gestures.classify(hand, HAND), "OPEN_PALM")
+        self.assertIsNone(gestures.pose_kind(hand))
+
+    def test_three_fingers_counts_as_the_pose(self):
+        """The price, and a fair one.
+
+        Someone holding three fingers up is nearer to meaning this than
+        to meaning nothing, and the alternative is the pose collapsing
+        whenever a folded finger is misread.
+        """
+
+        hand = make_hand(EXTENDED, EXTENDED, EXTENDED, CURLED)
+
+        self.assertEqual(gestures.classify(hand, HAND), "TWO_FINGER")
+
+    def test_a_resting_hand_is_still_not_the_pose(self):
+        hand = make_hand(LOOSE, LOOSE, LOOSE, LOOSE)
+
+        self.assertIsNone(gestures.pose_kind(hand))
+
+
 class TestAFingerOnTheLine(unittest.TestCase):
     """A finger measured near the threshold, frame after frame.
 
@@ -803,17 +858,57 @@ class TestAFingerOnTheLine(unittest.TestCase):
         for span in (0.84, 0.80, 0.78, 0.81):
             self.assertTrue(self.out(span), span)
 
-    def test_a_real_fold_still_registers_at_once(self):
-        """Only the wobble is refused, not the movement."""
+    def test_a_real_fold_registers_within_two_frames(self):
+        """Only noise is refused, not the movement.
+
+        Two frames rather than one is the price of not letting a single
+        reading decide anything: at thirty a second it is under a tenth
+        of a second, and it buys immunity to a lone bad reading, which
+        happens far more often than a finger folds.
+        """
 
         self.out(0.95)
+        self.out(0.60)
 
         self.assertFalse(self.out(0.60))
 
-    def test_a_real_straightening_registers_at_once(self):
+    def test_a_real_straightening_registers_within_two_frames(self):
         self.out(0.40)
+        self.out(0.95)
 
         self.assertTrue(self.out(0.95))
+
+    def test_one_bad_reading_changes_nothing(self):
+        """A folded finger is half hidden, and half of what is reported
+        for it is a guess.  Occasionally the guess is not close.
+
+        The band does not help here: a reading well past the line walks
+        straight through a margin meant for wobble.  Only refusing to let
+        one frame decide does.
+        """
+
+        for _ in range(4):
+            self.out(0.58)
+
+        self.assertFalse(self.out(0.88), "one bad frame broke the pose")
+        self.assertFalse(self.out(0.58))
+
+    def test_two_bad_readings_in_a_row_are_believed(self):
+        """Where the line is drawn, and it is drawn deliberately.
+
+        Three readings cannot tell a pair of bad ones from the start of a
+        real movement, and waiting for five would delay every real one to
+        make the rare case tidier.  Two frames lost costs nothing anyway:
+        a pose may vanish for a fifth of a second before a swipe stops
+        being armed.
+        """
+
+        for _ in range(4):
+            self.out(0.58)
+
+        self.out(0.88)
+
+        self.assertTrue(self.out(0.88))
 
     def test_forgetting_starts_it_over(self):
         self.out(0.95)
