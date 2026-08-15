@@ -368,8 +368,18 @@ class Profile:
         # straighter than a fist and slacker than a spread hand.  With
         # only the line above to fall on, a resting hand landed on "open"
         # and asked for something.
+        #
+        # Both sides are the weakest finger, because "open" means every
+        # finger is out: the open hand's slackest finger has to clear the
+        # line, and the resting hand only needs its slackest to fall
+        # below.  Asking instead that every resting finger fall below is
+        # a stricter question than the test asks, and it threw away a
+        # measurement that was there -- a hand resting with a nearly
+        # straight index finger and a curled pinky separates perfectly
+        # well on the pinky, and this reported that it could not be told
+        # apart at all.
         open_ratio, ok = between(
-            max(self.among(["rest"], self.HIGH), default=0.0),
+            min(self.among(["rest"], self.HIGH), default=0.0),
             min(self.among(["open"], self.LOW), default=1.0),
             current.open_ratio, least=0.06)
 
@@ -419,6 +429,17 @@ class Profile:
         # holds that line.
         min_hand = (min(self.scale[self.LOW] * 0.6, current.min_hand_on_screen)
                     if self.scale else current.min_hand_on_screen)
+
+        # Nothing is wrong when this happens, but it is worth saying.  A
+        # session recorded near the lens says nothing about what can be
+        # read from across the room, so the limit stays where it was --
+        # and somebody who calibrated in order to gain range has gained
+        # none, which is not visible from the numbers.
+        if self.scale and min_hand >= current.min_hand_on_screen:
+            warnings.append(
+                "calibrated close to the camera, so the range is unchanged"
+                " -- run it again from where you mean to stand to reach"
+                " further")
 
         return Calibration(
             extended_ratio=round(extended_ratio, 3),

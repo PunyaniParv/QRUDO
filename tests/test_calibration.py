@@ -169,6 +169,57 @@ class TestPoseAndMovementAreSeparate(unittest.TestCase):
 
         self.assertLess(measured.swipe_lift, 0.60)
 
+    def test_one_finger_is_enough_to_tell_a_resting_hand(self):
+        """Reported as "it could not calculate two of them", and it was
+        throwing a measurement away.
+
+        A hand resting with a nearly straight index and a curled pinky
+        separates perfectly well on the pinky.  Comparing the most
+        extended resting finger against the least extended open one asks
+        that *every* resting finger fall below the line, which is a
+        stricter question than is_open asks -- it needs only one.
+        """
+
+        overlapping_index = [
+            {"ext": {"index": 0.92, "middle": 0.91, "ring": 0.86,
+                     "pinky": 0.76},
+             "reach": dict.fromkeys(FINGERS, 1.40), "scale": 0.15}
+            for _ in range(20)]
+
+        spread = [
+            {"ext": {"index": 0.91, "middle": 0.95, "ring": 0.96,
+                     "pinky": 0.94},
+             "reach": dict.fromkeys(FINGERS, 1.60), "scale": 0.15}
+            for _ in range(20)]
+
+        profile = Profile.from_samples(
+            {"fist": readings(0.45, 1.02), "two": two_fingers(),
+             "open": spread, "rest": overlapping_index}, {})
+
+        measured, warnings = profile.derive(DEFAULTS)
+
+        self.assertFalse([w for w in warnings if "resting one" in w])
+
+        # Below every finger of the open hand, above one of the resting
+        # hand: which is exactly what tells them apart.
+        self.assertLess(measured.open_ratio, 0.91)
+        self.assertGreater(measured.open_ratio, 0.76)
+
+    def test_calibrating_close_up_says_the_range_did_not_change(self):
+        """It is not a fault, and it is invisible in the numbers.
+
+        The floor stays where it was, correctly -- a session recorded near
+        the lens says nothing about what can be read across a room.  But
+        somebody who calibrated in order to gain range has gained none.
+        """
+
+        near = Profile.from_samples(
+            {"fist": readings(0.45, 1.02, scale=0.24)}, {})
+
+        _, warnings = near.derive(DEFAULTS)
+
+        self.assertTrue(any("range is unchanged" in w for w in warnings))
+
     def test_open_never_ends_up_looser_than_a_single_finger(self):
         """The open-hand line is there to be the stricter of the two.
 
