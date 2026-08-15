@@ -36,14 +36,21 @@ POSES = [
 #: only the easy direction sets a bar the hard one never clears.
 MOVES = [
     ("turn left", "REWIND:  two fingers up, turn your wrist left, then back",
-     "how far your wrist turns", 2, ("turn", "speed")),
+     "how far your wrist turns", 2, "turn"),
     ("turn right", "SKIP FORWARD:  two fingers up, turn your wrist right, then back",
-     "the other way, which does not go as far", 2, ("turn", "speed")),
+     "the other way, which does not go as far", 2, "turn"),
     ("raise", "VOLUME UP:  two fingers up, raise your hand, then lower it",
-     "how far your hand travels, and how briskly", 2, ("lift", "lift_speed")),
+     "how far your hand travels, and how briskly", 2, "lift"),
     ("lower", "VOLUME DOWN:  hand up, lower it, then raise it",
-     "the same going down, which is not the same", 2, ("lift", "lift_speed")),
+     "the same going down, which is not the same", 2, "lift"),
 ]
+
+#: Everything measured during a movement, whichever movement was asked
+#: for.  Turning the wrist raises the hand a little and raising it turns
+#: the wrist a little, and telling the two gestures apart means knowing
+#: how much -- which cannot be known from a recording that only kept the
+#: half it went looking for.
+MEASURED = ("turn", "speed", "lift", "lift_speed")
 
 READY_SECONDS = 2.0
 MOVE_SECONDS = 2.5
@@ -78,8 +85,8 @@ def run(args):
         poses = {name: session.record_pose(prompt, purpose, seconds)
                  for name, prompt, purpose, seconds in POSES}
 
-        moves = {name: session.record_move(prompt, purpose, times, reads)
-                 for name, prompt, purpose, times, reads in MOVES}
+        moves = {name: session.record_move(prompt, purpose, times, axis)
+                 for name, prompt, purpose, times, axis in MOVES}
     except _Cancelled:
         print("\n  cancelled -- nothing was saved.")
         return 1
@@ -168,13 +175,12 @@ class _Session:
 
         return readings
 
-    def record_move(self, prompt, purpose, times, reads=("turn", "speed")):
-        """Move: collect the largest reading reached in each repetition.
+    def record_move(self, prompt, purpose, times, axis="turn"):
+        """Move: collect the largest readings reached in each repetition.
 
-        ``reads`` names the two measurements this movement is about --
-        how far the wrist turned, or how far the hand travelled -- since
-        the same recording carries both and only one of them is the
-        gesture being asked for.
+        Every measurement is kept, not only the one this movement is
+        about.  ``axis`` says which one that is, so a repetition where
+        nothing much happened can be told from one where it did.
         """
 
         peaks = []
@@ -185,7 +191,7 @@ class _Session:
 
             self.vision.reset_state()
 
-            biggest = (0.0, 0.0)
+            biggest = dict.fromkeys(MEASURED, 0.0)
             until = time.time() + MOVE_SECONDS
 
             while time.time() < until:
@@ -197,13 +203,15 @@ class _Session:
 
                 state = self.motion.debug_state()
 
-                if reads[0] in state:
-                    biggest = _bigger(biggest, state, reads)
+                if axis in state:
+                    biggest = _bigger(biggest, state)
 
-            if biggest[0] > 0:
+            wanted = biggest["turn" if axis == "turn" else "lift"]
+
+            if wanted > 0:
                 peaks.append(biggest)
 
-            print(f"    attempt {attempt}: {biggest[0]:.2f} at {biggest[1]:.2f}/s")
+            print(f"    attempt {attempt}: {wanted:.2f}")
 
         return peaks
 
@@ -234,16 +242,16 @@ class _Session:
         return hand
 
 
-def _bigger(biggest, state, reads):
-    """The larger of what we have and what this frame shows.
+def _bigger(biggest, state):
+    """The larger of what we have and what this frame shows, in every
+    measurement.
 
-    Both taken as sizes without a sign: lowering a hand is a negative
-    lift, and it is as much of a movement as raising one.
+    Taken as sizes without a sign: lowering a hand is a negative lift,
+    and it is as much of a movement as raising one.
     """
 
-    size, speed = (abs(state.get(reads[0], 0)), abs(state.get(reads[1], 0)))
-
-    return (max(biggest[0], size), max(biggest[1], speed))
+    return {name: max(biggest[name], abs(state.get(name, 0)))
+            for name in MEASURED}
 
 
 def banner():

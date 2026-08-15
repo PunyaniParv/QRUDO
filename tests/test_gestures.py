@@ -659,6 +659,89 @@ class TestVolumeOnTwoFingers(GestureTestCase):
         self.assertNotIn(result, ("SWIPE_UP", "SWIPE_DOWN"))
 
 
+class TestTheFourDirectionsAreDistinct(GestureTestCase):
+    """Up, down, left and right, told apart on the same pose.
+
+    Turning the wrist raises the hand a little and raising it turns the
+    wrist a little, so every movement has to say which of the two it was.
+    Both are asked the same question -- is the other one a small share of
+    me -- and a movement that is half of each is a diagonal nobody meant,
+    which fires nothing rather than whichever happened to be asked first.
+    """
+
+    def peace(self, cy=0.55, roll=0.0):
+        return make_hand(EXTENDED, EXTENDED, CURLED, CURLED, cy=cy,
+                         roll=math.radians(roll))
+
+    def move(self, roll_by=0.0, rise_by=0.0, frames=14, seconds=0.30):
+        for _ in range(20):
+            motion.detect_swipe(self.peace(), HAND)
+            self.clock.tick(0.045)
+
+        fired = None
+
+        for i in range(frames):
+            share = i / (frames - 1)
+            fired = fired or motion.detect_swipe(
+                self.peace(cy=0.55 - rise_by * share,
+                           roll=roll_by * share), HAND)
+            self.clock.tick(seconds / (frames - 1))
+
+        return fired
+
+    def test_up(self):
+        self.assertEqual(self.move(rise_by=0.20), "SWIPE_UP")
+
+    def test_down(self):
+        self.assertEqual(self.move(rise_by=-0.20), "SWIPE_DOWN")
+
+    def test_right(self):
+        self.assertEqual(self.move(roll_by=50), "SWIPE_RIGHT")
+
+    def test_left(self):
+        self.assertEqual(self.move(roll_by=-50), "SWIPE_LEFT")
+
+    def test_mostly_up_is_up_despite_a_turn(self):
+        """A raise turns the wrist a little; that must not cost it."""
+
+        self.assertEqual(self.move(roll_by=12, rise_by=0.15), "SWIPE_UP")
+
+    def test_mostly_sideways_is_sideways_despite_a_rise(self):
+        """And a turn raises the hand a little.
+
+        This is the one that was got wrong twice: first by never asking,
+        which made every diagonal a seek, then by asking against a
+        guessed size, which stopped turns registering at all.
+        """
+
+        self.assertEqual(self.move(roll_by=38, rise_by=0.05), "SWIPE_RIGHT")
+
+    def test_half_of_each_fires_nothing(self):
+        for roll, rise in ((20, 0.12), (-20, 0.12), (20, -0.12)):
+            with self.subTest(turn=roll, rise=rise):
+                self.setUp()
+
+                self.assertIsNone(self.move(roll_by=roll, rise_by=rise))
+
+    def test_a_lost_frame_cannot_move_the_volume(self):
+        """The resting height is taken from several frames, not one.
+
+        Losing the pose resets that height, and a frame bad enough to
+        lose the pose is a frame whose position is not to be trusted --
+        so taken from one sample, the bad frame became the height every
+        later raise was judged against.
+        """
+
+        fired = None
+
+        for i in range(12):
+            hand = make_hand() if i == 6 else self.peace(roll=-30 + 60 * i / 11)
+            fired = fired or motion.detect_swipe(hand, HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertNotIn(fired, ("SWIPE_UP", "SWIPE_DOWN"))
+
+
 class TestBringingTheWristBack(GestureTestCase):
     """Reported: putting the wrist back counted as a second gesture.
 

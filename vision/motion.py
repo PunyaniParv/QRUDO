@@ -47,12 +47,18 @@ SWIPE_LIFT_SPEED = 1.20   # per second
 LIFT_STILL = 0.50         # below this speed the hand counts as at rest
 REST_DWELL = 1.00         # and must stay so this long to become the rest
 
-#: How much of a turn a raise may contain and still count as a raise.
-#: Seeking and volume share a pose, so something has to say which of the
-#: two a movement was.  It is asked of the raise only: a wrist turned
-#: sideways lifts the hand a little in the doing, while raising a hand
-#: turns it a good deal more, so the turn is the one that survives being
-#: asked plainly.
+#: How much of the other movement one may carry and still be itself, as a
+#: share of itself.  Seeking and volume share a pose, so every movement
+#: has to say which of the two it was.
+#:
+#: Asked of both alike.  It was asked of the raise only, against an
+#: absolute size rather than a share -- which made a movement that was
+#: half of each into a seek, because seeking was never asked the question.
+#: Asking both against a guessed number was worse: a wrist turned sideways
+#: really does raise the hand, so turns stopped registering.
+#:
+#: Calibration measures it, from how much of the wrong movement your own
+#: turns and raises carry.  This is the fallback.
 CROSSTALK = 0.60
 
 #: Both scripts mirror the frame before detection, so x increases to the
@@ -159,7 +165,14 @@ def _height(window, screen, mean_scale, moment):
     """
 
     if _state.neutral_y is None:
-        _state.neutral_y = window[0][1]["y"]
+        # The middle of the first few, not the first.  A badly read frame
+        # is most likely at the very moment this is taken -- losing the
+        # pose is what resets it, and a frame bad enough to lose the pose
+        # is a frame whose position is not to be trusted either.  Taken
+        # from one sample, that frame becomes the height every later
+        # raise is measured against, and the volume moves on its own.
+        first = [sample[1]["y"] for sample in window[:5]]
+        _state.neutral_y = sorted(first)[len(first) // 2]
 
     latest = window[-3:]
 
@@ -179,13 +192,17 @@ def _height(window, screen, mean_scale, moment):
 
     lift = (_state.neutral_y - screen[hand_state.MIDDLE_MCP].y) / mean_scale
 
-    # How briskly it got there: position alone would let a hand lowered
-    # slowly to the desk turn the volume down on its way.
-    _, speed, _ = measure(
+    # How briskly it got there, and how directly.  Position alone would
+    # let a hand lowered slowly to the desk turn the volume down on its
+    # way; speed alone lets a single badly-read frame do it, since a hand
+    # that appears to jump and come back is briefly moving very fast
+    # indeed.  The turn has been asked for directness all along and this
+    # was not, which is why a lost frame could raise the volume.
+    _, speed, agree = measure(
         [sample[0] for sample in window],
         [-sample[1]["y"] / mean_scale for sample in window])
 
-    return lift, speed
+    return lift, speed, agree
 
 
 def _neutral_aim(aim, turn, moment):
@@ -283,7 +300,7 @@ def detect_swipe(hand, handedness=None):
 
     mean_scale = sum(sample[1]["scale"] for sample in window) / len(window)
 
-    lift, lift_speed = _height(window, screen, mean_scale, moment)
+    lift, lift_speed, lift_agree = _height(window, screen, mean_scale, moment)
 
     # Bringing the hand back is the same movement as swiping the other
     # way, so after a swipe nothing counts until it has gone quiet.
@@ -300,6 +317,7 @@ def detect_swipe(hand, handedness=None):
         turn=round(abs(turn), 2),
         lift=round(lift, 2),
         lift_speed=round(lift_speed, 2),
+        lift_agree=round(lift_agree, 2),
         speed=round(turn_speed, 2),
         agree=round(turn_agree, 2),
         peak_turn=round(_peak("turn", abs(turn), moment), 2),
@@ -353,18 +371,20 @@ def detect_swipe(hand, handedness=None):
     raised = (
         abs(lift) >= SWIPE_LIFT
         and lift_speed >= SWIPE_LIFT_SPEED
+        and lift_agree >= SWIPE_CONSISTENCY
         and not _state.raised
     )
 
-    # Which of the two it was.  The turn is asked first and on its own
-    # terms: it is the more distinctive measurement -- which way the
-    # fingers point, rather than where the hand is -- and a wrist turned
-    # sideways lifts the hand a little in the doing, which should not cost
-    # the gesture.  Volume is the one that has to be clean, because
-    # raising a hand turns it far more than turning one raises it.
+    # Which of the two it was, asked of each in the same words: a
+    # movement is itself if the other one is a small share of it.  Not an
+    # absolute size, which is what let a raise carrying a large turn count
+    # as a raise while a turn carrying a large lift was never asked at
+    # all.  A movement that is half of each is a diagonal nobody meant,
+    # and it now fires nothing rather than whichever was asked first.
     sideways = abs(turn) / SWIPE_TURN
+    upright = abs(lift) / SWIPE_LIFT
 
-    if turned:
+    if turned and upright <= sideways * CROSSTALK:
         moving_right = turn > 0
 
         if not FRAME_IS_MIRRORED:
@@ -374,7 +394,7 @@ def detect_swipe(hand, handedness=None):
 
         return "SWIPE_RIGHT" if moving_right else "SWIPE_LEFT"
 
-    if raised and sideways < CROSSTALK:
+    if raised and sideways <= upright * CROSSTALK:
         # Not fired(): that waits for the hand to stop, and a hand held up
         # is not going to.  Coming back down is what readies the next one.
         _state.raised = True

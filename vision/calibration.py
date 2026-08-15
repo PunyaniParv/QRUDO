@@ -39,6 +39,7 @@ class Calibration:
     swipe_turn_speed: float
     swipe_lift: float
     swipe_lift_speed: float
+    crosstalk: float
     min_hand_on_screen: float
 
     #: Notes about the loading rather than thresholds, so they are kept
@@ -148,6 +149,7 @@ class Calibration:
         "fist_reach": (0.90, 1.40),
         "swipe_lift": (0.25, 1.20),
         "swipe_lift_speed": (0.40, 4.50),
+        "crosstalk": (0.15, 0.95),
         "min_hand_on_screen": (0.015, 0.035),
     }
 
@@ -189,6 +191,7 @@ class Calibration:
         motion.SWIPE_TURN_SPEED = self.swipe_turn_speed
         motion.SWIPE_LIFT = self.swipe_lift
         motion.SWIPE_LIFT_SPEED = self.swipe_lift_speed
+        motion.CROSSTALK = self.crosstalk
 
     def describe(self):
         return [
@@ -197,6 +200,7 @@ class Calibration:
             f"fist below            {self.fist_reach:.2f}",
             f"wrist turn            {self.swipe_turn:.2f} at {self.swipe_turn_speed:.2f}/s",
             f"hand raised           {self.swipe_lift:.2f} at {self.swipe_lift_speed:.2f}/s",
+            f"sideways vs upright   told apart below {self.crosstalk:.2f}",
             f"smallest hand read    {self.min_hand_on_screen:.3f} of the frame",
         ]
 
@@ -330,7 +334,10 @@ class Profile:
                 for finger in fingers
                 if finger in self.poses[pose]]
 
-    def moves_like(self, *prefixes):
+    #: Which measurements a movement is judged on.
+    AXES = {"turn": ("turn", "speed"), "lift": ("lift", "lift_speed")}
+
+    def reps(self, *prefixes):
         """Every repetition of the movements whose names start like this.
 
         Both directions go in together, because a wrist does not turn as
@@ -339,10 +346,75 @@ class Profile:
         never clears, which reads as "it does not detect that way".
         """
 
-        return [tuple(peak)
+        return [(name, peak)
                 for name, peaks in self.moves.items()
                 if name.startswith(prefixes)
                 for peak in peaks]
+
+    def moves_like(self, *prefixes, axis=None):
+        """The size and speed of each repetition, on one axis.
+
+        Recordings made before both axes were kept hold a bare pair, and
+        that pair is whatever the movement was asked for -- so it answers
+        for its own axis and says nothing about the other.
+        """
+
+        axis = axis or ("lift" if prefixes[0] in ("raise", "lower") else "turn")
+        size_of, speed_of = self.AXES[axis]
+
+        found = []
+
+        for name, peak in self.reps(*prefixes):
+            if isinstance(peak, dict):
+                found.append((peak.get(size_of, 0.0), peak.get(speed_of, 0.0)))
+            elif axis == self.asked_of(name):
+                found.append(tuple(peak))
+
+        return [pair for pair in found if pair[0] > 0]
+
+    @staticmethod
+    def asked_of(name):
+        """Which axis a movement of this name was asked for."""
+
+        return "turn" if name.startswith("turn") else "lift"
+
+    def crosstalk(self, swipe_turn, swipe_lift):
+        """How much of the other movement a deliberate one carries.
+
+        Turning the wrist raises the hand a little and raising it turns
+        the wrist a little, so every movement has to say which of the two
+        it was.  That was a guessed constant, applied to one of them and
+        not the other -- and when it was applied to both, turns stopped
+        registering, because a turn really does raise the hand.
+
+        Measured instead: whatever share of the wrong movement your own
+        turns and raises carry, with room above it.  Below that share a
+        movement is clearly one thing; above it, it is a diagonal nobody
+        meant and firing either would be a guess.
+        """
+
+        shares = []
+
+        for name, peak in self.reps("turn", "raise", "lower", "lift"):
+            if not isinstance(peak, dict):
+                continue
+
+            sideways = abs(peak.get("turn", 0.0)) / max(swipe_turn, 1e-6)
+            upright = abs(peak.get("lift", 0.0)) / max(swipe_lift, 1e-6)
+
+            asked, other = ((sideways, upright)
+                            if self.asked_of(name) == "turn"
+                            else (upright, sideways))
+
+            if asked > 0:
+                shares.append(other / asked)
+
+        if not shares:
+            return None, False
+
+        # Room above the worst one seen, so a movement no worse than the
+        # ones recorded is not turned away.
+        return max(shares) * 1.3, True
 
     def derive(self, current):
         """Work the thresholds out.  Returns them and anything unmeasured.
@@ -440,6 +512,16 @@ class Profile:
         elif missed:
             warnings.append("one of the raises barely moved, and was ignored")
 
+        crosstalk, ok = self.crosstalk(swipe_turn, swipe_lift)
+
+        if not ok:
+            crosstalk = current.crosstalk
+            warnings.append("turning and raising were not measured against"
+                            " each other")
+        elif crosstalk >= 0.95:
+            warnings.append("your turns and raises look much alike, so one"
+                            " may be taken for the other")
+
         # How small a hand may look and still be read.  Taken from how
         # large yours looked while calibrating, so calibrating across the
         # room lets SARV reach that far.  It can only ever loosen the
@@ -469,6 +551,7 @@ class Profile:
             swipe_turn_speed=round(swipe_turn_speed, 3),
             swipe_lift=round(swipe_lift, 3),
             swipe_lift_speed=round(swipe_lift_speed, 3),
+            crosstalk=round(crosstalk, 3),
             min_hand_on_screen=round(min_hand, 4),
         )
 
@@ -589,5 +672,6 @@ def current():
         swipe_turn_speed=motion.SWIPE_TURN_SPEED,
         swipe_lift=motion.SWIPE_LIFT,
         swipe_lift_speed=motion.SWIPE_LIFT_SPEED,
+        crosstalk=motion.CROSSTALK,
         min_hand_on_screen=hand_state.MIN_HAND_ON_SCREEN,
     )
