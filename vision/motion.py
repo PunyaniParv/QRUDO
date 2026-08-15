@@ -401,6 +401,13 @@ def detect_swipe(hand, handedness=None):
         _state.still_since = None
         _state.cooldown_until = moment + SWIPE_COOLDOWN
 
+        # The same movement, and which hand made it says what it meant.
+        # This is what measuring a pose and a movement apart was for: an
+        # open hand raised needed no recording of its own, being a pose
+        # already measured and a movement already measured.
+        if _state.armed_kind == gestures.POSE_OPEN_PALM:
+            return "PALM_UP" if lift > 0 else "PALM_DOWN"
+
         return "SWIPE_UP" if lift > 0 else "SWIPE_DOWN"
 
     return None

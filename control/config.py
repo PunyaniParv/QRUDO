@@ -31,8 +31,12 @@ class ControlConfig:
     """VOLUME_UP on a muted machine unmutes it instead of silently doing nothing."""
 
     # --- brightness --------------------------------------------------------
-    brightness_step: int = 8
-    """Percentage points added/removed per BRIGHTNESS_UP / BRIGHTNESS_DOWN."""
+    brightness_step: int = 10
+    """Percentage points added/removed per BRIGHTNESS_UP / BRIGHTNESS_DOWN.
+
+    Ten, for the reason volume is ten: a gesture is expensive to repeat
+    compared with the key that used to do this.
+    """
 
     # --- media / seeking ---------------------------------------------------
     seek_seconds: int = 10

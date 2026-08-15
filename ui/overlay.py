@@ -126,6 +126,8 @@ def legend_lines(mapping):
         "SWIPE_RIGHT": "2 fingers, turn wrist right",
         "SWIPE_UP": "2 fingers, raise hand",
         "SWIPE_DOWN": "2 fingers, lower hand",
+        "PALM_UP": "open hand, raise it",
+        "PALM_DOWN": "open hand, lower it",
     }
 
     # The command is an enum, and what str() makes of one changed in 3.11

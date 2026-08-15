@@ -33,6 +33,8 @@ SWIPE_COMMANDS = {
     "SWIPE_RIGHT": Command.FORWARD,
     "SWIPE_UP": Command.VOLUME_UP,
     "SWIPE_DOWN": Command.VOLUME_DOWN,
+    "PALM_UP": Command.BRIGHTNESS_UP,
+    "PALM_DOWN": Command.BRIGHTNESS_DOWN,
 }
 
 # Deliberately unmapped for now:

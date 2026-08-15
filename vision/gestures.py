@@ -16,7 +16,8 @@ from __future__ import annotations
 from . import hand_state
 from .state_machine import FingerMemory, GestureStabiliser
 
-POSE_TWO_FINGER = "two_finger"  # index and middle out: the pose a swipe is made from
+POSE_TWO_FINGER = "two_finger"  # index and middle out: seeking and volume
+POSE_OPEN_PALM = "open_palm"    # every finger out: brightness
 
 _stabiliser = GestureStabiliser()
 _fingers = FingerMemory()
@@ -176,4 +177,24 @@ def pose_kind(hand):
     brightness already was.
     """
 
-    return POSE_TWO_FINGER if _two_up(_fingers_out(hand)) else None
+    fingers = _fingers_out(hand)
+
+    if _two_up(fingers):
+        return POSE_TWO_FINGER
+
+    if not all(fingers.values()):
+        return None
+
+    # An open hand has to be properly open, and has to be a palm.  The
+    # back of a hand with the fingers straight is what the camera sees of
+    # someone reaching for something, and reaching moves the hand -- which
+    # is the whole of what this pose is then asked about.
+    screen = hand_state.screen_of(hand)
+
+    if hand_state.is_back_of_hand(screen, getattr(hand, "handedness", None)):
+        return None
+
+    if not hand_state.is_open(hand_state.shape_of(hand)):
+        return None
+
+    return POSE_OPEN_PALM

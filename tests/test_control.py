@@ -221,7 +221,8 @@ class TestSelfTestRestores(unittest.TestCase):
             selftest.PAUSE_BETWEEN = original_pause
 
         ups = controller.calls.count("brightness up (no-op)")
-        downs = controller.calls.count("brightness -8%")
+        downs = controller.calls.count(
+            f"brightness -{ControlConfig().brightness_step}%")
         # BRIGHTNESS_UP runs twice: once as its own test, once undoing the
         # BRIGHTNESS_DOWN test.  Both are no-ops on this machine.
         self.assertEqual(ups, 2)

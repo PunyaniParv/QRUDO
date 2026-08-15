@@ -364,8 +364,16 @@ class TestTwoFingerPose(GestureTestCase):
         self.assertEqual(gestures.pose_kind(peace_sign()),
                          gestures.POSE_TWO_FINGER)
 
-    def test_open_hand_is_not_the_pose(self):
-        self.assertIsNone(gestures.pose_kind(make_hand()))
+    def test_an_open_hand_is_a_pose_of_its_own(self):
+        """It arms a movement, but not this one.
+
+        An open hand raised and lowered is brightness; two fingers raised
+        and lowered is volume.  Which pose the movement was made from is
+        the whole of what separates them.
+        """
+
+        self.assertEqual(gestures.pose_kind(make_hand()),
+                         gestures.POSE_OPEN_PALM)
 
     def test_fist_is_not_the_pose(self):
         self.assertIsNone(gestures.pose_kind(fist()))
@@ -742,6 +750,84 @@ class TestTheFourDirectionsAreDistinct(GestureTestCase):
         self.assertNotIn(fired, ("SWIPE_UP", "SWIPE_DOWN"))
 
 
+class TestBrightnessOnAnOpenPalm(GestureTestCase):
+    """An open hand raised and lowered, which is brightness.
+
+    It needed no recording of its own: the pose was already measured and
+    so was the movement, which is what measuring the two apart was for.
+    What separates it from volume is only which hand made the movement.
+    """
+
+    TWO = (EXTENDED, EXTENDED, CURLED, CURLED)
+    PALM = (EXTENDED, EXTENDED, EXTENDED, EXTENDED)
+
+    def hand(self, fingers, cy=0.55, roll=0.0, **view):
+        return make_hand(*fingers, cy=cy, roll=math.radians(roll), **view)
+
+    def move(self, fingers, rise=0.0, roll=0.0, frames=14, seconds=0.30,
+             **view):
+        for _ in range(20):
+            motion.detect_swipe(self.hand(fingers, **view), HAND)
+            self.clock.tick(0.045)
+
+        fired = None
+
+        for i in range(frames):
+            share = i / (frames - 1)
+            fired = fired or motion.detect_swipe(
+                self.hand(fingers, cy=0.55 - rise * share,
+                          roll=roll * share, **view), HAND)
+            self.clock.tick(seconds / (frames - 1))
+
+        return fired
+
+    def test_raising_an_open_hand(self):
+        self.assertEqual(self.move(self.PALM, rise=0.20), "PALM_UP")
+
+    def test_lowering_an_open_hand(self):
+        self.assertEqual(self.move(self.PALM, rise=-0.20), "PALM_DOWN")
+
+    def test_the_same_movement_on_two_fingers_is_still_volume(self):
+        self.assertEqual(self.move(self.TWO, rise=0.20), "SWIPE_UP")
+        self.setUp()
+        self.assertEqual(self.move(self.TWO, rise=-0.20), "SWIPE_DOWN")
+
+    def test_turning_an_open_hand_does_nothing(self):
+        """Seeking stays on two fingers.  An open hand turning is a hand
+        being turned over, not an instruction."""
+
+        self.assertIsNone(self.move(self.PALM, roll=50))
+        self.setUp()
+        self.assertIsNone(self.move(self.PALM, roll=-50))
+
+    def test_the_back_of_a_hand_does_not_arm_it(self):
+        """Which is what the camera sees of someone reaching for
+        something -- and reaching moves the hand, which is the whole of
+        what this pose is then asked about."""
+
+        back = {"yaw": math.radians(180)}
+
+        self.assertIsNone(gestures.pose_kind(self.hand(self.PALM, **back)))
+        self.assertIsNone(self.move(self.PALM, rise=0.20, **back))
+
+    def test_a_resting_hand_does_not_arm_it(self):
+        resting = (LOOSE, LOOSE, LOOSE, LOOSE)
+
+        self.assertIsNone(gestures.pose_kind(self.hand(resting)))
+        self.assertIsNone(self.move(resting, rise=0.20))
+
+    def test_it_reaches_the_brightness_commands(self):
+        from control import Command
+        from integration.bridge import GestureRouter
+
+        router = GestureRouter()
+
+        self.assertEqual(router.update(None, "PALM_UP", now=1000.0),
+                         Command.BRIGHTNESS_UP)
+        self.assertEqual(router.update(None, "PALM_DOWN", now=1002.0),
+                         Command.BRIGHTNESS_DOWN)
+
+
 class TestBringingTheWristBack(GestureTestCase):
     """Reported: putting the wrist back counted as a second gesture.
 
@@ -898,12 +984,12 @@ class TestTwoFingersSurvivesAMisread(GestureTestCase):
 
     def test_both_being_out_is_a_different_hand(self):
         """Where the line still is.  Four fingers out is an open hand,
-        and it must not arm a swipe."""
+        which is its own pose and not this one."""
 
         hand = make_hand(EXTENDED, EXTENDED, EXTENDED, EXTENDED)
 
         self.assertEqual(gestures.classify(hand, HAND), "OPEN_PALM")
-        self.assertIsNone(gestures.pose_kind(hand))
+        self.assertEqual(gestures.pose_kind(hand), gestures.POSE_OPEN_PALM)
 
     def test_three_fingers_is_not_this_pose(self):
         """Kept apart deliberately, so it stays available to mean
