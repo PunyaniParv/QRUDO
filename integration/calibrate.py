@@ -70,8 +70,8 @@ def run(args):
         tracker = HandTracker().open()
         camera = Camera(
             args.camera,
-            width=640 if getattr(args, "near", False) else 1600,
-            height=480 if getattr(args, "near", False) else 1200,
+            width=1600 if getattr(args, "far", False) else 640,
+            height=1200 if getattr(args, "far", False) else 480,
         ).open()
     except (CameraError, TrackerError) as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -70,8 +70,8 @@ def run(engine, args, tuning=False):
         # twenty pixels across at 640, which is not much to find joints in.
         camera = Camera(
             args.camera,
-            width=640 if getattr(args, "near", False) else 1600,
-            height=480 if getattr(args, "near", False) else 1200,
+            width=1600 if getattr(args, "far", False) else 640,
+            height=1200 if getattr(args, "far", False) else 480,
         ).open()
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -193,8 +193,8 @@ def picture(camera):
 
     if abs(width / height - 4 / 3) > 0.05:
         return (line + "  -- widescreen, so the top and bottom of the view"
-                       "\n           may be cropped; try --near if gestures"
-                       " close up are missed")
+                       "\n           may be cropped; close-up gestures can"
+                       " run out of picture")
 
     return line
 
