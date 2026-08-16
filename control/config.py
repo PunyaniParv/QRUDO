@@ -131,8 +131,8 @@ class ControlConfig:
     ``"track"`` = previous/next track (HID media keys)."""
 
     # --- safety / behaviour ------------------------------------------------
-    gesture_cooldown_seconds: float = 0.6
-    """How long after a swipe before another can be seen at all.
+    gesture_cooldown_seconds: float = 1.0
+    """How long after any gesture before another can be seen at all.
 
     One movement crosses many frames, and without this each of them would
     be a command -- one raise would be five volume steps.  It is not the
@@ -143,9 +143,11 @@ class ControlConfig:
 
     Measured with the volume gesture repeated as fast as a hand can make
     it: at 0.6 a command lands every 1.5s, because the movement and its
-    return take that long anyway.  At 1.0 it is every 1.8s.  Raising it
-    slows deliberate repeats and prevents nothing that is not already
-    prevented, which is why it is 0.6.
+    return take that long anyway.  At 1.0 it is every 1.8s.  The 0.3s is
+    paid for margin: those other guards are tuned to the six movements
+    that exist, and a gesture added to the tables later brings whatever
+    settling it brings -- so the default leans conservative, and this is
+    the setting to lower if repeats feel slow.
     """
 
     cooldown_seconds: float = 0.6

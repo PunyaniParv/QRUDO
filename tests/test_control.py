@@ -242,8 +242,8 @@ class TestTheGestureCooldownIsASetting(unittest.TestCase):
     and made again -- do not depend on how long the movement took.
     """
 
-    def test_it_defaults_to_six_tenths(self):
-        self.assertAlmostEqual(ControlConfig().gesture_cooldown_seconds, 0.6)
+    def test_it_defaults_to_one_second(self):
+        self.assertAlmostEqual(ControlConfig().gesture_cooldown_seconds, 1.0)
 
     def test_it_can_be_set(self):
         import json
@@ -251,10 +251,10 @@ class TestTheGestureCooldownIsASetting(unittest.TestCase):
         from pathlib import Path
 
         path = Path(tempfile.mkdtemp()) / "sarv_config.json"
-        path.write_text(json.dumps({"gesture_cooldown_seconds": 1.0}))
+        path.write_text(json.dumps({"gesture_cooldown_seconds": 0.6}))
 
         self.assertAlmostEqual(
-            ControlConfig.load(path).gesture_cooldown_seconds, 1.0)
+            ControlConfig.load(path).gesture_cooldown_seconds, 0.6)
 
 
 class TestSeekConfig(unittest.TestCase):

@@ -42,7 +42,22 @@ class TestSwipes(unittest.TestCase):
         self.assertIsNone(self.router.update(swipe="SWIPE_LEFT", now=1000.2),
                           "the second came too soon after the first")
         self.assertIsNotNone(self.router.update(swipe="SWIPE_LEFT",
-                                                now=1001.0))
+                                                now=1001.1))
+
+    def test_a_custom_command_inherits_the_cooldown(self):
+        """A gesture that does not exist yet is already covered.
+
+        The wait is checked before the tables are consulted, so a command
+        added to either table gets it without asking -- there is no
+        second, unguarded route to the engine.
+        """
+
+        router = GestureRouter(swipes={"CIRCLE": Command.BRIGHTNESS_UP})
+
+        self.assertIsNotNone(router.update(swipe="CIRCLE", now=1000.0))
+        self.assertIsNone(router.update(swipe="CIRCLE", now=1000.9),
+                          "inside the cooldown, custom or not")
+        self.assertIsNotNone(router.update(swipe="CIRCLE", now=1001.1))
 
     def test_one_direction_holds_off_the_others(self):
         """Which is what "global" means: a hand settling after a raise
@@ -248,7 +263,7 @@ class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
         router = GestureRouter(poses={"FIST": Command.PLAY_PAUSE,
                                       "POINT": Command.VOLUME_UP})
         self.assertIsNotNone(router.update("FIST", now=1000.0))
-        self.assertIsNotNone(router.update("POINT", now=1001.0))
+        self.assertIsNotNone(router.update("POINT", now=1001.1))
 
 
 class TestTheOverlayIsWhole(unittest.TestCase):

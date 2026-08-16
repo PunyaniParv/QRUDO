@@ -23,7 +23,7 @@ from control import Command
 #: a gesture added to the table below inherits nothing from it unless it
 #: happens to arrive by the same route.  Here, everything inherits it,
 #: including whatever is added next.
-GLOBAL_COOLDOWN = 0.6
+GLOBAL_COOLDOWN = 1.0
 
 #: How soon the same held pose may fire again.  Making a fist twice in
 #: under a second is not something anyone does deliberately, and a
