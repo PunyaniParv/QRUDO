@@ -245,10 +245,16 @@ def picture(camera):
             f"{hand_state.MIN_HAND_PIXELS}px ignored"
             f" ({gate:.1%} of frame)")
 
+    if height < camera.height:
+        # Shorter than asked for: rows genuinely went missing, which is
+        # a widescreen crop of a 4:3 sensor.  A native-widescreen sensor
+        # never lands here -- its taller mode was taken at open, and
+        # widescreen is its whole picture, not a crop.
+        return (line + "\n           the view lost height, so close-up"
+                       " gestures can run out of picture")
+
     if abs(width / height - 4 / 3) > 0.05:
-        return (line + "\n           widescreen, so the top and bottom of"
-                       " the view may be cropped; close-up gestures can"
-                       " run out of picture")
+        return line + "  (widescreen sensor, using its full view)"
 
     return line
 

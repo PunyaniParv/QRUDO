@@ -68,26 +68,50 @@ class Camera:
         # Asked in fours and threes the same camera offers 1760x1328,
         # which matches the 640x480 view at 0.993: the whole picture, with
         # nearly three times the height in pixels.
-        # DirectShow hands big pictures over as raw YUY2 unless asked
-        # otherwise, and USB bandwidth then caps the camera at a handful
-        # of frames a second at exactly the sizes --far asks for -- a
-        # frame rate no quick gesture survives.  MJPG fits the same
-        # picture down the same cable at full rate; a camera that cannot
-        # offer it ignores the request and nothing is lost.  Not asked
-        # for at the small default, where raw fits the bandwidth anyway
-        # and skipping the JPEG decode is cheaper per frame.
-        if sys.platform == "win32" and self.width * self.height > 640 * 480:
-            self._capture.set(cv2.CAP_PROP_FOURCC,
-                              cv2.VideoWriter_fourcc(*"MJPG"))
+        self._ask(cv2, self.width, self.height)
 
-        self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        # Some sensors only speak widescreen -- common on Windows
+        # laptops -- and answer the 4:3 request with something short,
+        # like 640x360.  For them widescreen is not a crop, it is the
+        # whole picture, so the right move is to take their taller
+        # widescreen mode instead: 1280x720 carries more height than
+        # the 480 lines asked for, and more width buys range.  Only
+        # when the answer came back short *and* wide; a camera that
+        # gave the 4:3 it was asked for is left alone.
+        delivered = self.shape
+
+        if delivered:
+            width, height = delivered
+
+            if height and height < self.height and width / height > 1.5:
+                taller = (1920, 1080) if self.height > 700 else (1280, 720)
+                self._ask(cv2, *taller)
 
         # Take the newest frame rather than the oldest queued one -- a
         # backlog is felt directly as lag between moving and reacting.
         self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         return self
+
+    def _ask(self, cv2, width, height):
+        """Request one mode, with the codec that fits down the cable.
+
+        DirectShow hands big pictures over as raw YUY2 unless asked
+        otherwise, and USB bandwidth then caps the camera at a handful
+        of frames a second at exactly the big sizes -- a frame rate no
+        quick gesture survives.  MJPG fits the same picture down the
+        same cable at full rate; a camera that cannot offer it ignores
+        the request and nothing is lost.  Not asked for at the small
+        default, where raw fits the bandwidth anyway and skipping the
+        JPEG decode is cheaper per frame.
+        """
+
+        if sys.platform == "win32" and width * height > 640 * 480:
+            self._capture.set(cv2.CAP_PROP_FOURCC,
+                              cv2.VideoWriter_fourcc(*"MJPG"))
+
+        self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
     @property
     def shape(self):
