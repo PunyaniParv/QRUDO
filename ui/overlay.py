@@ -229,6 +229,7 @@ def tuning_lines(state, motion, hand_state):
         line("lift ", "lift", motion.SWIPE_LIFT),
         line("speed", "speed", motion.SWIPE_TURN_SPEED),
         line("agree", "agree", motion.SWIPE_CONSISTENCY),
+        stop_line(state, motion),
         "   ext   " + "  ".join(
             f"{name[0]}{score:.2f}" for name, score in scores.items()
         ) + f"   (out above {hand_state.EXTENDED_RATIO})",
@@ -239,6 +240,29 @@ def tuning_lines(state, motion, hand_state):
         "   why   " + str(state.get("why", "")),
         f"   open above {hand_state.OPEN_RATIO}",
     ]
+
+
+def stop_line(state, motion):
+    """How long since each axis last stopped, against the allowance.
+
+    A movement must begin within a window of its axis's stop, so when
+    every other number clears its bar and nothing fires, this is the
+    line that says why: the hand never stopped, or stopped too long ago.
+    """
+
+    allowance = motion.SWIPE_WINDOW + motion.QUIET_SPAN
+
+    turn_ago = state.get("rested_ago")
+    lift_ago = state.get("lift_rested_ago")
+
+    if turn_ago is None:
+        return "   stop  -"
+
+    near = min(turn_ago, lift_ago) <= allowance
+    mark = "ok " if near else "   "
+
+    return (f"{mark}stop  turn {turn_ago:.1f}s ago  lift {lift_ago:.1f}s"
+            f" ago / {allowance:g}s  (a move starts near a stop)")
 
 
 def draw_tuning(cv2, frame, state, motion, hand_state):

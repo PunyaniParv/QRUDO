@@ -544,6 +544,8 @@ def detect_swipe(hand, handedness=None):
 
     _debug.update(
         settling=False,
+        rested_ago=round(moment - _state.aim_rested_at, 1),
+        lift_rested_ago=round(moment - _state.y_rested_at, 1),
         turn=round(abs(turn), 2),
         lift=round(lift, 2),
         lift_speed=round(lift_speed, 2),

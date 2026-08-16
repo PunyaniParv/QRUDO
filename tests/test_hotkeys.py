@@ -16,6 +16,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from control import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, log
+
+# Scratch logs, not the live ones -- see test_control for why.
+import tempfile
+
+log.setup(tempfile.mkdtemp(), console=False)
 from control import hotkeys
 from control.backends.null import NullController
 from control.simulator import KEY_MAP

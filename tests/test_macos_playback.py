@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from control import ControlConfig, log
+
+# Scratch logs, not the live ones -- see test_control for why.
+import tempfile
+
+log.setup(tempfile.mkdtemp(), console=False)
 from control.backends.macos import (KEY_J, KEY_L, KEY_RIGHT_ARROW,
                                     MacOSController)
 from control.executor import UnsupportedCommand

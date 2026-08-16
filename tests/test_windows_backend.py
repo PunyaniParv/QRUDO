@@ -16,6 +16,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from control import ControlConfig, log
+
+# Scratch logs, not the live ones -- see test_control for why.
+import tempfile
+
+log.setup(tempfile.mkdtemp(), console=False)
 from control.backends import windows
 from control.backends.windows import (
     VK_J,

@@ -18,6 +18,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from control import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, Status, log, parse_command
+
+# Into a scratch directory before any engine runs a command: the log
+# module configures itself on first use and keeps that choice, and left
+# to default it wrote every test's commands into the live
+# logs/commands.jsonl -- where an accuracy analysis read them as the
+# user's.
+import tempfile
+
+log.setup(tempfile.mkdtemp(), console=False)
 from control.commands import NO_CHANGE
 from control.backends.null import NullController
 from control.executor import ControlError
