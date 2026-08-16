@@ -208,6 +208,22 @@ def explain(hand, handedness=None):
     if len(out) == 4 and not hand_state.is_facing_palm(screen, handedness):
         return "side-on -- an open hand is only read facing the camera"
 
+    if fingers["index"] and fingers["middle"] and len(out) == 2:
+        # The two-finger pose is near; say which down-finger refused.
+        folded = _fingers_folded(hand)
+        spans = _fingers.steady or hand_state.finger_span(hand)
+        bars = hand_state.FOLDED_RATIOS or {}
+
+        if not folded["pinky"]:
+            return (f"almost the swipe pose: pinky at "
+                    f"{spans.get('pinky', 0):.2f}, tucked means below "
+                    f"{bars.get('pinky', hand_state.FOLDED_RATIO)}")
+
+    if fingers["index"] and fingers["middle"] and fingers["ring"] \
+            and not fingers["pinky"]:
+        return ("almost the swipe pose: the ring finger is still out --"
+                " let it drop")
+
     if len(out) == 4 and not _open_enough(hand):
         weakest = min(hand_state.finger_scores(shape).values())
         return (f"open but slack: weakest finger {weakest:.2f}, "
@@ -234,7 +250,8 @@ def detect_gesture(hand, handedness=None):
 
 
 def _two_up(fingers, folded):
-    """Index and middle out, both of the others deliberately down.
+    """Index and middle out, the ring held short of out, the pinky
+    folded on purpose.
 
     Exactly two, not "at most one of the others is wrong".  It was the
     looser rule briefly, because the folded fingers are the ones a camera
@@ -248,14 +265,23 @@ def _two_up(fingers, folded):
     readings rather than one, so a misread has to persist to be believed,
     while three fingers held up persists by definition.
 
-    Down means folded, not merely short of out: a resting ring finger
-    sits between the two lines and counts as neither, so a slack hand
-    one slack finger deeper than usual cannot become the swipe pose.
+    The two down-fingers are asked different questions, because hands
+    hold them differently.  Nobody makes this pose with a straight
+    pinky, so the pinky must be folded on purpose -- which is what keeps
+    the resting hand out, its pinky being slack rather than tucked.
+    Plenty of people make it with the ring only half-held, and its
+    calibrated fold line comes from a recording where it was folded
+    right down for the prompt -- so asking the ring for that depth in
+    use refused the pose as made casually, which is how it is made.
+    The ring answers the plain question instead: not out.  A resting
+    hand still has to misread twice at once -- ring under the out-line
+    and pinky under the fold-line together -- where one misread used to
+    be enough.
     """
 
     return (fingers["index"]
             and fingers["middle"]
-            and folded["ring"]
+            and not fingers["ring"]
             and folded["pinky"])
 
 

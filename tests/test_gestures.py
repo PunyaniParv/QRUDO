@@ -599,6 +599,19 @@ class TestSlackIsNeitherOutNorFolded(GestureTestCase):
         self.assertEqual(self.settle(hand), "TWO_FINGER")
         self.assertEqual(gestures.pose_kind(hand), gestures.POSE_TWO_FINGER)
 
+    def test_the_pose_as_people_actually_make_it(self):
+        """Pinky tucked, ring only half-held.  The calibrated fold line
+        comes from a recording where the ring was folded right down for
+        the prompt, and asking for that depth in use refused the pose as
+        made casually -- which is how it is made.  The pinky carries the
+        deliberateness; the ring only has to be short of out.
+        """
+
+        hand = make_hand(EXTENDED, EXTENDED, LOOSE, CURLED)
+
+        self.assertEqual(self.settle(hand), "TWO_FINGER")
+        self.assertEqual(gestures.pose_kind(hand), gestures.POSE_TWO_FINGER)
+
 
 class TestTheRestSignatureInformsButDoesNotGate(GestureTestCase):
     """The signature vetoed briefly, and on a hand whose rest is
