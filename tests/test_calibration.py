@@ -86,6 +86,43 @@ class TestTheReadingsAreKept(unittest.TestCase):
                 "raise": [(0.80, 2.2), (0.75, 2.0)],
                 "lower": [(0.60, 1.7), (0.65, 1.8)]}
 
+    def recorded_moves(self):
+        """The shape the live recorder actually hands over: every peak a
+        dict of both axes, which is what the crosstalk is measured from.
+        The bare pairs above are the shape of older recordings, and for
+        a while they were the only shape any test fed in -- so the suite
+        stayed green while a real calibration crashed on its own
+        recordings.
+        """
+
+        def rep(turn, speed, lift, lift_speed):
+            return {"turn": turn, "speed": speed,
+                    "lift": lift, "lift_speed": lift_speed}
+
+        return {"turn left": [rep(0.90, 3.0, 0.10, 0.4),
+                              rep(0.85, 2.9, 0.12, 0.5)],
+                "turn right": [rep(0.45, 1.6, 0.08, 0.3),
+                               rep(0.50, 1.8, 0.09, 0.4)],
+                "raise": [rep(0.20, 0.7, 0.80, 2.2),
+                          rep(0.15, 0.6, 0.75, 2.0)],
+                "lower": [rep(0.18, 0.6, 0.60, 1.7),
+                          rep(0.22, 0.7, 0.65, 1.8)]}
+
+    def test_the_recorders_own_shape_survives_the_round_trip(self):
+        profile = Profile.from_samples(self.poses(), self.recorded_moves())
+
+        measured, _ = profile.derive(DEFAULTS)
+
+        self.assertGreater(measured.swipe_lift, 0.0)
+        self.assertIsNotNone(measured.crosstalk_turn)
+
+        path = Path(tempfile.mkdtemp()) / "sarv_calibration.json"
+        measured.save(path, profile=profile)
+
+        again, _ = Profile.load(path).derive(DEFAULTS)
+
+        self.assertEqual(again, measured)
+
     def saved(self):
         """A calibration written to a temporary file, profile and all."""
 

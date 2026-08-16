@@ -364,10 +364,29 @@ class Profile:
                  for reading in readings
                  if "scale" in reading]
 
+        def keep(peak):
+            """One repetition, in whichever shape it was recorded.
+
+            The recorder keeps both axes of every movement -- a dict of
+            turn, speed, lift and lift_speed, which is what lets the
+            crosstalk be measured from it.  This used to unpack every
+            peak as a bare (size, speed) pair, which is the shape of
+            recordings from before both axes were kept -- so the very
+            recordings the crosstalk needed were the ones that crashed
+            the calibration that made them.
+            """
+
+            if isinstance(peak, dict):
+                return {name: round(value, 3)
+                        for name, value in peak.items()}
+
+            size, speed = peak
+
+            return [round(size, 3), round(speed, 3)]
+
         return cls(
             poses=summary,
-            moves={name: [[round(size, 3), round(speed, 3)]
-                          for size, speed in peaks]
+            moves={name: [keep(peak) for peak in peaks]
                    for name, peaks in moves.items()},
             scale=[round(edge(sizes, share, 0.1), 4) for share in EDGES],
         )
