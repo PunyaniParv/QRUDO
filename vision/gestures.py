@@ -21,11 +21,13 @@ POSE_OPEN_PALM = "open_palm"    # every finger out: brightness
 
 _stabiliser = GestureStabiliser()
 _fingers = FingerMemory()
+_folded = FingerMemory()
 
 
 def reset():
     _stabiliser.clear()
     _fingers.clear()
+    _folded.clear()
 
 
 def observe(hand):
@@ -35,8 +37,11 @@ def observe(hand):
     done; everything else asks what has already been worked out.
     """
 
-    return _fingers.update(hand_state.finger_span(hand),
-                           hand_state.EXTENDED_RATIO)
+    spans = hand_state.finger_span(hand)
+
+    _folded.update(spans, hand_state.FOLDED_RATIO)
+
+    return _fingers.update(spans, hand_state.EXTENDED_RATIO)
 
 
 def _fingers_out(hand):
@@ -50,6 +55,34 @@ def _fingers_out(hand):
 
     return _fingers.read(hand_state.finger_span(hand),
                          hand_state.EXTENDED_RATIO)
+
+
+def _fingers_folded(hand):
+    """Which fingers are deliberately down, on its own steadied memory.
+
+    Not the complement of ``_fingers_out``: between out and folded lies
+    the slack of a hand at rest, and a finger there is neither -- so a
+    pattern may claim it as neither.
+    """
+
+    above = _folded.read(hand_state.finger_span(hand),
+                         hand_state.FOLDED_RATIO)
+
+    return {name: not is_above for name, is_above in above.items()}
+
+
+def _at_rest(hand):
+    """Whether the hand matches the calibrated resting signature.
+
+    Asked of the steadied readings when there are enough, so one jittery
+    finger does not walk the hand in and out of its own rest.
+    """
+
+    spans = (_fingers.steady
+             if len(_fingers.steady) >= len(hand_state.FINGERS)
+             else hand_state.finger_span(hand))
+
+    return hand_state.looks_at_rest(spans)
 
 
 def _open_enough(hand):
@@ -96,7 +129,15 @@ def classify(hand, handedness=None):
     if hand_state.is_clenched(hand):
         return "UNKNOWN" if from_behind else "FIST"
 
+    # A hand that looks like this user's hand at rest is resting,
+    # whatever the patterns below would make of it.  The calibration
+    # records the rest for exactly this promise, and the lines alone
+    # cannot always keep it.
+    if _at_rest(hand):
+        return "UNKNOWN"
+
     fingers = _fingers_out(hand)
+    folded = _fingers_folded(hand)
     extended = sum(fingers.values())
 
     if extended == 0:
@@ -105,13 +146,13 @@ def classify(hand, handedness=None):
 
     if (
         fingers["index"]
-        and not fingers["middle"]
-        and not fingers["ring"]
-        and not fingers["pinky"]
+        and folded["middle"]
+        and folded["ring"]
+        and folded["pinky"]
     ):
         return "POINT"
 
-    if _two_up(fingers):
+    if _two_up(fingers, folded):
         return "TWO_FINGER"
 
     if extended == 4:
@@ -150,6 +191,9 @@ def explain(hand, handedness=None):
     if hand_state.is_clenched(hand):
         return "shut -> FIST"
 
+    if _at_rest(hand):
+        return "matches your hand at rest -- resting asks for nothing"
+
     closed = [name for name, reach in reaches.items()
               if reach < hand_state.FIST_REACH]
 
@@ -178,8 +222,8 @@ def detect_gesture(hand, handedness=None):
     return _stabiliser.update(classify(hand, handedness))
 
 
-def _two_up(fingers):
-    """Index and middle out, both of the others down.
+def _two_up(fingers, folded):
+    """Index and middle out, both of the others deliberately down.
 
     Exactly two, not "at most one of the others is wrong".  It was the
     looser rule briefly, because the folded fingers are the ones a camera
@@ -192,12 +236,16 @@ def _two_up(fingers):
     The steadiness comes from time instead: a finger answers from several
     readings rather than one, so a misread has to persist to be believed,
     while three fingers held up persists by definition.
+
+    Down means folded, not merely short of out: a resting ring finger
+    sits between the two lines and counts as neither, so a slack hand
+    one slack finger deeper than usual cannot become the swipe pose.
     """
 
     return (fingers["index"]
             and fingers["middle"]
-            and not fingers["ring"]
-            and not fingers["pinky"])
+            and folded["ring"]
+            and folded["pinky"])
 
 
 def pose_kind(hand):
@@ -213,9 +261,14 @@ def pose_kind(hand):
     brightness already was.
     """
 
+    # A resting hand arms nothing, for the same reason classify refuses
+    # to name it: the calibration promised it asks for nothing.
+    if _at_rest(hand):
+        return None
+
     fingers = _fingers_out(hand)
 
-    if _two_up(fingers):
+    if _two_up(fingers, _fingers_folded(hand)):
         return POSE_TWO_FINGER
 
     if not all(fingers.values()):

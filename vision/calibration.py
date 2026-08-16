@@ -44,6 +44,13 @@ class Calibration:
     crosstalk_lift: float
     min_hand_on_screen: float
 
+    #: Defaulted, so calibrations from before it existed still construct.
+    #: The default equals the shipped EXTENDED_RATIO -- one line, the old
+    #: behaviour -- because it only helps when this user's held-down and
+    #: resting fingers measurably separate, and guessing a gap would cost
+    #: hands that hold the swipe pose's spare fingers nearly straight.
+    folded_ratio: float = 0.82
+
     #: Notes about the loading rather than thresholds, so they are kept
     #: out of the file and out of any comparison between two calibrations.
     #:
@@ -150,6 +157,7 @@ class Calibration:
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
         "fist_curl": (0.35, 0.75),
+        "folded_ratio": (0.35, 0.85),
         # The movement caps are set from what ordinary, unhurried
         # gestures measure -- a flick about 0.48 of turn at 2.2/s, a
         # gentle raise or lower about 0.79 of lift at 1.7/s: a
@@ -195,6 +203,7 @@ class Calibration:
         from . import hand_state, motion
 
         hand_state.EXTENDED_RATIO = self.extended_ratio
+        hand_state.FOLDED_RATIO = self.folded_ratio
         hand_state.OPEN_RATIO = self.open_ratio
         hand_state.FIST_REACH = self.fist_reach
         hand_state.FIST_CURL = self.fist_curl
@@ -411,6 +420,25 @@ class Profile:
 
         return "turn" if name.startswith("turn") else "lift"
 
+    def rest_signature(self):
+        """The middle reading of each resting finger, or None.
+
+        The recording the vision side compares a live hand against.  The
+        calibration takes the resting pose for one promise -- that it
+        asks for nothing -- and the thresholds alone cannot always keep
+        it: they are lines, and a resting hand drifts across them.  The
+        signature is the recording keeping its own promise.
+        """
+
+        if "rest" not in self.poses:
+            return None
+
+        middles = {finger: readings["ext"][1]
+                   for finger, readings in self.poses["rest"].items()
+                   if len(readings.get("ext", ())) == 3}
+
+        return middles or None
+
     def crosstalk(self):
         """How much of the other movement a deliberate one carries.
 
@@ -496,6 +524,41 @@ class Profile:
 
         if not ok:
             warnings.append("could not tell a finger held out from one held down")
+
+        # A finger is deliberately down below this -- a second line under
+        # the one above, because between them lies the resting hand.
+        # "Down" used to mean merely "not out", and a slack resting
+        # finger qualified: rest curls the fingers in order, index
+        # straightest and pinky deepest, so wherever the out-line cut,
+        # some depth of slack left exactly the index above it and a hand
+        # doing nothing read as POINT -- one slacker finger from the
+        # swipe pose.
+        #
+        # Only drawn where this hand's recordings actually separate.
+        # Some hands hold the swipe pose's spare fingers nearly straight,
+        # and for them the honest answer is the old single line, said out
+        # loud, rather than a gap invented between two measurements that
+        # overlap.
+        held_down = (self.among(["fist"], self.HIGH)
+                     + self.among(["two"], self.HIGH,
+                                  fingers=("ring", "pinky")))
+
+        resting = self.among(["rest"], self.LOW)
+
+        if resting:
+            folded_ratio, ok = between(
+                max(held_down, default=0.0), min(resting),
+                extended_ratio, fraction=DELIBERATE, least=0.06)
+        else:
+            folded_ratio, ok = extended_ratio, False
+
+        if not ok:
+            folded_ratio = extended_ratio
+            warnings.append("could not tell a finger held down from one"
+                            " at rest")
+
+        # A folded finger is certainly not out; the lines must agree.
+        folded_ratio = min(folded_ratio, extended_ratio)
 
         # A hand is open above this, which is a different question: the
         # other side is not a fist but a hand at rest, whose fingers are
@@ -605,6 +668,7 @@ class Profile:
 
         derived = Calibration(
             extended_ratio=round(extended_ratio, 3),
+            folded_ratio=round(folded_ratio, 3),
             open_ratio=round(open_ratio, 3),
             fist_reach=round(fist_reach, 3),
             fist_curl=round(fist_curl, 3),
@@ -735,6 +799,14 @@ def load_and_apply(path=None):
     calibration.pulled = tuple(pulled)
     calibration.apply()
 
+    # The rest recording itself, not only what was concluded from it:
+    # the veto that keeps a resting hand reading as nothing needs the
+    # signature, and files without a profile simply go without the veto.
+    from . import hand_state
+
+    hand_state.REST_SIGNATURE = (
+        profile.rest_signature() if profile is not None else None)
+
     return calibration
 
 
@@ -745,6 +817,7 @@ def current():
 
     return Calibration(
         extended_ratio=hand_state.EXTENDED_RATIO,
+        folded_ratio=hand_state.FOLDED_RATIO,
         open_ratio=hand_state.OPEN_RATIO,
         fist_reach=hand_state.FIST_REACH,
         fist_curl=hand_state.FIST_CURL,

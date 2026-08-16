@@ -535,6 +535,85 @@ class TestRestingHandAsksForNothing(GestureTestCase):
                     "UNKNOWN")
 
 
+class TestSlackIsNeitherOutNorFolded(GestureTestCase):
+    """A hand at rest curls its fingers in order -- index straightest,
+    pinky deepest -- so a single line always cuts through the middle of
+    somebody's resting hand, and some depth of slack leaves exactly the
+    index above it.  That read as POINT, and one slacker finger as the
+    swipe pose, armed by a hand doing nothing.
+
+    With the folded line drawn, a slack finger is neither out nor down,
+    and a pattern may claim it as neither.  The line ships equal to the
+    out-line -- the old single-line behaviour -- and only a calibration
+    that measured the separation lowers it, so these tests run as a
+    calibrated hand.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.was = hand_state.FOLDED_RATIO
+        hand_state.FOLDED_RATIO = 0.65
+
+    def tearDown(self):
+        hand_state.FOLDED_RATIO = self.was
+        super().tearDown()
+
+    def test_the_index_straightest_of_a_slack_hand_is_not_point(self):
+        self.assertEqual(
+            self.settle(make_hand(EXTENDED, LOOSE, LOOSE, LOOSE)),
+            "UNKNOWN")
+
+    def test_one_slack_finger_deeper_is_not_the_swipe_pose(self):
+        hand = make_hand(EXTENDED, EXTENDED, LOOSE, LOOSE)
+
+        self.assertEqual(self.settle(hand), "UNKNOWN")
+        self.assertIsNone(gestures.pose_kind(hand))
+
+    def test_fingers_folded_on_purpose_still_read(self):
+        self.assertEqual(
+            self.settle(make_hand(EXTENDED, CURLED, CURLED, CURLED)),
+            "POINT")
+
+        vision.reset_state()
+        hand = make_hand(EXTENDED, EXTENDED, CURLED, CURLED)
+
+        self.assertEqual(self.settle(hand), "TWO_FINGER")
+        self.assertEqual(gestures.pose_kind(hand), gestures.POSE_TWO_FINGER)
+
+
+class TestTheRestSignatureIsTheLastWord(GestureTestCase):
+    """The calibration records the resting hand for one promise: that it
+    asks for nothing.  The thresholds alone cannot always keep it -- they
+    are lines, and a resting hand drifts across them -- so a hand that
+    matches the recorded signature is refused before any pattern is
+    tried, poses that exist and poses not written yet alike.
+    """
+
+    def tearDown(self):
+        hand_state.REST_SIGNATURE = None
+        super().tearDown()
+
+    def test_a_hand_matching_the_signature_asks_for_nothing(self):
+        hand = make_hand()  # a properly open palm, everywhere else
+
+        hand_state.REST_SIGNATURE = dict(hand_state.finger_span(hand))
+
+        self.assertEqual(self.settle(hand), "UNKNOWN")
+        self.assertIsNone(gestures.pose_kind(hand))
+
+    def test_a_hand_unlike_the_signature_still_reads(self):
+        hand = make_hand()
+
+        hand_state.REST_SIGNATURE = {
+            name: span - 0.2
+            for name, span in hand_state.finger_span(hand).items()}
+
+        self.assertEqual(self.settle(hand), "OPEN_PALM")
+
+    def test_without_a_signature_nothing_changes(self):
+        self.assertEqual(self.settle(make_hand()), "OPEN_PALM")
+
+
 class TestItSaysWhy(GestureTestCase):
     """Every pose gets an explanation, and the right one.
 

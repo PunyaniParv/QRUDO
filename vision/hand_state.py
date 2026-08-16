@@ -44,6 +44,33 @@ FINGERS = {
 #: line; turning the hand does not.
 EXTENDED_RATIO = 0.82
 
+#: A finger is deliberately down below this.  A different line from the
+#: one above, because between them lies the hand at rest: its fingers
+#: curl in order, index straightest and pinky deepest, so wherever the
+#: out-line cuts, some depth of slack leaves exactly the index above it
+#: -- and "down" meaning merely "not out" then read a resting hand as
+#: POINT, one slacker finger from the swipe pose.  A pattern's down
+#: fingers must be folded on purpose, which a resting finger never is.
+#:
+#: Shipped equal to EXTENDED_RATIO -- one line, exactly the old
+#: behaviour -- because some hands hold the swipe pose's spare fingers
+#: nearly straight, and a guessed gap would cost them the pose.
+#: Calibration lowers it only when this user's own recordings show the
+#: held-down fingers and the resting ones actually separate.
+FOLDED_RATIO = 0.82
+
+#: Per-finger extension of this user's hand at rest, measured by the
+#: calibration, or None before any has been.  A hand whose every finger
+#: sits within REST_TOLERANCE of it is resting, whatever the lines above
+#: would make of the pattern.
+REST_SIGNATURE = None
+
+#: How closely a live hand must match the signature to be called
+#: resting.  Small enough that every deliberate pose escapes on at least
+#: one finger -- an open palm differs from rest by twice this at the
+#: pinky alone -- and large enough to cover the reading's own jitter.
+REST_TOLERANCE = 0.09
+
 #: A fist is judged by where the fingertips end up rather than by how
 #: bent each finger is.  How far a tip sits from the wrist, against how
 #: far its knuckle does: shut brings the tips back level with the
@@ -330,6 +357,25 @@ def fingers_out(hand):
 
     return {name: span > EXTENDED_RATIO
             for name, span in finger_span(hand).items()}
+
+
+def looks_at_rest(spans):
+    """Whether these finger readings match the calibrated resting hand.
+
+    The calibration records the resting hand for one promise: that it
+    asks for nothing.  The thresholds alone cannot always keep it --
+    they are lines, and a resting hand drifts across them -- so the
+    recording itself is the last word: a hand that looks like *your*
+    hand at rest is resting.  Answers False until a calibration has
+    provided the signature.
+    """
+
+    if not REST_SIGNATURE:
+        return False
+
+    return all(abs(spans[name] - rest) <= REST_TOLERANCE
+               for name, rest in REST_SIGNATURE.items()
+               if name in spans)
 
 
 def is_open(hand_landmarks):

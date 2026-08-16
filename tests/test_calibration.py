@@ -353,7 +353,32 @@ class TestFromSamples(unittest.TestCase):
 
         self.assertGreater(measured.extended_ratio, 0.45)
         self.assertLess(measured.extended_ratio, 0.95)
-        self.assertFalse([w for w in warnings if "finger" in w])
+        self.assertFalse([w for w in warnings if "held out" in w])
+
+    def test_the_folded_line_lands_between_held_down_and_rest(self):
+        """A second line under the first, drawn only where this hand's
+        held-down fingers and its resting ones actually separate."""
+
+        poses = self.poses()
+        poses["two"] = two_fingers(down=0.55)
+        poses["rest"] = readings(0.78, 1.40)
+
+        measured, warnings = from_samples(poses, {}, DEFAULTS)
+
+        self.assertGreater(measured.folded_ratio, 0.55)
+        self.assertLess(measured.folded_ratio, 0.78)
+        self.assertLess(measured.folded_ratio, measured.extended_ratio)
+        self.assertFalse([w for w in warnings if "at rest" in w])
+
+    def test_overlapping_recordings_keep_the_single_line_and_say_so(self):
+        """This hand holds the swipe pose's spare fingers nearly straight
+        -- above where its own rest reads -- and a gap invented between
+        two overlapping measurements would cost it the pose."""
+
+        measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
+
+        self.assertEqual(measured.folded_ratio, measured.extended_ratio)
+        self.assertTrue([w for w in warnings if "at rest" in w])
 
     def test_fist_threshold_lands_between_fist_and_resting_hand(self):
         measured, _ = from_samples(self.poses(), {}, DEFAULTS)
