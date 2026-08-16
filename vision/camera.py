@@ -68,6 +68,18 @@ class Camera:
         # Asked in fours and threes the same camera offers 1760x1328,
         # which matches the 640x480 view at 0.993: the whole picture, with
         # nearly three times the height in pixels.
+        # DirectShow hands big pictures over as raw YUY2 unless asked
+        # otherwise, and USB bandwidth then caps the camera at a handful
+        # of frames a second at exactly the sizes --far asks for -- a
+        # frame rate no quick gesture survives.  MJPG fits the same
+        # picture down the same cable at full rate; a camera that cannot
+        # offer it ignores the request and nothing is lost.  Not asked
+        # for at the small default, where raw fits the bandwidth anyway
+        # and skipping the JPEG decode is cheaper per frame.
+        if sys.platform == "win32" and self.width * self.height > 640 * 480:
+            self._capture.set(cv2.CAP_PROP_FOURCC,
+                              cv2.VideoWriter_fourcc(*"MJPG"))
+
         self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
