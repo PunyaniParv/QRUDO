@@ -137,15 +137,37 @@ class TestThroughTheEngine(unittest.TestCase):
 
 
 class TestThePointingGesture(unittest.TestCase):
-    def test_point_cycles_the_target_once(self):
+    def test_point_cycles_the_target_once_it_is_held(self):
         from integration.bridge import GestureRouter
 
         router = GestureRouter()
 
-        self.assertIs(router.update("POINT", now=1000.0),
+        self.assertIsNone(router.update("POINT", now=1000.0),
+                          "a glimpse of pointing is not a switch")
+        self.assertIs(router.update("POINT", now=1000.6),
                       Command.TARGET_NEXT)
-        self.assertIsNone(router.update("POINT", now=1000.1),
+        self.assertIsNone(router.update("POINT", now=1000.7),
                           "held pointing is one switch, not many")
+
+    def test_the_way_into_the_swipe_pose_is_not_a_point(self):
+        """The index leads into the two-finger pose, so its first frames
+        read as an honest POINT.  Those frames must not switch anything
+        -- and must not spend the cooldown the swipe itself needs a
+        moment later, which is how binding POINT silently broke every
+        swipe until the dwell existed.
+        """
+
+        from integration.bridge import GestureRouter
+
+        router = GestureRouter()
+
+        self.assertIsNone(router.update("POINT", now=1000.0))
+        self.assertIsNone(router.update("POINT", now=1000.1))
+        self.assertIsNone(router.update("TWO_FINGER", now=1000.2))
+
+        self.assertIs(router.update(swipe="SWIPE_LEFT", now=1000.5),
+                      Command.REWIND,
+                      "the transition must not have spent the cooldown")
 
 
 if __name__ == "__main__":

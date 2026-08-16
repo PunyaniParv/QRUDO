@@ -45,6 +45,18 @@ POSE_COMMANDS = {
     "POINT": Command.TARGET_NEXT,
 }
 
+#: How long a pose must be held before it counts, per pose.  POINT is
+#: what a hand looks like on its way into and out of the two-finger
+#: pose -- the index leads, the middle follows a beat later -- and the
+#: day it was bound, every swipe pose fired a phantom target switch on
+#: the way in, whose cooldown then swallowed the swipe itself.  Half a
+#: second is several times any transition and nothing to somebody
+#: actually pointing.  The fist stays instant: nothing passes through a
+#: fist on its way to anything.
+POSE_DWELL = {
+    "POINT": 0.5,
+}
+
 #: Movements, each on its own pose so that raising a hand mid-seek cannot
 #: be read as volume.  These are already one-off events with their own
 #: cooldown.
@@ -85,12 +97,15 @@ class GestureRouter:
     """
 
     def __init__(self, poses=None, swipes=None, repeat=POSE_REPEAT,
-                 cooldown=GLOBAL_COOLDOWN):
+                 cooldown=GLOBAL_COOLDOWN, dwell=None):
         self.poses = POSE_COMMANDS if poses is None else poses
         self.swipes = SWIPE_COMMANDS if swipes is None else swipes
         self.repeat = repeat
         self.cooldown = cooldown
+        self.dwell = POSE_DWELL if dwell is None else dwell
         self._held = None
+        self._held_since = 0.0
+        self._fired_this_hold = False
         self._fired_at = {}
         self._last_command_at = -1e9
 
@@ -121,15 +136,26 @@ class GestureRouter:
         if gesture in (None, "UNKNOWN"):
             return None
 
-        if gesture == self._held:
-            return None
-
-        self._held = gesture
+        if gesture != self._held:
+            self._held = gesture
+            self._held_since = now
+            self._fired_this_hold = False
 
         command = self.poses.get(gesture)
 
-        if command is None:
+        if command is None or self._fired_this_hold:
             return None
+
+        # Some poses are also what a hand looks like on its way to a
+        # different pose: the index leads into the two-finger pose, and
+        # for those frames the hand is honestly pointing.  A pose with a
+        # dwell only counts once it has been held -- a transition passes
+        # through in a fraction of that, and a pose that is meant is
+        # held without noticing the wait.
+        if now - self._held_since < self.dwell.get(gesture, 0.0):
+            return None
+
+        self._fired_this_hold = True
 
         if now - self._fired_at.get(gesture, -1e9) < self.repeat:
             return None
@@ -156,6 +182,7 @@ class GestureRouter:
         """
 
         self._held = None
+        self._fired_this_hold = False
         self._fired_at.clear()
         self._last_command_at = -1e9
 

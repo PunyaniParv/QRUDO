@@ -126,10 +126,14 @@ class TestHeldPoses(unittest.TestCase):
             with self.subTest(gesture=gesture):
                 self.assertIsNone(GestureRouter().update(gesture))
 
-    def test_pointing_switches_the_target(self):
+    def test_pointing_switches_the_target_once_held(self):
         from control import Command as C
 
-        self.assertIs(GestureRouter().update("POINT"), C.TARGET_NEXT)
+        router = GestureRouter()
+
+        self.assertIsNone(router.update("POINT", now=1000.0),
+                          "a glimpse of pointing is not a switch")
+        self.assertIs(router.update("POINT", now=1000.6), C.TARGET_NEXT)
 
     def test_swipe_pose_is_not_bound(self):
         """TWO_FINGER is how you get ready to swipe.
@@ -268,7 +272,9 @@ class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
         router = GestureRouter(poses={"FIST": Command.PLAY_PAUSE,
                                       "POINT": Command.VOLUME_UP})
         self.assertIsNotNone(router.update("FIST", now=1000.0))
-        self.assertIsNotNone(router.update("POINT", now=1001.1))
+        router.update("POINT", now=1001.1)
+        self.assertIsNotNone(router.update("POINT", now=1001.7),
+                             "held past its dwell, the second pose fires")
 
 
 class TestTheOverlayIsWhole(unittest.TestCase):
