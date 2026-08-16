@@ -150,8 +150,16 @@ class Calibration:
         "open_ratio": (0.70, 0.98),
         "fist_reach": (0.90, 1.40),
         "fist_curl": (0.35, 0.75),
-        "swipe_lift": (0.25, 1.20),
-        "swipe_lift_speed": (0.40, 4.50),
+        # The movement caps are set from what ordinary, unhurried
+        # gestures measure -- a flick about 0.48 of turn at 2.2/s, a
+        # gentle raise or lower about 0.79 of lift at 1.7/s: a
+        # calibrated bar may ask for less than that but never more, so
+        # no recording -- however emphatic, however botched -- can set a
+        # bar the user's everyday gesture fails to clear.
+        "swipe_turn": (0.15, 0.45),
+        "swipe_turn_speed": (0.40, 2.00),
+        "swipe_lift": (0.25, 0.70),
+        "swipe_lift_speed": (0.40, 1.50),
         "crosstalk_turn": (0.15, 0.95),
         "crosstalk_lift": (0.15, 1.20),
         "min_hand_on_screen": (0.012, 0.022),
@@ -403,7 +411,7 @@ class Profile:
 
         return "turn" if name.startswith("turn") else "lift"
 
-    def crosstalk(self, swipe_turn, swipe_lift):
+    def crosstalk(self):
         """How much of the other movement a deliberate one carries.
 
         Turning the wrist raises the hand a little and raising it turns
@@ -416,7 +424,16 @@ class Profile:
         turns and raises carry, with room above it.  Below that share a
         movement is clearly one thing; above it, it is a diagonal nobody
         meant and firing either would be a guess.
+
+        The shares are measured in the same fixed units the detector
+        asks the question in -- not against the calibrated bars.
+        Measured against the bars, the allowance changed meaning with
+        every recalibration: one that tightened the turn bar re-scored
+        every ordinary drop as mostly turn, and the lower had to go far
+        past the raise's distance before it counted.
         """
+
+        from . import motion
 
         shares = {"turn": [], "lift": []}
 
@@ -424,8 +441,8 @@ class Profile:
             if not isinstance(peak, dict):
                 continue
 
-            sideways = abs(peak.get("turn", 0.0)) / max(swipe_turn, 1e-6)
-            upright = abs(peak.get("lift", 0.0)) / max(swipe_lift, 1e-6)
+            sideways = abs(peak.get("turn", 0.0)) / motion.CROSSTALK_UNIT_TURN
+            upright = abs(peak.get("lift", 0.0)) / motion.CROSSTALK_UNIT_LIFT
 
             axis = self.asked_of(name)
             asked, other = ((sideways, upright) if axis == "turn"
@@ -554,8 +571,7 @@ class Profile:
         elif missed:
             warnings.append("one of the raises barely moved, and was ignored")
 
-        crosstalk_turn, crosstalk_lift, ok = self.crosstalk(
-            swipe_turn, swipe_lift)
+        crosstalk_turn, crosstalk_lift, ok = self.crosstalk()
 
         if not ok:
             crosstalk_turn = current.crosstalk_turn
