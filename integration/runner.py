@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import time
 from collections import deque
+from pathlib import Path
 
 from control import log as control_log
 
@@ -283,12 +284,43 @@ def frame_rate(times):
     return (len(times) - 1) / elapsed if elapsed > 0 else None
 
 
+def build_stamp():
+    """Which code and whose hand this session is actually running.
+
+    Three diagnosis sessions have now been spent on invisible state --
+    a stale checkout shows last week's bugs in this week's report, and
+    default thresholds pass for calibrated ones -- so both facts go on
+    the banner, where every screenshot carries them for free.
+    """
+
+    import subprocess
+
+    try:
+        commit = subprocess.run(
+            ["git", "log", "-1", "--format=%h %ad", "--date=short"],
+            capture_output=True, text=True, timeout=2.0,
+            cwd=Path(__file__).resolve().parent,
+        ).stdout.strip()
+    except Exception:
+        commit = ""
+
+    from vision import calibration
+
+    measured = calibration.Calibration.load() is not None
+
+    profile = ("hand profile: measured" if measured
+               else "hand profile: DEFAULTS -- run --calibrate")
+
+    return f"  build  : {commit or 'unknown'}  --  {profile}"
+
+
 def banner(engine, router, args, tuning):
     lines = [
         "",
         f"  SARV  --  {engine.controller.name}"
         f"{'  [TUNING: gestures shown, NO commands run]' if tuning else ''}"
         f"{'  [DRY RUN]' if engine.config.dry_run and not tuning else ''}",
+        build_stamp(),
         "",
     ]
 
