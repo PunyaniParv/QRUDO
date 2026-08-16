@@ -40,7 +40,15 @@ That's it. Rules the control side guarantees:
 | `FORWARD` | seek forward ~10 s | same |
 | `BRIGHTNESS_UP` | +8 % on the built-in display | +8 % via WMI, laptop screens only |
 | `BRIGHTNESS_DOWN` | −8 % | −8 % |
+| `TARGET_NEXT` / `TARGET_PREV` | step which app the targeted commands land in | same |
 | `NONE` | nothing | nothing |
+
+The two `TARGET_*` commands touch no OS control: they move the aim of the
+others.  They cycle through "auto" and every candidate app the machine can
+see, and the result's `detail` says where the aim landed (`target ->
+Spotify`) so the overlay always shows it.  They arrive by three routes:
+pointing at the camera, `ctrl+shift+←/→` from any app (both platforms,
+active while the camera runs), and `[` / `]` in the simulator.
 
 Windows moves the volume in fixed 2 % notches, so a 5 % setting becomes 4 %.
 Everything above the backend — the interface, the debouncing, the logging — is
@@ -104,6 +112,15 @@ macOS matches the app name; Windows matches any part of the window title (so
 `"YouTube"` works). The keys are then delivered to that app whether or not it
 has focus — no window switching, and the simulator stops counting down. If the
 app isn't running, seeking quietly falls back to the focused window.
+
+**Or let it choose.** Leave `target_app` unset (or set it to `"auto"`) and a
+resolver keeps it pointed at the right app, refreshed every couple of
+seconds: the focused app wins if it is a candidate, then a player that says
+it is playing (Spotify and Music can be asked on macOS), then whatever the
+config prefers. Naming an app pins it and disables all guessing — the old
+contract, one config line away. Point at the camera or press
+`ctrl+shift+←/→` to step the target by hand; the switch shows on screen
+before any command follows it.
 
 Without it, seek only reaches the focused window, so either click your video
 first or use the countdown:

@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from control import ACTIONABLE_COMMANDS, Command, ControlConfig, ControlEngine, Status, log, parse_command
+from control.commands import TARGET_COMMANDS
 
 # Into a scratch directory before any engine runs a command: the log
 # module configures itself on first use and keeps that choice, and left
@@ -39,7 +40,11 @@ def make_engine(**overrides) -> tuple[ControlEngine, NullController]:
     overrides.setdefault("cooldown_seconds", 0.0)
     config = ControlConfig(**overrides)
     controller = NullController(config)
-    return ControlEngine(controller=controller, config=config), controller
+    engine = ControlEngine(controller=controller, config=config)
+    # Hermetic: the target resolver must not ask this machine's OS what
+    # is running mid-test.
+    engine.targets.probe = lambda: {}
+    return engine, controller
 
 
 class TestCommands(unittest.TestCase):
@@ -55,20 +60,27 @@ class TestCommands(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_command("EJECT_CD")
 
-    def test_simulator_covers_all_seven(self):
+    def test_simulator_covers_every_command(self):
         self.assertEqual(set(KEY_MAP.values()), set(ACTIONABLE_COMMANDS))
-        self.assertEqual(len(KEY_MAP), 7)
+        self.assertEqual(len(KEY_MAP), len(ACTIONABLE_COMMANDS))
 
 
 class TestExecution(unittest.TestCase):
     def test_every_command_reaches_the_backend(self):
-        """Spec F: verify every command independently."""
+        """Spec F: verify every command independently.
+
+        The target commands are engine-level by design -- they move
+        where the others go -- so the backend sees every command except
+        those, and those still answer OK.
+        """
         engine, controller = make_engine()
+        backend_commands = [command for command in ACTIONABLE_COMMANDS
+                            if command not in TARGET_COMMANDS]
         for command in ACTIONABLE_COMMANDS:
             with self.subTest(command=command):
                 result = engine.execute(command)
                 self.assertEqual(result.status, Status.OK, result.error)
-        self.assertEqual(len(controller.calls), len(ACTIONABLE_COMMANDS))
+        self.assertEqual(len(controller.calls), len(backend_commands))
 
     def test_none_is_a_noop(self):
         engine, controller = make_engine()

@@ -38,6 +38,8 @@ def run(engine: ControlEngine | None = None) -> int:
         (Command.PLAY_PAUSE, Command.PLAY_PAUSE),
         (Command.FORWARD, Command.REWIND),
         (Command.REWIND, Command.FORWARD),
+        (Command.TARGET_NEXT, Command.TARGET_PREV),
+        (Command.TARGET_PREV, Command.TARGET_NEXT),
     ]
 
     results = []

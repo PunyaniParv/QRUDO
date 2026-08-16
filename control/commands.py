@@ -27,6 +27,13 @@ class Command(str, Enum):
     BRIGHTNESS_UP = "BRIGHTNESS_UP"
     BRIGHTNESS_DOWN = "BRIGHTNESS_DOWN"
 
+    # Not OS actions: these move which app the targeted commands land in.
+    # They live in the same vocabulary so a gesture, a hotkey and the
+    # simulator can all reach them through the one pipe -- cooldown,
+    # logging and results included.
+    TARGET_NEXT = "TARGET_NEXT"
+    TARGET_PREV = "TARGET_PREV"
+
     # Emitted by the Vision Engine when no gesture is recognised.  Executing it
     # is always a safe no-op, so the vision side never needs a null check.
     NONE = "NONE"
@@ -45,6 +52,17 @@ ACTIONABLE_COMMANDS: tuple[Command, ...] = (
     Command.FORWARD,
     Command.BRIGHTNESS_UP,
     Command.BRIGHTNESS_DOWN,
+    Command.TARGET_NEXT,
+    Command.TARGET_PREV,
+)
+
+#: The commands that change where commands go rather than touching the
+#: OS.  They are handled inside the engine -- no backend method exists
+#: for them, deliberately, so a platform backend stays a list of OS
+#: actions and nothing else.
+TARGET_COMMANDS: tuple[Command, ...] = (
+    Command.TARGET_NEXT,
+    Command.TARGET_PREV,
 )
 
 

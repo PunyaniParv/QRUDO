@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import sys
 
+from . import log
 from .commands import Command
 from .executor import ControlEngine
 from .simulator import KEY_MAP
@@ -29,8 +30,14 @@ MODIFIERS = "ctrl+alt"
 #: macOS virtual key codes for the simulator's letters.
 _MAC_KEYCODES = {32: "u", 2: "d", 35: "p", 37: "l", 15: "r", 11: "b", 45: "n"}
 
-#: Windows virtual key codes are just the uppercase ASCII values.
-_WIN_KEYCODES = {ord(letter.upper()): letter for letter in KEY_MAP}
+#: The arrow keys, for the target chords.
+_MAC_ARROWS = {123: "left", 124: "right"}
+
+#: Windows virtual key codes for letters are just the uppercase ASCII
+#: values.  Letters only: the target commands travel as ctrl+shift+
+#: arrows, not as letter chords.
+_WIN_KEYCODES = {ord(letter.upper()): letter
+                 for letter in KEY_MAP if letter.isalpha()}
 
 
 def banner(engine: ControlEngine) -> str:
@@ -41,19 +48,62 @@ def banner(engine: ControlEngine) -> str:
     return "\n".join(lines)
 
 
-def run(engine: ControlEngine | None = None) -> int:
+#: ctrl+shift+arrows step the target -- which app the fist and the
+#: seeks land in -- from anywhere, preview window or not.  Available in
+#: the --hotkeys listener and, through watch_targets, while the camera
+#: runs.
+TARGET_KEYS = {"left": Command.TARGET_PREV, "right": Command.TARGET_NEXT}
+
+
+def run(engine: ControlEngine | None = None, *, targets_only: bool = False,
+        announce: bool = True) -> int:
+    """Listen for the chords.  ``targets_only`` is the embedded mode: the
+    camera loop runs this on a daemon thread for ctrl+shift+arrows, and
+    the letter chords stay exclusive to the dedicated --hotkeys mode --
+    always-on volume letters would surprise; a deliberate target switch
+    does not.  Embedded, the engine is shared, so it is not closed here.
+    """
+
     engine = engine or ControlEngine()
-    for warning in engine.preflight():
-        print(f"  ! {warning}\n", file=sys.stderr)
-    print(banner(engine))
+    if announce:
+        for warning in engine.preflight():
+            print(f"  ! {warning}\n", file=sys.stderr)
+        print(banner(engine))
 
     if sys.platform == "darwin":
-        return _run_macos(engine)
+        return _run_macos(engine, targets_only=targets_only)
     if sys.platform == "win32":
-        return _run_windows(engine)
-    print(f"  global hotkeys are not implemented for {sys.platform}; "
-          f"use --simulate instead", file=sys.stderr)
+        return _run_windows(engine, targets_only=targets_only)
+    if announce:
+        print(f"  global hotkeys are not implemented for {sys.platform}; "
+              f"use --simulate instead", file=sys.stderr)
     return 1
+
+
+def watch_targets(engine: ControlEngine):
+    """ctrl+shift+left/right while the camera runs, on a daemon thread.
+
+    Best effort: a machine without the permission (or the platform)
+    simply goes without the chords, and the gesture and the config still
+    switch targets.  Returns the thread, or None when nothing started.
+    """
+
+    if sys.platform not in ("darwin", "win32"):
+        return None
+
+    import threading
+
+    def worker():
+        try:
+            run(engine, targets_only=True, announce=False)
+        except Exception as exc:
+            log.get_logger("hotkeys").warning(
+                "target chords unavailable: %s", exc)
+
+    thread = threading.Thread(target=worker, name="sarv-target-keys",
+                              daemon=True)
+    thread.start()
+    return thread
 
 
 def _fire(engine: ControlEngine, letter: str) -> None:
@@ -78,14 +128,15 @@ def _report(engine: ControlEngine) -> None:
 
 # ------------------------------------------------------------------- macOS
 
-def _run_macos(engine: ControlEngine) -> int:
+def _run_macos(engine: ControlEngine, targets_only: bool = False) -> int:
     try:
         import Quartz
     except ImportError:
         print("  global hotkeys need pyobjc-framework-Quartz", file=sys.stderr)
         return 1
 
-    _report(engine)
+    if not targets_only:
+        _report(engine)
     state = {}
 
     def callback(proxy, event_type, event, refcon):
@@ -96,12 +147,25 @@ def _run_macos(engine: ControlEngine) -> int:
             return event
 
         flags = Quartz.CGEventGetFlags(event)
+        keycode = Quartz.CGEventGetIntegerValueField(
+            event, Quartz.kCGKeyboardEventKeycode)
+
+        # ctrl+shift+arrows step the target, in both modes.
+        if (flags & Quartz.kCGEventFlagMaskControl
+                and flags & Quartz.kCGEventFlagMaskShift):
+            arrow = _MAC_ARROWS.get(keycode)
+            if arrow is not None:
+                engine.submit(TARGET_KEYS[arrow])
+                return None  # swallow it
+
+        if targets_only:
+            return event
+
         if not (flags & Quartz.kCGEventFlagMaskControl
                 and flags & Quartz.kCGEventFlagMaskAlternate):
             return event
 
-        letter = _MAC_KEYCODES.get(
-            Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode))
+        letter = _MAC_KEYCODES.get(keycode)
         if letter is None:
             return event
 
@@ -132,14 +196,17 @@ def _run_macos(engine: ControlEngine) -> int:
         pass
     finally:
         Quartz.CGEventTapEnable(tap, False)
-        engine.close()
-    print("\n  bye.")
+        # Embedded, the engine belongs to the camera loop; leave it be.
+        if not targets_only:
+            engine.close()
+    if not targets_only:
+        print("\n  bye.")
     return 0
 
 
 # ----------------------------------------------------------------- Windows
 
-def _run_windows(engine: ControlEngine) -> int:
+def _run_windows(engine: ControlEngine, targets_only: bool = False) -> int:
     import ctypes
     from ctypes import wintypes
 
@@ -182,11 +249,24 @@ def _run_windows(engine: ControlEngine) -> int:
                                    wintypes.UINT, wintypes.UINT]
     user32.GetMessageW.restype = ctypes.c_int  # -1 signals an error
 
+    VK_SHIFT = 0x10
+    _WIN_ARROWS = {0x25: "left", 0x27: "right"}
+
     def proc(code, message, data):
         if code == 0 and message in (WM_KEYDOWN, WM_SYSKEYDOWN):
+            key = ctypes.cast(data, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents.vkCode
+
+            # ctrl+shift+arrows step the target, in both modes.
             if (user32.GetAsyncKeyState(VK_CONTROL) & HELD
+                    and user32.GetAsyncKeyState(VK_SHIFT) & HELD):
+                arrow = _WIN_ARROWS.get(key)
+                if arrow is not None:
+                    engine.submit(TARGET_KEYS[arrow])
+                    return 1  # swallow it
+
+            if not targets_only and (
+                    user32.GetAsyncKeyState(VK_CONTROL) & HELD
                     and user32.GetAsyncKeyState(VK_MENU) & HELD):
-                key = ctypes.cast(data, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents.vkCode
                 letter = _WIN_KEYCODES.get(key)
                 if letter is not None:
                     _fire(engine, letter)
@@ -215,8 +295,11 @@ def _run_windows(engine: ControlEngine) -> int:
         pass
     finally:
         user32.UnhookWindowsHookEx(hook)
-        engine.close()
-    print("\n  bye.")
+        # Embedded, the engine belongs to the camera loop; leave it be.
+        if not targets_only:
+            engine.close()
+    if not targets_only:
+        print("\n  bye.")
     return 0
 
 

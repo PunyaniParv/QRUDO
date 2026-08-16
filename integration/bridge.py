@@ -34,8 +34,15 @@ POSE_REPEAT = 1.0
 
 #: Held poses.  These fire once when you make them, not repeatedly while
 #: you hold them -- see GestureRouter.
+#:
+#: POINT cycles which app the targeted commands land in.  Pointing at
+#: the thing you want to control is the gesture's own meaning, and a
+#: misread costs routing rather than playback -- the switch is shown on
+#: the overlay before any command follows it -- which is why the free
+#: pose went to this and not to another command that acts.
 POSE_COMMANDS = {
     "FIST": Command.PLAY_PAUSE,
+    "POINT": Command.TARGET_NEXT,
 }
 
 #: Movements, each on its own pose so that raising a hand mid-seek cannot
@@ -57,7 +64,6 @@ SWIPE_COMMANDS = {
 #   OPEN_PALM   is the pose the brightness lifts are made from, and what
 #               a hand looks like on its way to and from every other
 #               gesture besides -- so it would fire constantly.
-#   POINT       is free.
 #
 # Volume had a gesture before these, a pinch raised or lowered, and it
 # was more trouble than the other four together: being defined by where

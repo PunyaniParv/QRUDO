@@ -126,12 +126,17 @@ class ControlEngine:
         self._worker: threading.Thread | None = None
         # Each area declares the commands it owns, so adding one means
         # editing that area rather than this table.
-        from . import brightness, media, volume
+        from . import brightness, media, targets, volume
 
         self._handlers = {}
 
         for area in (volume, media, brightness):
             self._handlers.update(area.handlers(self.controller, self.config))
+
+        # The target commands are engine-level, not OS actions: they move
+        # where the other commands go, so no backend has a method for them.
+        self.targets = targets.TargetResolver(self.config)
+        self._handlers.update(targets.handlers(self.targets))
         # Fail loudly at construction if a command has no handler, rather than
         # at demo time.
         missing = [c for c in ACTIONABLE_COMMANDS if c not in self._handlers]
@@ -205,7 +210,8 @@ class ControlEngine:
             self.log.warning("command queue full, dropped %s", command)
 
     def close(self, timeout: float = 2.0) -> None:
-        """Stop the worker thread.  Safe to call even if it never started."""
+        """Stop the worker threads.  Safe to call even if none started."""
+        self.targets.stop()
         if self._worker is None:
             return
         self._queue.put(_STOP)

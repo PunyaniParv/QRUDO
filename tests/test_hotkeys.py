@@ -29,18 +29,27 @@ log.setup(console=False)
 
 
 class TestKeyTables(unittest.TestCase):
-    def test_macos_codes_cover_every_command(self):
-        self.assertEqual(set(hotkeys._MAC_KEYCODES.values()), set(KEY_MAP))
+    def letters(self):
+        """The letter chords: everything except the target brackets,
+        which travel as ctrl+shift+arrows instead."""
 
-    def test_windows_codes_cover_every_command(self):
-        self.assertEqual(set(hotkeys._WIN_KEYCODES.values()), set(KEY_MAP))
+        return {key for key in KEY_MAP if key.isalpha()}
+
+    def test_macos_codes_cover_every_letter(self):
+        self.assertEqual(set(hotkeys._MAC_KEYCODES.values()), self.letters())
+
+    def test_windows_codes_cover_every_letter(self):
+        self.assertEqual(set(hotkeys._WIN_KEYCODES.values()), self.letters())
 
     def test_windows_codes_are_uppercase_ascii(self):
         """Windows virtual key codes for letters are the uppercase ASCII values."""
         self.assertEqual(hotkeys._WIN_KEYCODES[ord("U")], "u")
 
     def test_every_command_is_reachable(self):
-        reachable = {KEY_MAP[letter] for letter in hotkeys._MAC_KEYCODES.values()}
+        reachable = {KEY_MAP[letter]
+                     for letter in hotkeys._MAC_KEYCODES.values()}
+        reachable |= set(hotkeys.TARGET_KEYS.values())
+
         self.assertEqual(reachable, set(ACTIONABLE_COMMANDS))
 
 

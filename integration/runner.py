@@ -59,6 +59,15 @@ def run(engine, args, tuning=False):
     for warning in engine.preflight():
         print(f"  ! {warning}\n")
 
+    # Keep the target fresh in the background, and let ctrl+shift+arrows
+    # step it from any app.  Both are best effort: a machine that cannot
+    # watch the keyboard still has the pointing gesture and the config.
+    engine.targets.start()
+
+    from control import hotkeys
+
+    hotkeys.watch_targets(engine)
+
     try:
         tracker = HandTracker().open()
     except TrackerError as exc:

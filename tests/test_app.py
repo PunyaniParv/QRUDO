@@ -122,9 +122,14 @@ class TestHeldPoses(unittest.TestCase):
         self.assertIsNotNone(self.router.update("FIST", now=1002.0))
 
     def test_unmapped_poses_do_nothing(self):
-        for gesture in ("OPEN_PALM", "POINT", "TWO_FINGER", "UNKNOWN"):
+        for gesture in ("OPEN_PALM", "TWO_FINGER", "UNKNOWN"):
             with self.subTest(gesture=gesture):
                 self.assertIsNone(GestureRouter().update(gesture))
+
+    def test_pointing_switches_the_target(self):
+        from control import Command as C
+
+        self.assertIs(GestureRouter().update("POINT"), C.TARGET_NEXT)
 
     def test_swipe_pose_is_not_bound(self):
         """TWO_FINGER is how you get ready to swipe.

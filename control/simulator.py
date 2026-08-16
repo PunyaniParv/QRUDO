@@ -20,7 +20,9 @@ import time
 from .commands import FOCUS_SENSITIVE, Command
 from .executor import ControlEngine
 
-#: Spec E: "U/D/P/L/R/B/N for the seven V1 commands".
+#: Spec E: "U/D/P/L/R/B/N for the seven V1 commands", and the bracket
+#: keys for stepping the target, because they sit together and point in
+#: their own directions.
 KEY_MAP: dict[str, Command] = {
     "u": Command.VOLUME_UP,
     "d": Command.VOLUME_DOWN,
@@ -29,6 +31,8 @@ KEY_MAP: dict[str, Command] = {
     "r": Command.FORWARD,       # R for right
     "b": Command.BRIGHTNESS_UP,
     "n": Command.BRIGHTNESS_DOWN,
+    "[": Command.TARGET_PREV,
+    "]": Command.TARGET_NEXT,
 }
 
 QUIT_KEYS = {"q", "\x03", "\x04"}  # q, Ctrl-C, Ctrl-D
