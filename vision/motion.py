@@ -21,6 +21,8 @@ or aimed at the camera.
 
 from __future__ import annotations
 
+import math
+
 from . import gestures, hand_state
 from .state_machine import SwipeState, now
 
@@ -60,8 +62,28 @@ NOISE_MARGIN = 4
 #: gesture, and outside anything one bad frame can fake.
 MOVING_SAMPLES = 3
 ARM_HOLD = 0.60           # how long the pose keeps a swipe allowed
-SWIPE_COOLDOWN = 0.60
+SWIPE_COOLDOWN = 1.00
 SWIPE_QUIET = 0.12        # how still the hand must go before the next one
+QUIET_SPAN = 0.20         # and for how long: stillness is judged on this
+                          # much recent history, not the whole window
+
+#: The speed a turn must also show in the sine of the aim.  The aim is
+#: an asin, and an asin steepens toward its ends: near the clamp a
+#: slowly turning wrist reads as a fast one, because the steepness --
+#: not the wrist -- supplies the speed.  The sine is the reading before
+#: that amplification, so the same movement is asked for speed in both,
+#: and a slow turn near the edge races in one and crawls in the other.
+#:
+#: An absolute floor, not a share of the calibrated bar: the question it
+#: answers -- did the wrist move, or only the reading? -- is about the
+#: geometry of the measurement, which no calibration changes.  Tied to
+#: the bar, a vigorous calibration raised it past what an honest flick
+#: from a resting-tilted hand can geometrically produce.  Measured: an
+#: honest flick from a tilted rest shows 1.1, an unhurried one 2.5, and
+#: a slow wrist releasing from the clamp 0.46.  This floor only judges
+#: movements that began from a recent stop; the ones that did not are
+#: refused above for that, however the edge inflates their reading.
+LEAN_SPEED_FLOOR = 0.60
 POSE_HOLD = 0.15          # the pose must be held this long before it counts
 
 # Raising and lowering the same two fingers, for volume.  Height is judged
@@ -95,6 +117,14 @@ REST_DWELL = 1.00         # and must stay so this long to become the rest
 CROSSTALK_TURN = 0.60     # lift a turn may carry
 CROSSTALK_LIFT = 0.80     # turn a raise may carry
 
+#: The units the crosstalk shares are measured in: the shipped bars,
+#: frozen.  Calibration moves the bars; it must not move the yardstick
+#: the "which movement was that" question is asked with, or the
+#: allowances above -- measured against these sizes -- quietly change
+#: meaning with every recalibration.
+CROSSTALK_UNIT_TURN = 0.30
+CROSSTALK_UNIT_LIFT = 0.60
+
 #: Both scripts mirror the frame before detection, so x increases to the
 #: user's right and a rightward swipe is a rise in x.
 FRAME_IS_MIRRORED = True
@@ -120,6 +150,21 @@ def _peak(name, value, moment):
         return value
 
     return best
+
+
+def set_cooldown(seconds):
+    """The configured cooldown, delivered to both places that hold it.
+
+    The turn path asks ``_state``, which keeps the value it was built
+    with; the lift path reads the module global.  Assigning only the
+    global is how left and right once kept the default while up and
+    down obeyed the setting.
+    """
+
+    global SWIPE_COOLDOWN
+
+    SWIPE_COOLDOWN = seconds
+    _state.cooldown = seconds
 
 
 def reset():
@@ -293,7 +338,7 @@ def _height(window, screen, mean_scale, moment):
         else:
             _state.still_since = None
 
-    lift = (_state.neutral_y - screen[hand_state.MIDDLE_MCP].y) / mean_scale
+    lift = (_state.neutral_y - screen[hand_state.WRIST].y) / mean_scale
 
     # How briskly it got there, and how directly.  Position alone would
     # let a hand lowered slowly to the desk turn the volume down on its
@@ -356,7 +401,11 @@ def detect_swipe(hand, handedness=None):
         moment,
         aim=hand_state.pointing_direction(hand),
         x=screen[hand_state.MIDDLE_MCP].x,
-        y=screen[hand_state.MIDDLE_MCP].y,
+        # The wrist, because it is the centre the wrist turns around: a
+        # knuckle swings up or down with every roll, so measured there, a
+        # turn carried a rise it never made -- in one direction only,
+        # which read as one diagonal firing and its mirror staying quiet.
+        y=screen[hand_state.WRIST].y,
         scale=hand_state.hand_scale(screen)
     )
 
@@ -405,13 +454,41 @@ def detect_swipe(hand, handedness=None):
 
     lift, lift_speed, lift_agree = _height(window, screen, mean_scale, moment)
 
+    # Whether the hand is still right now: no more spread than jitter
+    # across the last beat of aim readings.  Stopped is a property of
+    # that beat, not of the whole window -- asking the full window to
+    # drain forced a wait as long as the window itself.  The beat must
+    # actually be covered: two samples a step apart cannot tell a rest
+    # from a crawl, and on a slow camera a wrist creeping less than the
+    # jitter bar per frame read as a hand at rest the whole way round.
+    # Read from the raw history, not the armed window: being still is a
+    # fact about the hand, not the pose, and the stillness that counts
+    # mostly happens before the pose has finished arming.
+    recent = [sample for sample in _state.history.recent(moment)
+              if moment - sample[0] <= QUIET_SPAN]
+    spread = (max(s[1]["aim"] for s in recent)
+              - min(s[1]["aim"] for s in recent)) if recent else 0.0
+    resting = (len(recent) >= 2
+               and recent[-1][0] - recent[0][0] >= QUIET_SPAN * 0.7
+               and spread < SWIPE_QUIET)
+
+    if resting:
+        _state.aim_rested_at = moment
+
     # Bringing the hand back is the same movement as swiping the other
     # way, so after a swipe nothing counts until it has gone quiet.
     if _state.settling:
-        if abs(turn) < SWIPE_QUIET:
+        if resting:
+            # A correction begun before the old window-drain test cleared
+            # was not delayed but swallowed -- with the swallowed swipe
+            # then keeping the window loud, so retrying faster made it
+            # worse.  The history is left alone: wiping it belongs to
+            # the ``turned`` reset below, which needs these samples to
+            # see the aim come home -- and the return stroke stays
+            # refused either way, because ``turned`` holds until it has.
             _state.settling = False
 
-        _debug.update(turn=round(abs(turn), 2), settling=True)
+        _debug.update(turn=round(abs(turn), 2), settling=_state.settling)
 
         return None
 
@@ -459,11 +536,22 @@ def detect_swipe(hand, handedness=None):
 
     _debug.update(noise=round(max(aim_floor, lift_floor), 2))
 
+    _, lean_speed, _ = measure(
+        times, [math.sin(sample[1]["aim"]) for sample in window])
+
     turned = (
         _state.armed_kind == gestures.POSE_TWO_FINGER
         and abs(turn) >= max(SWIPE_TURN, aim_floor)
         and turn_speed >= SWIPE_TURN_SPEED
+        # In the sine as well as the angle -- see LEAN_SPEED_FLOOR.
+        and lean_speed >= LEAN_SPEED_FLOOR
         and turn_agree >= SWIPE_CONSISTENCY
+        # A turn is a departure from a stop.  The window is blind past
+        # half a second, so a hand that has been turning for four reads,
+        # in any one window, exactly like a flick.  What tells them apart
+        # is not in the window at all: the flick's window sits a beat
+        # from stillness, and the crawl's sits seconds from it.
+        and moment - _state.aim_rested_at <= SWIPE_WINDOW + QUIET_SPAN
         # Turning back is the same movement as turning the other way, and
         # no measurement of the movement itself can separate them.  What
         # separates them is where it ends up: a deliberate turn leaves the
@@ -493,8 +581,17 @@ def detect_swipe(hand, handedness=None):
     # as a raise while a turn carrying a large lift was never asked at
     # all.  A movement that is half of each is a diagonal nobody meant,
     # and it now fires nothing rather than whichever was asked first.
-    sideways = abs(turn) / SWIPE_TURN
-    upright = abs(lift) / SWIPE_LIFT
+    #
+    # The shares are normalised by fixed sizes, not the calibrated bars.
+    # Which movement a gesture is -- how much turn a drop carries, as a
+    # share of itself -- is a fact about arms and wrists that no
+    # calibration changes.  Divided by the bars, a calibration that
+    # tightened the turn bar and relaxed the lift bar silently re-scored
+    # every drop as more turn and less drop, and a lower with the
+    # ordinary roll in it had to go far past the raise's distance before
+    # it counted.
+    sideways = abs(turn) / CROSSTALK_UNIT_TURN
+    upright = abs(lift) / CROSSTALK_UNIT_LIFT
 
     if turned and upright <= sideways * CROSSTALK_TURN:
         moving_right = turn > 0

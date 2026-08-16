@@ -454,6 +454,8 @@ class TestGunSwipe(GestureTestCase):
         """Aim is recorded every frame, so one misclassified frame in the
         middle costs a sample, not the gesture."""
 
+        self.hold_pose(gun(turn=-0.6))
+
         result = None
         for i in range(12):
             amount = -0.6 + 1.2 * (i / 11)
@@ -1350,6 +1352,28 @@ class TestBrightnessOnAnOpenPalm(GestureTestCase):
 
     def test_lowering_an_open_hand(self):
         self.assertEqual(self.move(self.PALM, rise=-0.20), "PALM_DOWN")
+
+    def test_down_needs_no_more_travel_than_up_whatever_the_bars(self):
+        """Reported as the palm having to go much lower for down than up.
+
+        A lower carries wrist roll that a raise does not, and the
+        crosstalk shares were normalised by the calibrated bars -- so a
+        calibration that tightened the turn bar re-scored every ordinary
+        drop as mostly turn, and only a much deeper drop outweighed it.
+        The shares are in fixed units now; a calibration must not be
+        able to make one direction dearer than the other.
+        """
+
+        bars = (motion.SWIPE_TURN, motion.SWIPE_LIFT)
+        motion.SWIPE_TURN, motion.SWIPE_LIFT = 0.248, 0.60  # a real one
+
+        try:
+            self.assertEqual(self.move(self.PALM, rise=0.20), "PALM_UP")
+            self.setUp()
+            self.assertEqual(self.move(self.PALM, rise=-0.20, roll=-15),
+                             "PALM_DOWN")
+        finally:
+            motion.SWIPE_TURN, motion.SWIPE_LIFT = bars
 
     def test_the_same_movement_on_two_fingers_is_still_volume(self):
         self.assertEqual(self.move(self.TWO, rise=0.20), "SWIPE_UP")
