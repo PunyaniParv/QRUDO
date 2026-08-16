@@ -11,6 +11,8 @@ import sys
 import time
 from collections import deque
 
+from control import log as control_log
+
 from .bridge import GestureRouter
 
 #: How long a completed swipe stays on screen, in seconds.
@@ -24,6 +26,11 @@ RESULT_SHOWN_FOR = 2.5
 #: enough away and the camera simply stops reporting one, which from where
 #: the user is standing looks exactly like the app having stopped.
 NOTHING_SEEN_FOR = 6.0
+
+#: How long a visible hand may read as unknown before the screen says
+#: which test is refusing it.  Short enough to answer while the pose is
+#: still being held, long enough that transitions never flash it.
+UNKNOWN_SAID_AFTER = 1.0
 
 
 def run(engine, args, tuning=False):
@@ -49,6 +56,10 @@ def run(engine, args, tuning=False):
     last_swipe = None
     last_swipe_at = 0.0
     last_hand_at = time.time()
+    unknown_since = None
+    refused = ""
+    spans_logged_at = 0.0
+    vision_log = control_log.get_logger("vision")
 
     def remember(result):
         nonlocal last_result, last_result_at
@@ -120,6 +131,30 @@ def run(engine, args, tuning=False):
                 gesture = gesture_module.detect_gesture(hand)
                 swipe = motion.detect_swipe(hand)
 
+                # A hand plainly shown and not recognised is a question
+                # the user is already asking, so the answer goes on
+                # screen -- which test refused, and what it measured --
+                # and into the log, where a bug report can carry it.
+                # This used to live in --tune alone, and every report of
+                # a pose reading as unknown arrived without the one line
+                # that said why.
+                if gesture == "UNKNOWN":
+                    if unknown_since is None:
+                        unknown_since = time.time()
+                    elif time.time() - unknown_since > UNKNOWN_SAID_AFTER:
+                        refused = gesture_module.explain(hand)
+                else:
+                    unknown_since = None
+                    refused = ""
+
+                if time.time() - spans_logged_at > 1.0:
+                    spans_logged_at = time.time()
+                    vision_log.info(
+                        "hand ext=%s gesture=%s why=%s",
+                        {name: round(span, 2) for name, span
+                         in hand_state.finger_span(hand).items()},
+                        gesture, gesture_module.explain(hand))
+
                 if not tuning:
                     command = router.update(gesture, swipe)
 
@@ -149,7 +184,9 @@ def run(engine, args, tuning=False):
             overlay.draw_result(cv2, frame, last_result)
             overlay.draw_legend(cv2, frame, router.mapping(), show_legend)
             overlay.draw_hint(cv2, frame,
-                              out_of_range(time.time() - last_hand_at, args))
+                              refused
+                              or out_of_range(time.time() - last_hand_at,
+                                              args))
 
             if tuning:
                 state = motion.debug_state()

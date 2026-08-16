@@ -9,6 +9,7 @@ landmarks and which hand MediaPipe thinks it is.
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,7 @@ class HandTracker:
         self.confidence = confidence
         self._landmarker = None
         self._mp = None
+        self._warned_no_world = False
 
     def open(self):
         if not self.model_path.exists():
@@ -114,6 +116,14 @@ class HandTracker:
             return None
 
         world = found.hand_world_landmarks
+
+        # The shape tests prefer the world landmarks; losing them is the
+        # kind of silent degradation that reads as "poses stopped
+        # working" with nothing on screen to say why.  Once is enough.
+        if not world and not self._warned_no_world:
+            self._warned_no_world = True
+            print("  ! the tracker returned no world landmarks; pose "
+                  "reading degrades", file=sys.stderr)
 
         return Hand(
             landmarks=found.hand_landmarks[0],
