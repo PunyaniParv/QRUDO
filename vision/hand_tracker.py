@@ -9,6 +9,7 @@ landmarks and which hand MediaPipe thinks it is.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,16 +64,28 @@ class HandTracker:
 
         self._mp = mp
 
+        # VIDEO mode, not the default IMAGE mode.  Image mode treats
+        # every frame as an unrelated photograph and runs the full-frame
+        # palm detector on each one, so the whole background gets a
+        # fresh chance to distract the model thirty times a second.  In
+        # video mode that search only runs to *acquire* a hand; between
+        # acquisitions the model follows the hand it has through a crop
+        # around where it just was, and the background simply is not in
+        # the picture it looks at.  It is also the mode in which
+        # min_tracking_confidence means anything at all.
         self._landmarker = vision.HandLandmarker.create_from_options(
             vision.HandLandmarkerOptions(
                 base_options=mp_python.BaseOptions(
                     model_asset_path=str(self.model_path)),
+                running_mode=vision.RunningMode.VIDEO,
                 num_hands=1,
                 min_hand_detection_confidence=self.confidence,
                 min_hand_presence_confidence=self.confidence,
                 min_tracking_confidence=self.confidence,
             )
         )
+
+        self._last_ms = 0
 
         return self
 
@@ -89,7 +102,13 @@ class HandTracker:
             data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         )
 
-        found = self._landmarker.detect(image)
+        # Video mode wants each frame stamped later than the one before.
+        # Wall-clock milliseconds, nudged forward if two frames land in
+        # the same one.
+        stamp = int(time.monotonic() * 1000)
+        self._last_ms = max(self._last_ms + 1, stamp)
+
+        found = self._landmarker.detect_for_video(image, self._last_ms)
 
         if not found.hand_landmarks:
             return None
