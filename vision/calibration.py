@@ -51,6 +51,12 @@ class Calibration:
     #: hands that hold the swipe pose's spare fingers nearly straight.
     folded_ratio: float = 0.82
 
+    #: The folded line per finger, or None for the single line above.
+    #: Fingers do not rest equally -- a ring finger at rest sits a good
+    #: deal straighter than a pinky at rest -- so each gets its line
+    #: drawn between its own held-down and resting readings.
+    folded_ratios: dict | None = None
+
     #: Notes about the loading rather than thresholds, so they are kept
     #: out of the file and out of any comparison between two calibrations.
     #:
@@ -204,6 +210,8 @@ class Calibration:
 
         hand_state.EXTENDED_RATIO = self.extended_ratio
         hand_state.FOLDED_RATIO = self.folded_ratio
+        hand_state.FOLDED_RATIOS = (dict(self.folded_ratios)
+                                    if self.folded_ratios else None)
         hand_state.OPEN_RATIO = self.open_ratio
         hand_state.FIST_REACH = self.fist_reach
         hand_state.FIST_CURL = self.fist_curl
@@ -534,31 +542,55 @@ class Profile:
         # doing nothing read as POINT -- one slacker finger from the
         # swipe pose.
         #
-        # Only drawn where this hand's recordings actually separate.
-        # Some hands hold the swipe pose's spare fingers nearly straight,
-        # and for them the honest answer is the old single line, said out
-        # loud, rather than a gap invented between two measurements that
-        # overlap.
-        held_down = (self.among(["fist"], self.HIGH)
-                     + self.among(["two"], self.HIGH,
-                                  fingers=("ring", "pinky")))
+        # Drawn per finger, because fingers do not rest equally: this is
+        # a line between one finger's held-down reading and the same
+        # finger's resting one, and a ring finger at rest sits a good
+        # deal straighter than a pinky at rest.  One shared line either
+        # refused a casually held-down ring or let a resting pinky count
+        # as folded; it could not avoid both.
+        #
+        # And only drawn where this finger's recordings actually
+        # separate.  Some hands hold the swipe pose's spare fingers
+        # nearly straight, and for them the honest answer is the old
+        # single line, said out loud, rather than a gap invented between
+        # two measurements that overlap.
+        folded_ratios = {}
+        inseparable = []
 
-        resting = self.among(["rest"], self.LOW)
+        for finger in ("middle", "ring", "pinky"):
+            held_down = self.among(["fist"], self.HIGH, fingers=(finger,))
 
-        if resting:
-            folded_ratio, ok = between(
-                max(held_down, default=0.0), min(resting),
-                extended_ratio, fraction=DELIBERATE, least=0.06)
-        else:
-            folded_ratio, ok = extended_ratio, False
+            if finger in ("ring", "pinky"):
+                held_down += self.among(["two"], self.HIGH,
+                                        fingers=(finger,))
 
-        if not ok:
-            folded_ratio = extended_ratio
+            resting = self.among(["rest"], self.LOW, fingers=(finger,))
+
+            if resting:
+                line, ok = between(
+                    max(held_down, default=0.0), min(resting),
+                    extended_ratio, fraction=DELIBERATE, least=0.06)
+            else:
+                line, ok = extended_ratio, False
+
+            if not ok:
+                line = extended_ratio
+                inseparable.append(finger)
+
+            # A folded finger is certainly not out; the lines must agree.
+            folded_ratios[finger] = round(min(line, extended_ratio), 3)
+
+        # The index is never asked to fold -- every pattern wants it out
+        # -- so it keeps the strictest line there is.
+        folded_ratios["index"] = round(extended_ratio, 3)
+
+        if "ring" in inseparable or "pinky" in inseparable:
+            # The fingers the swipe pose folds: these are the ones whose
+            # line matters, and theirs could not be drawn.
             warnings.append("could not tell a finger held down from one"
                             " at rest")
 
-        # A folded finger is certainly not out; the lines must agree.
-        folded_ratio = min(folded_ratio, extended_ratio)
+        folded_ratio = min(folded_ratios.values())
 
         # A hand is open above this, which is a different question: the
         # other side is not a fist but a hand at rest, whose fingers are
@@ -669,6 +701,7 @@ class Profile:
         derived = Calibration(
             extended_ratio=round(extended_ratio, 3),
             folded_ratio=round(folded_ratio, 3),
+            folded_ratios=folded_ratios,
             open_ratio=round(open_ratio, 3),
             fist_reach=round(fist_reach, 3),
             fist_curl=round(fist_curl, 3),
@@ -818,6 +851,8 @@ def current():
     return Calibration(
         extended_ratio=hand_state.EXTENDED_RATIO,
         folded_ratio=hand_state.FOLDED_RATIO,
+        folded_ratios=(dict(hand_state.FOLDED_RATIOS)
+                       if hand_state.FOLDED_RATIOS else None),
         open_ratio=hand_state.OPEN_RATIO,
         fist_reach=hand_state.FIST_REACH,
         fist_curl=hand_state.FIST_CURL,

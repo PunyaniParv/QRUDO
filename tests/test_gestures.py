@@ -600,34 +600,36 @@ class TestSlackIsNeitherOutNorFolded(GestureTestCase):
         self.assertEqual(gestures.pose_kind(hand), gestures.POSE_TWO_FINGER)
 
 
-class TestTheRestSignatureIsTheLastWord(GestureTestCase):
-    """The calibration records the resting hand for one promise: that it
-    asks for nothing.  The thresholds alone cannot always keep it -- they
-    are lines, and a resting hand drifts across them -- so a hand that
-    matches the recorded signature is refused before any pattern is
-    tried, poses that exist and poses not written yet alike.
+class TestTheRestSignatureInformsButDoesNotGate(GestureTestCase):
+    """The signature vetoed briefly, and on a hand whose rest is
+    naturally open the ball around it swallowed the casual versions of
+    real poses: a swipe pose with its spare fingers held lazily sat
+    entirely inside it, and a palm shown at resting height read as
+    nothing until the hand was first carried somewhere the signature did
+    not reach.  The folded lines guard the patterns structurally and the
+    open-hand line is the measured split between rest and palm; the
+    signature's remaining job is to say so in the tuning overlay.
     """
 
     def tearDown(self):
         hand_state.REST_SIGNATURE = None
         super().tearDown()
 
-    def test_a_hand_matching_the_signature_asks_for_nothing(self):
-        hand = make_hand()  # a properly open palm, everywhere else
+    def test_a_pose_matching_the_signature_still_reads(self):
+        hand = make_hand()  # a properly open palm
 
         hand_state.REST_SIGNATURE = dict(hand_state.finger_span(hand))
 
-        self.assertEqual(self.settle(hand), "UNKNOWN")
-        self.assertIsNone(gestures.pose_kind(hand))
+        self.assertEqual(self.settle(hand), "OPEN_PALM")
+        self.assertEqual(gestures.pose_kind(hand), gestures.POSE_OPEN_PALM)
 
-    def test_a_hand_unlike_the_signature_still_reads(self):
+    def test_the_tuning_overlay_mentions_the_match(self):
         hand = make_hand()
 
-        hand_state.REST_SIGNATURE = {
-            name: span - 0.2
-            for name, span in hand_state.finger_span(hand).items()}
+        hand_state.REST_SIGNATURE = dict(hand_state.finger_span(hand))
+        self.settle(hand)
 
-        self.assertEqual(self.settle(hand), "OPEN_PALM")
+        self.assertIn("at rest", gestures.explain(hand, HAND))
 
     def test_without_a_signature_nothing_changes(self):
         self.assertEqual(self.settle(make_hand()), "OPEN_PALM")

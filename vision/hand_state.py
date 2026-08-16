@@ -59,6 +59,13 @@ EXTENDED_RATIO = 0.82
 #: held-down fingers and the resting ones actually separate.
 FOLDED_RATIO = 0.82
 
+#: The same line drawn per finger, when a calibration has measured them
+#: apart, or None for the single line above.  Fingers do not rest
+#: equally: a ring finger at rest sits a good deal straighter than a
+#: pinky at rest, so the one line either refuses a casually held-down
+#: ring or lets a resting pinky count as folded -- it cannot avoid both.
+FOLDED_RATIOS = None
+
 #: Per-finger extension of this user's hand at rest, measured by the
 #: calibration, or None before any has been.  A hand whose every finger
 #: sits within REST_TOLERANCE of it is resting, whatever the lines above

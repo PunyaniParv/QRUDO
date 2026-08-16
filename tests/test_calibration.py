@@ -373,11 +373,16 @@ class TestFromSamples(unittest.TestCase):
     def test_overlapping_recordings_keep_the_single_line_and_say_so(self):
         """This hand holds the swipe pose's spare fingers nearly straight
         -- above where its own rest reads -- and a gap invented between
-        two overlapping measurements would cost it the pose."""
+        two overlapping measurements would cost it the pose.  Per
+        finger: the ring and pinky are the ones that overlap here, and
+        the ones the pose needs."""
 
         measured, warnings = from_samples(self.poses(), {}, DEFAULTS)
 
-        self.assertEqual(measured.folded_ratio, measured.extended_ratio)
+        self.assertEqual(measured.folded_ratios["ring"],
+                         measured.extended_ratio)
+        self.assertEqual(measured.folded_ratios["pinky"],
+                         measured.extended_ratio)
         self.assertTrue([w for w in warnings if "at rest" in w])
 
     def test_fist_threshold_lands_between_fist_and_resting_hand(self):

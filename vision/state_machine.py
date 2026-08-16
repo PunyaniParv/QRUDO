@@ -108,9 +108,18 @@ class FingerMemory:
         course of one -- what the pose is, what a movement could be made
         from, and why -- and only the first of them is a new reading; see
         ``read`` for the others.
+
+        ``threshold`` may be one number for every finger or a mapping
+        per finger: a ring finger at rest sits much straighter than a
+        pinky at rest, so one line for both is one line in the wrong
+        place for one of them.
         """
 
+        bars = (threshold if isinstance(threshold, dict)
+                else dict.fromkeys(spans, threshold))
+
         for name, span in spans.items():
+            threshold = bars[name]
             recent = self.recent.setdefault(name, deque(maxlen=self.frames))
             recent.append(span)
 
@@ -145,7 +154,10 @@ class FingerMemory:
         """
 
         if len(self.out) < len(spans):
-            return {name: span > threshold for name, span in spans.items()}
+            bars = (threshold if isinstance(threshold, dict)
+                    else dict.fromkeys(spans, threshold))
+
+            return {name: span > bars[name] for name, span in spans.items()}
 
         return dict(self.out)
 

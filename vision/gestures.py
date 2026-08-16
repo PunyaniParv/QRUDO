@@ -39,7 +39,8 @@ def observe(hand):
 
     spans = hand_state.finger_span(hand)
 
-    _folded.update(spans, hand_state.FOLDED_RATIO)
+    _folded.update(spans,
+                   hand_state.FOLDED_RATIOS or hand_state.FOLDED_RATIO)
 
     return _fingers.update(spans, hand_state.EXTENDED_RATIO)
 
@@ -66,7 +67,7 @@ def _fingers_folded(hand):
     """
 
     above = _folded.read(hand_state.finger_span(hand),
-                         hand_state.FOLDED_RATIO)
+                         hand_state.FOLDED_RATIOS or hand_state.FOLDED_RATIO)
 
     return {name: not is_above for name, is_above in above.items()}
 
@@ -74,8 +75,16 @@ def _fingers_folded(hand):
 def _at_rest(hand):
     """Whether the hand matches the calibrated resting signature.
 
-    Asked of the steadied readings when there are enough, so one jittery
-    finger does not walk the hand in and out of its own rest.
+    For the explanation only, no longer a gate.  It gated briefly, and
+    on a hand whose rest is naturally open the ball around the signature
+    swallowed the casual versions of real poses: a swipe pose with the
+    spare fingers held lazily sat entirely inside it, and a palm shown
+    at resting height read as nothing until the hand was first carried
+    somewhere the signature did not reach.  The per-finger folded lines
+    guard the patterns structurally; the open-hand line *is* the
+    measured split between this user's rest and their palm; a second
+    wall behind those was strangling three real poses to guard one
+    corridor.
     """
 
     spans = (_fingers.steady
@@ -128,13 +137,6 @@ def classify(hand, handedness=None):
     # hand can be, so nothing else has to work around it.
     if hand_state.is_clenched(hand):
         return "UNKNOWN" if from_behind else "FIST"
-
-    # A hand that looks like this user's hand at rest is resting,
-    # whatever the patterns below would make of it.  The calibration
-    # records the rest for exactly this promise, and the lines alone
-    # cannot always keep it.
-    if _at_rest(hand):
-        return "UNKNOWN"
 
     fingers = _fingers_out(hand)
     folded = _fingers_folded(hand)
@@ -196,9 +198,6 @@ def explain(hand, handedness=None):
     if hand_state.is_clenched(hand):
         return "shut -> FIST"
 
-    if _at_rest(hand):
-        return "matches your hand at rest -- resting asks for nothing"
-
     closed = [name for name, reach in reaches.items()
               if reach < hand_state.FIST_REACH]
 
@@ -213,6 +212,10 @@ def explain(hand, handedness=None):
         weakest = min(hand_state.finger_scores(shape).values())
         return (f"open but slack: weakest finger {weakest:.2f}, "
                 f"needs {hand_state.OPEN_RATIO} to count as an open hand")
+
+    if _at_rest(hand):
+        return (f"fingers out: {', '.join(out)} -- but this matches your "
+                f"hand at rest")
 
     return f"fingers out: {', '.join(out) or 'none'}"
 
@@ -268,11 +271,6 @@ def pose_kind(hand):
     whenever the hand turns or closes.  Volume is on the keyboard, where
     brightness already was.
     """
-
-    # A resting hand arms nothing, for the same reason classify refuses
-    # to name it: the calibration promised it asks for nothing.
-    if _at_rest(hand):
-        return None
 
     fingers = _fingers_out(hand)
 
