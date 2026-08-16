@@ -613,6 +613,51 @@ class TestSlackIsNeitherOutNorFolded(GestureTestCase):
         self.assertEqual(gestures.pose_kind(hand), gestures.POSE_TWO_FINGER)
 
 
+class TestTheCliff(unittest.TestCase):
+    """The hand that forced the relative rule, in its own numbers.
+
+    Logged live: the pose read index 1.00, middle 1.00, ring 0.70,
+    pinky 0.70 -- and the pinky at rest read 0.73, one hundredth above
+    the pinky held down.  No recorded bar fits in a hundredth.  What
+    separates the two is shape: at rest each finger is a small step
+    below the last (that pinky rested 0.16 under its up-fingers), and
+    in the pose the down-fingers sit off a cliff (0.30 under them).
+    """
+
+    LIVE_POSE = {"index": 1.0, "middle": 1.0, "ring": 0.70, "pinky": 0.70}
+    LIVE_REST = {"index": 0.92, "middle": 0.90, "ring": 0.85, "pinky": 0.74}
+
+    DEEP_REST = {"index": 0.85, "middle": 0.84, "ring": 0.79, "pinky": 0.68}
+
+    def out(self, spans):
+        # As the user's calibration reads them: out above 0.801.
+        return {name: span > 0.801 for name, span in spans.items()}
+
+    def test_the_pose_that_was_refused_now_reads(self):
+        self.assertTrue(gestures._two_up(self.out(self.LIVE_POSE),
+                                         self.LIVE_POSE))
+
+    def test_the_resting_hand_still_does_not(self):
+        self.assertFalse(gestures._two_up(self.out(self.LIVE_REST),
+                                          self.LIVE_REST))
+
+    def test_a_deeper_rest_does_not_either(self):
+        """The gradient slid down until the pinky ducked under the old
+        absolute fold line -- the hole the cliff exists to close.  The
+        steps between the fingers slide with the hand, so the cliff
+        refuses rest at every depth at once."""
+
+        self.assertFalse(gestures._two_up(self.out(self.DEEP_REST),
+                                          self.DEEP_REST))
+
+    def test_the_rest_step_is_under_the_cliff_with_room(self):
+        step = (min(self.LIVE_REST["index"], self.LIVE_REST["middle"])
+                - self.LIVE_REST["pinky"])
+
+        self.assertLess(step + 0.05, hand_state.TWO_CLIFF,
+                        "rest plus noise must not reach the cliff")
+
+
 class TestTheRestSignatureInformsButDoesNotGate(GestureTestCase):
     """The signature vetoed briefly, and on a hand whose rest is
     naturally open the ball around it swallowed the casual versions of

@@ -66,6 +66,19 @@ FOLDED_RATIO = 0.82
 #: ring or lets a resting pinky count as folded -- it cannot avoid both.
 FOLDED_RATIOS = None
 
+#: The other way a finger can be deliberately down: dropped this far
+#: below the weaker of the two up-fingers, in the same frame.  Measured
+#: live, the absolute lines ran out of room -- one hand's pinky read
+#: 0.72 held down in the pose and 0.73 at rest, a hundredth apart, and
+#: no recorded bar can sit in a hundredth.  What separates the two is
+#: shape, not height: rest is a gradient, each finger a small step below
+#: the last (that pinky rested 0.16 under its own up-fingers), and the
+#: pose is a cliff (the same pinky held down sat 0.30 under them).  A
+#: relative measure is also immune to the posed-versus-casual disease
+#: that broke every absolute bar here, because it never compares against
+#: a recording -- only against the hand as it is this frame.
+TWO_CLIFF = 0.25
+
 #: Per-finger extension of this user's hand at rest, measured by the
 #: calibration, or None before any has been.  A hand whose every finger
 #: sits within REST_TOLERANCE of it is resting, whatever the lines above

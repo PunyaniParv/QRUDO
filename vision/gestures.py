@@ -72,6 +72,15 @@ def _fingers_folded(hand):
     return {name: not is_above for name, is_above in above.items()}
 
 
+def _steady_spans(hand):
+    """The finger readings a few frames have agreed on, or this frame's."""
+
+    if len(_fingers.steady) >= len(hand_state.FINGERS):
+        return _fingers.steady
+
+    return hand_state.finger_span(hand)
+
+
 def _at_rest(hand):
     """Whether the hand matches the calibrated resting signature.
 
@@ -87,11 +96,7 @@ def _at_rest(hand):
     corridor.
     """
 
-    spans = (_fingers.steady
-             if len(_fingers.steady) >= len(hand_state.FINGERS)
-             else hand_state.finger_span(hand))
-
-    return hand_state.looks_at_rest(spans)
+    return hand_state.looks_at_rest(_steady_spans(hand))
 
 
 def _open_enough(hand):
@@ -154,7 +159,7 @@ def classify(hand, handedness=None):
     ):
         return "POINT"
 
-    if _two_up(fingers, folded):
+    if _two_up(fingers, _steady_spans(hand)):
         return "TWO_FINGER"
 
     if extended == 4:
@@ -212,14 +217,15 @@ def explain(hand, handedness=None):
 
     if fingers["index"] and fingers["middle"] and len(out) == 2:
         # The two-finger pose is near; say which down-finger refused.
-        folded = _fingers_folded(hand)
-        spans = _fingers.steady or hand_state.finger_span(hand)
-        bars = hand_state.FOLDED_RATIOS or {}
+        spans = _steady_spans(hand)
+        drop = (min(spans.get("index", 0), spans.get("middle", 0))
+                - spans.get("pinky", 1))
 
-        if not folded["pinky"]:
-            return (f"almost the swipe pose: pinky at "
-                    f"{spans.get('pinky', 0):.2f}, tucked means below "
-                    f"{bars.get('pinky', hand_state.FOLDED_RATIO)}")
+        if drop < hand_state.TWO_CLIFF:
+            return (f"almost the swipe pose: the pinky sits "
+                    f"{max(drop, 0):.2f} below the up fingers, and the "
+                    f"pose begins at {hand_state.TWO_CLIFF:.2f} -- drop "
+                    f"it a little further")
 
     if fingers["index"] and fingers["middle"] and fingers["ring"] \
             and not fingers["pinky"]:
@@ -251,7 +257,7 @@ def detect_gesture(hand, handedness=None):
     return _stabiliser.update(classify(hand, handedness))
 
 
-def _two_up(fingers, folded):
+def _two_up(fingers, spans):
     """Index and middle out, the ring held short of out, the pinky
     folded on purpose.
 
@@ -268,23 +274,32 @@ def _two_up(fingers, folded):
     while three fingers held up persists by definition.
 
     The two down-fingers are asked different questions, because hands
-    hold them differently.  Nobody makes this pose with a straight
-    pinky, so the pinky must be folded on purpose -- which is what keeps
-    the resting hand out, its pinky being slack rather than tucked.
-    Plenty of people make it with the ring only half-held, and its
-    calibrated fold line comes from a recording where it was folded
-    right down for the prompt -- so asking the ring for that depth in
-    use refused the pose as made casually, which is how it is made.
-    The ring answers the plain question instead: not out.  A resting
-    hand still has to misread twice at once -- ring under the out-line
-    and pinky under the fold-line together -- where one misread used to
-    be enough.
+    hold them differently.  Plenty of people make the pose with the
+    ring only half-held, so the ring answers the plain question: not
+    out.  The pinky is the deliberate one, and deliberate is a shape,
+    not a height: dropped off the cliff, sitting well below the hand's
+    own up-fingers in the same frame.  Rest is a gradient -- each
+    finger a small step below the last -- and the pose is a cliff, and
+    that holds at every depth of rest at once, because a resting hand
+    slides as a unit and its little steps slide with it.  Measured on
+    the hand that forced this: pinky held down and pinky at rest read a
+    hundredth apart in *height*, where no recorded line can sit, while
+    the rest-step below the up-fingers was 0.16 against a held-down
+    drop of 0.30.
+
+    Not "cliff or tucked": the absolute fold line stays for POINT, but
+    here it was the remaining hole -- a deep enough rest walks the
+    pinky under any fixed line, gradient intact, and only the cliff
+    knows the difference.
     """
 
-    return (fingers["index"]
-            and fingers["middle"]
-            and not fingers["ring"]
-            and folded["pinky"])
+    if not (fingers["index"] and fingers["middle"] and not fingers["ring"]):
+        return False
+
+    up_floor = min(spans.get("index", 0.0), spans.get("middle", 0.0))
+
+    return (not fingers["pinky"]
+            and up_floor - spans.get("pinky", 1.0) >= hand_state.TWO_CLIFF)
 
 
 def pose_kind(hand):
@@ -302,7 +317,7 @@ def pose_kind(hand):
 
     fingers = _fingers_out(hand)
 
-    if _two_up(fingers, _fingers_folded(hand)):
+    if _two_up(fingers, _steady_spans(hand)):
         return POSE_TWO_FINGER
 
     if not all(fingers.values()):

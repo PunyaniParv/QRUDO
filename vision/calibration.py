@@ -57,6 +57,15 @@ class Calibration:
     #: drawn between its own held-down and resting readings.
     folded_ratios: dict | None = None
 
+    #: How far the pinky must drop below the up-fingers to count as
+    #: deliberately down when it is not tucked -- the cliff, measured
+    #: between this hand's resting step and its held-down drop.  The
+    #: relative answer where the absolute lines ran out of room: one
+    #: hand's pinky read 0.72 held down and 0.73 at rest, and no bar
+    #: fits in a hundredth, but its rest-step below the up-fingers was
+    #: 0.16 against a held-down drop of 0.30.
+    two_cliff: float = 0.25
+
     #: Notes about the loading rather than thresholds, so they are kept
     #: out of the file and out of any comparison between two calibrations.
     #:
@@ -164,6 +173,7 @@ class Calibration:
         "fist_reach": (0.90, 1.40),
         "fist_curl": (0.35, 0.75),
         "folded_ratio": (0.35, 0.85),
+        "two_cliff": (0.15, 0.35),
         # The movement caps are set from what ordinary, unhurried
         # gestures measure -- a flick about 0.48 of turn at 2.2/s, a
         # gentle raise or lower about 0.79 of lift at 1.7/s: a
@@ -212,6 +222,7 @@ class Calibration:
         hand_state.FOLDED_RATIO = self.folded_ratio
         hand_state.FOLDED_RATIOS = (dict(self.folded_ratios)
                                     if self.folded_ratios else None)
+        hand_state.TWO_CLIFF = self.two_cliff
         hand_state.OPEN_RATIO = self.open_ratio
         hand_state.FIST_REACH = self.fist_reach
         hand_state.FIST_CURL = self.fist_curl
@@ -611,6 +622,30 @@ class Profile:
 
         folded_ratio = min(folded_ratios.values())
 
+        # The cliff: how far the pinky drops below the up-fingers, with
+        # the line between this hand's resting step and its held-down
+        # drop.  Anchored near the rest side, which is the steady one --
+        # the held-down drop relaxes in use, the resting step does not.
+        rest_up = self.among(["rest"], self.HIGH,
+                             fingers=("index", "middle"))
+        rest_pinky = self.among(["rest"], self.LOW, fingers=("pinky",))
+        posed_up = self.among(["two"], self.LOW,
+                              fingers=("index", "middle"))
+        posed_pinky = self.among(["two"], self.HIGH, fingers=("pinky",))
+
+        if rest_up and rest_pinky and posed_up and posed_pinky:
+            rest_step = max(rest_up) - min(rest_pinky)
+            posed_drop = min(posed_up) - max(posed_pinky)
+
+            two_cliff, ok = between(rest_step, posed_drop,
+                                    current.two_cliff,
+                                    fraction=STEADY, least=0.06)
+
+            if not ok:
+                two_cliff = current.two_cliff
+        else:
+            two_cliff = current.two_cliff
+
         # A hand is open above this, which is a different question: the
         # other side is not a fist but a hand at rest, whose fingers are
         # straighter than a fist and slacker than a spread hand.  With
@@ -721,6 +756,7 @@ class Profile:
             extended_ratio=round(extended_ratio, 3),
             folded_ratio=round(folded_ratio, 3),
             folded_ratios=folded_ratios,
+            two_cliff=round(two_cliff, 3),
             open_ratio=round(open_ratio, 3),
             fist_reach=round(fist_reach, 3),
             fist_curl=round(fist_curl, 3),
@@ -872,6 +908,7 @@ def current():
         folded_ratio=hand_state.FOLDED_RATIO,
         folded_ratios=(dict(hand_state.FOLDED_RATIOS)
                        if hand_state.FOLDED_RATIOS else None),
+        two_cliff=hand_state.TWO_CLIFF,
         open_ratio=hand_state.OPEN_RATIO,
         fist_reach=hand_state.FIST_REACH,
         fist_curl=hand_state.FIST_CURL,
