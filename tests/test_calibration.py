@@ -62,6 +62,16 @@ class TestTheReadingsAreKept(unittest.TestCase):
     Keeping the readings makes a correction free.
     """
 
+    def setUp(self):
+        # load_and_apply moves the live thresholds, and a test that moves
+        # them must move them back: left applied, they followed every test
+        # that ran after this file, and a detector test three modules away
+        # quietly ran against this file's numbers instead of its own.
+        self.before = current()
+
+    def tearDown(self):
+        self.before.apply()
+
     def poses(self):
         return {
             "fist": readings(0.45, 1.02),

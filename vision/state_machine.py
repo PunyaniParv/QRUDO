@@ -217,6 +217,7 @@ class SwipeState:
         # already turned away from it and not yet come back.
         self.neutral_aim: float | None = None
         self.aim_still_since: float | None = None
+        self.aim_rested_at = 0.0
         self.turned = False
         self._seen_kind = None
         self._seen_since = 0.0
@@ -289,6 +290,7 @@ class SwipeState:
     def clear(self):
         self.history.clear()
         self.armed_until = 0.0
+        self.armed_since = 0.0
         self.armed_kind = None
         self.settling = False
         self.neutral_y = None
@@ -296,8 +298,17 @@ class SwipeState:
         self.raised = False
         self.neutral_aim = None
         self.aim_still_since = None
+        self.aim_rested_at = 0.0
         self.turned = False
         self._seen_kind = None
+        # The timestamps too.  Left behind, they are only "the past" for a
+        # clock that keeps going forward -- which the fake clocks in tests
+        # do not, so a leftover time from one test quietly changed what
+        # the next one measured, and a real bug passed the suite for as
+        # long as the order of the tests happened to hide it.
+        self._seen_since = 0.0
+        self._last_pose_at = 0.0
+        self.cooldown_until = 0.0
 
 
 class Presence:
