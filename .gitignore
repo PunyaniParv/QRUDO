@@ -35,8 +35,4 @@ logs/
 # Local configuration
 sarv_config.json
 
-# Raw acoustic experiment recordings
-acoustic_test/distance_validation_v1/audio/
 
-# Raw acoustic experiment recordings
-acoustic_test/distance_validation_v1/audio/

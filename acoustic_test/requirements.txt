@@ -1,4 +1,0 @@
-numpy
-sounddevice
-scipy
-matplotlib
