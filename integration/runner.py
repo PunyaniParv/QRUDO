@@ -311,7 +311,42 @@ def build_stamp():
     profile = ("hand profile: measured" if measured
                else "hand profile: DEFAULTS -- run --calibrate")
 
-    return f"  build  : {commit or 'unknown'}  --  {profile}"
+    stamp = f"  build  : {commit or 'unknown'}  --  {profile}"
+
+    behind = _commits_behind()
+
+    if behind:
+        stamp += (f"\n  ! this machine is {behind} commit(s) behind -- "
+                  f"git pull to catch up")
+
+    return stamp
+
+
+def _commits_behind():
+    """How far this checkout trails the shared main, or 0 if unknowable.
+
+    A stale checkout shows last week's bugs in this week's report -- a
+    Windows session once reported three of them at one sitting, all
+    already fixed -- so the machine says so itself at startup.  Offline,
+    slow, or not a checkout at all: silently nothing, never a delay
+    worth noticing and never a crash.
+    """
+
+    import subprocess
+
+    here = Path(__file__).resolve().parent
+
+    try:
+        subprocess.run(["git", "fetch", "--quiet"], cwd=here, timeout=2.5,
+                       capture_output=True)
+        count = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            cwd=here, timeout=2.0, capture_output=True, text=True,
+        ).stdout.strip()
+
+        return int(count) if count.isdigit() else 0
+    except Exception:
+        return 0
 
 
 def banner(engine, router, args, tuning):
