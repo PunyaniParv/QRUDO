@@ -1416,6 +1416,73 @@ class TestEveryPoseAtADistance(GestureTestCase):
                     self.assertEqual(got, wanted)
 
 
+class TestTheWayInIsNotAGesture(GestureTestCase):
+    """A hand arrives in frame from an edge, and the way in from an edge
+    is a movement -- entering from below is a raise, made in whatever
+    pose the hand happens to arrive in.  The neutral height used to be
+    taken from the hand's first visible moments, mid-flight, so the
+    entrance performed the gesture.  Nothing may fire until the hand has
+    genuinely stopped once; the stop is what makes the next movement a
+    departure rather than a continuation.
+    """
+
+    PALM = (EXTENDED, EXTENDED, EXTENDED, EXTENDED)
+    TWO = (EXTENDED, EXTENDED, CURLED, CURLED)
+
+    def enter(self, fingers, cy_from, cy_to, seconds=0.5, fps=30):
+        fired = []
+        frames = max(2, round(seconds * fps))
+
+        for i in range(frames):
+            cy = cy_from + (cy_to - cy_from) * (i / (frames - 1))
+            got = motion.detect_swipe(make_hand(*fingers, cy=cy), HAND)
+
+            if got:
+                fired.append(got)
+
+            self.clock.tick(1.0 / fps)
+
+        return fired
+
+    def hold(self, fingers, cy, seconds=0.3):
+        self.enter(fingers, cy, cy, seconds)
+
+    def test_entering_from_below_is_not_a_raise(self):
+        self.assertEqual(self.enter(self.PALM, 0.95, 0.45), [])
+
+    def test_entering_from_above_is_not_a_lower(self):
+        self.assertEqual(self.enter(self.PALM, 0.05, 0.55), [])
+
+    def test_the_swipe_pose_entering_is_not_volume(self):
+        self.assertEqual(self.enter(self.TWO, 0.95, 0.45), [])
+
+    def test_after_stopping_the_same_hand_gestures_freely(self):
+        self.assertEqual(self.enter(self.PALM, 0.95, 0.55), [])
+        self.hold(self.PALM, 0.55)
+
+        self.assertEqual(self.enter(self.PALM, 0.55, 0.35, seconds=0.3),
+                         ["PALM_UP"])
+
+    def test_a_sideways_entrance_leaves_lifts_ready(self):
+        """Entering across the frame never moved vertically, so the
+        vertical axis was at rest the whole way in."""
+
+        fired = []
+
+        for i in range(15):
+            cx = 0.05 + (0.50 - 0.05) * (i / 14)
+            got = motion.detect_swipe(make_hand(*self.PALM, cx=cx), HAND)
+
+            if got:
+                fired.append(got)
+
+            self.clock.tick(1.0 / 30)
+
+        self.assertEqual(fired, [], "the way in fired something")
+        self.assertEqual(self.enter(self.PALM, 0.55, 0.35, seconds=0.3),
+                         ["PALM_UP"])
+
+
 class TestBrightnessOnAnOpenPalm(GestureTestCase):
     """An open hand raised and lowered, which is brightness.
 

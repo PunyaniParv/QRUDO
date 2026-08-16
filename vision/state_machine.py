@@ -230,6 +230,7 @@ class SwipeState:
         self.neutral_aim: float | None = None
         self.aim_still_since: float | None = None
         self.aim_rested_at = 0.0
+        self.y_rested_at = 0.0
         self.turned = False
         self._seen_kind = None
         self._seen_since = 0.0
@@ -311,6 +312,7 @@ class SwipeState:
         self.neutral_aim = None
         self.aim_still_since = None
         self.aim_rested_at = 0.0
+        self.y_rested_at = 0.0
         self.turned = False
         self._seen_kind = None
         # The timestamps too.  Left behind, they are only "the past" for a
