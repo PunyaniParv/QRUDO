@@ -50,20 +50,23 @@ SWIPE_COMMANDS = {
     "PALM_DOWN": Command.BRIGHTNESS_DOWN,
 }
 
-# Deliberately unmapped for now:
+# Deliberately unmapped as held poses:
 #
 #   TWO_FINGER  is the swipe pose.  Binding it would fire a command every
 #               time you got ready to swipe.
-#   OPEN_PALM   is what a hand looks like on its way to and from every
-#               other gesture, so it would fire constantly.
+#   OPEN_PALM   is the pose the brightness lifts are made from, and what
+#               a hand looks like on its way to and from every other
+#               gesture besides -- so it would fire constantly.
 #   POINT       is free.
 #
-# Volume and brightness are on the keyboard -- ctrl+alt+U and D, B and N.
-# Volume had a gesture, a pinch raised or lowered, and it was more trouble
-# than the other four together: being defined by where the thumb is, it
-# was mistaken in turn for a fist, an open hand and two fingers, because
-# the thumb is the landmark a camera loses first.  Three gestures that
-# cannot be confused with each other beat five that can.
+# Volume had a gesture before these, a pinch raised or lowered, and it
+# was more trouble than the other four together: being defined by where
+# the thumb is, it was mistaken in turn for a fist, an open hand and two
+# fingers, because the thumb is the landmark a camera loses first.  The
+# two fingers raised and lowered above are the same wish granted on
+# landmarks the camera keeps.  The keyboard still carries every command
+# -- ctrl+alt+U/D/P/L/R/B/N via --hotkeys -- but as demo insurance, not
+# as the home of any of them.
 
 
 class GestureRouter:
