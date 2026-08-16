@@ -127,6 +127,16 @@ OPEN_RATIO = 0.90
 #: tell" rather than a coin flip.
 PALM_CERTAINTY = 0.12
 
+#: How much palm must be in view before the open-palm pose is believed.
+#: Deliberately half the certainty line above: the question is not "is
+#: this squarely a palm" but "is there palm at all in view".  A palm
+#: relaxed at resting height tilts back and shows the camera less of
+#: itself than one held square for a prompt, and demanding the full
+#: certainty of it in use refused the pose as people actually hold it --
+#: brightness armed only from a hand carried high and squared.  A true
+#: side profile still reads under a tenth of this and stays refused.
+FACING_CERTAINTY = 0.06
+
 #: Smallest a hand can look on screen and still be read, as a fraction of
 #: the frame width.  Anything smaller is discarded before a gesture is
 #: looked for at all, so this is the range limit and nothing else is.
@@ -291,7 +301,7 @@ def is_facing_palm(hand_landmarks, handedness):
     return palm_facing_strength(
         hand_landmarks,
         handedness
-    ) > PALM_CERTAINTY
+    ) > FACING_CERTAINTY
 
 
 # ---------------------------------------------------------

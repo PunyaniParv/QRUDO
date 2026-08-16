@@ -206,7 +206,9 @@ def explain(hand, handedness=None):
                 f"and two others for a fist")
 
     if len(out) == 4 and not hand_state.is_facing_palm(screen, handedness):
-        return "side-on -- an open hand is only read facing the camera"
+        strength = hand_state.palm_facing_strength(screen, handedness)
+        return (f"not enough palm in view: facing {strength:+.2f}, the "
+                f"pose is believed above {hand_state.FACING_CERTAINTY}")
 
     if fingers["index"] and fingers["middle"] and len(out) == 2:
         # The two-finger pose is near; say which down-finger refused.
