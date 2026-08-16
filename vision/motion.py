@@ -473,8 +473,15 @@ def detect_swipe(hand, handedness=None):
     # fired on the very frame it ended.
     recent = [sample for sample in _state.history.recent(moment)
               if moment - sample[0] <= QUIET_SPAN]
-    covered = (len(recent) >= 2
-               and recent[-1][0] - recent[0][0] >= QUIET_SPAN * 0.7)
+
+    # Three samples across half the beat: enough to tell a rest from a
+    # crawl, which two samples cannot.  Asking for more of the beat than
+    # that was a frame-rate resonance -- at fifteen frames a second the
+    # samples inside the beat span exactly a third of a second less than
+    # was demanded, so no stop was ever registered, and a gate that
+    # refuses movement begun away from a stop refused everything.
+    covered = (len(recent) >= 3
+               and recent[-1][0] - recent[0][0] >= QUIET_SPAN * 0.5)
 
     if covered:
         aims = [sample[1]["aim"] for sample in recent]
