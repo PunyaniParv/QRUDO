@@ -66,10 +66,14 @@ FOLDED_RATIO = 0.82
 REST_SIGNATURE = None
 
 #: How closely a live hand must match the signature to be called
-#: resting.  Small enough that every deliberate pose escapes on at least
-#: one finger -- an open palm differs from rest by twice this at the
-#: pinky alone -- and large enough to cover the reading's own jitter.
-REST_TOLERANCE = 0.09
+#: resting.  Two sides bound it.  It must stay under the distance a
+#: deliberate pose keeps from the rest -- an open palm sits about 0.20
+#: from it at the pinky alone, so every real pose escapes on at least
+#: one finger.  And it must reach *past* the open-hand line: the fate of
+#: a resting hand rides on its slackest finger drifting over that line,
+#: and at 0.09 the veto let go just before the line was crossed -- a
+#: wall standing an inch inside the door it was built to guard.
+REST_TOLERANCE = 0.12
 
 #: A fist is judged by where the fingertips end up rather than by how
 #: bent each finger is.  How far a tip sits from the wrist, against how
