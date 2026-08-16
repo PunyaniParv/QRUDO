@@ -522,6 +522,57 @@ class TestFromSamples(unittest.TestCase):
         self.assertLess(far.min_hand_on_screen, 0.05)
 
 
+class TestTheRangeGateFollowsTheCamera(unittest.TestCase):
+    """The one stored threshold that describes the window rather than
+    the hand.  What decides whether a hand can be read is the pixels it
+    covers in the original frame -- a property of the model -- so given
+    the delivered width, the fraction follows, and the hand profile
+    travels between cameras with nothing to redo.
+    """
+
+    def setUp(self):
+        self.was = hand_state.MIN_HAND_ON_SCREEN
+
+    def tearDown(self):
+        hand_state.MIN_HAND_ON_SCREEN = self.was
+
+    def test_agrees_with_the_measurement_the_default_came_from(self):
+        """Poses were measured reliable down to 0.022 of frame at 640."""
+
+        self.assertAlmostEqual(hand_state.set_camera(640), 0.022, places=3)
+
+    def test_agrees_with_the_far_mode_measurement(self):
+        """Range 'roughly doubles' at 1760: same pixels, half the
+        fraction and then some."""
+
+        self.assertLess(hand_state.set_camera(1760), 0.022 / 2)
+
+    def test_a_strange_width_cannot_open_the_gate_to_noise(self):
+        self.assertGreaterEqual(hand_state.set_camera(100000), 0.008)
+        self.assertLessEqual(hand_state.set_camera(60), 0.10)
+
+    def test_no_width_changes_nothing(self):
+        before = hand_state.MIN_HAND_ON_SCREEN
+
+        hand_state.set_camera(0)
+        hand_state.set_camera(None)
+
+        self.assertEqual(hand_state.MIN_HAND_ON_SCREEN, before)
+
+    def test_the_camera_wins_over_the_stored_calibration(self):
+        """The stored number was measured through the calibrating
+        camera; the camera in use claims the gate afterwards, by
+        arriving later -- which is the whole portability story."""
+
+        calibration = current()
+        calibration.min_hand_on_screen = 0.022
+        calibration.apply()
+
+        hand_state.set_camera(1600)
+
+        self.assertLess(hand_state.MIN_HAND_ON_SCREEN, 0.022)
+
+
 class TestApplying(unittest.TestCase):
     def setUp(self):
         self.before = current()

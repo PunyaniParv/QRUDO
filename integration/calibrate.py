@@ -77,6 +77,13 @@ def run(args):
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    # The range gate follows the camera actually recording, so the
+    # calibration sees hands under the same rule the live run will.
+    from vision import hand_state
+
+    if camera.shape:
+        hand_state.set_camera(camera.shape[0])
+
     print(banner())
 
     session = _Session(cv2, camera, tracker, vision, gestures, motion, overlay)

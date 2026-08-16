@@ -221,13 +221,18 @@ def run(engine, args, tuning=False):
 
 
 def picture(camera):
-    """What the camera gave, and whether it kept the whole view.
+    """What the camera gave, and what that buys, said out loud.
 
-    Worth a line, because a camera answering a request for a big picture
-    with a widescreen one drops a quarter of its height -- and the only
-    symptom is that gestures made close up stop working while distant
-    ones improve, which is not a symptom anybody would trace to this.
+    Worth the lines, because both facts are otherwise invisible.  A
+    camera answering a request for a big picture with a widescreen one
+    drops a quarter of its height, and the only symptom is close-up
+    gestures failing while distant ones improve.  And the range gate is
+    derived from the delivered width -- the hand profile carries the
+    hand, the camera carries only this -- so plugging in a different
+    camera should change this line and nothing else.
     """
+
+    from vision import hand_state
 
     shape = camera.shape
 
@@ -235,11 +240,14 @@ def picture(camera):
         return ""
 
     width, height = shape
-    line = f"  camera : {width}x{height}"
+    gate = hand_state.set_camera(width)
+    line = (f"  camera : {width}x{height} -- hands under "
+            f"{hand_state.MIN_HAND_PIXELS}px ignored"
+            f" ({gate:.1%} of frame)")
 
     if abs(width / height - 4 / 3) > 0.05:
-        return (line + "  -- widescreen, so the top and bottom of the view"
-                       "\n           may be cropped; close-up gestures can"
+        return (line + "\n           widescreen, so the top and bottom of"
+                       " the view may be cropped; close-up gestures can"
                        " run out of picture")
 
     return line

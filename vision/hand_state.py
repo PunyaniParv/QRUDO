@@ -169,6 +169,38 @@ FACING_CERTAINTY = 0.06
 #: the whole app at arm's length.
 MIN_HAND_ON_SCREEN = 0.022
 
+#: What the fraction above actually is: a pixel budget.  Landmark error
+#: is roughly fixed in pixels, so what decides whether a hand can be
+#: read is how many pixels of the original frame it covers -- a property
+#: of the model, not of any camera.  The two range measurements in this
+#: project agree on it: poses held to 0.022 of frame at 640 wide (14
+#: pixels of hand), and range "roughly doubles" at 1760, which is the
+#: same 14 pixels at a smaller fraction.  Given the frame width the
+#: camera actually delivers, the range gate follows -- which is what
+#: lets one hand profile travel between cameras with nothing to redo.
+MIN_HAND_PIXELS = 14
+
+
+def set_camera(width):
+    """Derive the range gate from the camera actually in use.
+
+    Called when a camera opens, with the width it really delivers (not
+    the one asked for).  Wins over any stored value by arriving later,
+    deliberately: the stored number was measured through the calibrating
+    camera, and it is the one threshold in the file that describes the
+    window rather than the hand.  Clamped so a strange reported width
+    cannot open the gate to noise or close it to arm's length.
+    """
+
+    global MIN_HAND_ON_SCREEN
+
+    if not width or width <= 0:
+        return MIN_HAND_ON_SCREEN
+
+    MIN_HAND_ON_SCREEN = min(0.10, max(0.008, MIN_HAND_PIXELS / width))
+
+    return MIN_HAND_ON_SCREEN
+
 
 # ---------------------------------------------------------
 # Which landmarks to ask
