@@ -312,9 +312,28 @@ class TestEveryAngle(GestureTestCase):
 
         self.check_all_views(pointing, "POINT")
 
-    def test_open_palm_from_any_side_but_behind(self):
+    def test_open_palm_only_facing_the_camera(self):
+        """Angled is fine; side-on is not a palm shown to anybody.
+
+        It used to read from any side but behind, and an open hand
+        side-on is what the camera sees of someone reaching past it --
+        with the brightness pose armed by the reach.
+        """
+
+        facing = [math.radians(degrees) for degrees in (-45, -20, 0, 20, 45)]
+
         self.check_all_views(make_hand, "OPEN_PALM",
-                             yaws=NOT_FROM_BEHIND, pitches=self.PALM_PITCHES)
+                             yaws=facing, pitches=self.PALM_PITCHES)
+
+    def test_open_palm_is_not_read_side_on(self):
+        edge_on = [math.radians(degrees) for degrees in (-90, 90)]
+
+        self.check_all_views(make_hand, "UNKNOWN",
+                             yaws=edge_on, pitches=self.PALM_PITCHES)
+
+        self.assertIsNone(
+            gestures.pose_kind(make_hand(yaw=math.radians(90))),
+            "an edge-on palm must not arm the brightness lifts")
 
     def test_two_finger_from_every_angle(self):
         def two(**viewpoint):

@@ -158,8 +158,13 @@ def classify(hand, handedness=None):
     if extended == 4:
         # Properly open, not merely not-closed: a hand at rest has fingers
         # straighter than a fist and slacker than a spread hand, and it was
-        # landing here.
-        if from_behind or not _open_enough(hand):
+        # landing here.  And facing, not merely not-from-behind: an open
+        # hand side-on is a hand reaching past the camera, not a palm
+        # shown to it.
+        if not hand_state.is_facing_palm(screen, handedness):
+            return "UNKNOWN"
+
+        if not _open_enough(hand):
             return "UNKNOWN"
 
         return "OPEN_PALM"
@@ -200,6 +205,9 @@ def explain(hand, handedness=None):
     if not out:
         return (f"half closed: {len(closed)} of 4 fingers in, need the index "
                 f"and two others for a fist")
+
+    if len(out) == 4 and not hand_state.is_facing_palm(screen, handedness):
+        return "side-on -- an open hand is only read facing the camera"
 
     if len(out) == 4 and not _open_enough(hand):
         weakest = min(hand_state.finger_scores(shape).values())
@@ -274,13 +282,14 @@ def pose_kind(hand):
     if not all(fingers.values()):
         return None
 
-    # An open hand has to be properly open, and has to be a palm.  The
-    # back of a hand with the fingers straight is what the camera sees of
-    # someone reaching for something, and reaching moves the hand -- which
-    # is the whole of what this pose is then asked about.
+    # An open hand has to be properly open, and has to be a palm shown
+    # to the camera.  The back of a hand with the fingers straight is
+    # what the camera sees of someone reaching for something, and a hand
+    # edge-on is one reaching past it -- and reaching moves the hand,
+    # which is the whole of what this pose is then asked about.
     screen = hand_state.screen_of(hand)
 
-    if hand_state.is_back_of_hand(screen, getattr(hand, "handedness", None)):
+    if not hand_state.is_facing_palm(screen, getattr(hand, "handedness", None)):
         return None
 
     if not _open_enough(hand):

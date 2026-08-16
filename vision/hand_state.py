@@ -256,16 +256,35 @@ def palm_facing_strength(hand_landmarks, handedness):
 def is_back_of_hand(hand_landmarks, handedness):
     """True only when the camera is clearly behind the hand.
 
-    Separate from "is the palm facing us", and the useful one of the two.
-    A hand turned side-on is neither -- and a fist from the side is still
-    a fist -- so the test that matters is whether we are looking at the
-    back of it, which is what a hand on a keyboard shows.
+    Separate from "is the palm facing us", and the useful one of the two
+    for most poses.  A hand turned side-on is neither -- and a fist from
+    the side is still a fist -- so the test that matters is whether we
+    are looking at the back of it, which is what a hand on a keyboard
+    shows.
     """
 
     return palm_facing_strength(
         hand_landmarks,
         handedness
     ) < -PALM_CERTAINTY
+
+
+def is_facing_palm(hand_landmarks, handedness):
+    """True only when the palm is confidently toward the camera.
+
+    The stricter question, asked of the open palm alone.  The other
+    poses are shapes -- a fist from the side is still a fist -- but an
+    open palm shown side-on is not somebody showing their palm, it is a
+    hand reaching past the camera with the fingers straight, and it was
+    read as the palm anyway.  So the pose is only believed where the
+    camera can actually tell it is looking at one: edge-on, the reading
+    is noise, and noise is not a gesture.
+    """
+
+    return palm_facing_strength(
+        hand_landmarks,
+        handedness
+    ) > PALM_CERTAINTY
 
 
 # ---------------------------------------------------------
