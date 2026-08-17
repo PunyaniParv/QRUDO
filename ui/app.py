@@ -104,6 +104,7 @@ class App:
         self.worker = None
         self.preview_photo = None   # kept, or Tk garbage-collects it
         self.ready = None           # a staged update, once one is
+        self.beat = 0               # frames seen; drives the hidden dot
 
         from version import VERSION
 
@@ -199,9 +200,14 @@ class App:
         if self.engine.config.show_preview:
             self.preview.configure(text="", padx=0, pady=0)
         else:
-            self.preview.configure(image="", text="camera hidden -- click "
-                                                  "to show", padx=12, pady=8,
-                                   width=0, height=0)
+            # "Camera hidden" read as "camera off", and it was neither:
+            # only the picture goes away.  So the chip says what is
+            # true and proves it -- the dot beats on real frames, so a
+            # person watches the camera being alive without seeing it.
+            self.preview.configure(image="",
+                                   text="● watching -- picture hidden "
+                                        "(click to show)",
+                                   padx=12, pady=8, width=0, height=0)
             self.preview_photo = None
 
     def toggle_preview(self):
@@ -351,8 +357,14 @@ class App:
                 self.result_label.configure(
                     text=said or str(result),
                     fg=ACCENT if result.ok else "#e06c75")
+            elif self.engine.config.dry_run:
+                # Paused is not dead, and it should never look dead.
+                self.result_label.configure(
+                    text="paused -- watching, touching nothing", fg=DIM)
 
             self.hint_label.configure(text=hint or "")
+
+            self.beat += 1
 
             if self.engine.config.show_preview:
                 try:
@@ -368,6 +380,15 @@ class App:
                                            height=PREVIEW_SIZE[1])
                 except Exception:
                     pass
+            else:
+                # The heartbeat: this line only runs when a frame
+                # actually arrived, so a beating dot IS the camera
+                # working -- and a frozen dot is the truth about that
+                # too.
+                dot = "●" if (self.beat // 12) % 2 else "○"
+                self.preview.configure(
+                    text=f"{dot} watching -- picture hidden "
+                         f"(click to show)")
 
         if not self.stop.is_set():
             self.root.after(40, self.tick)
