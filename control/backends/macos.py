@@ -442,6 +442,25 @@ class MacOSController(Controller):
 
         return None if device is None else audio.is_playing(device)
 
+    def _chosen_target(self) -> bool:
+        """Whether QRUDO is aimed at a browser on purpose, not by guess.
+
+        The user's words: once a target is chosen with ctrl+shift+arrows,
+        the chosen one is what gets controlled.  A chosen target names a
+        concrete app in the config -- "Google Chrome", not "auto" or
+        empty -- because the resolver writes the settled name there.  So
+        a concrete browser name is a deliberate aim, and a deliberate aim
+        earns trust: the letter may go to that browser even when the
+        video is a background tab, because the person said which app they
+        mean.  The empty/auto case stays cautious, since there nobody
+        said.
+        """
+
+        aimed = self.config.app
+
+        return bool(aimed) and any(
+            browser.lower() in aimed.lower() for browser in self.BROWSERS)
+
     def _refuse_to_type_into_a_text_box(self, pid: int) -> None:
         """A letter lands in the browser's front tab, wherever its focus
         is.  So it only goes when the front tab looks like the video and
@@ -461,10 +480,22 @@ class MacOSController(Controller):
 
         kind, title = _focus_report(pid)
 
+        # An editable focus refuses on every path, chosen target or not:
+        # typing k into a search box is wrong whoever aimed there, and
+        # the letter would be swallowed as text rather than reaching a
+        # player anyway.
         if kind == "editable":
             raise UnsupportedCommand(
                 "the cursor is in a text box, so play/pause would type "
                 "into it -- click the video first")
+
+        # A deliberately chosen browser is trusted past here: the person
+        # pointed QRUDO at it with ctrl+shift+arrows (or pinned it), so
+        # the letter goes even when the video is a background tab.  Only
+        # the unaimed auto case still demands the front tab be the video,
+        # because there nobody said which tab is meant.
+        if self._chosen_target():
+            return
 
         if kind in ("none", "element"):
             wanted = [part.strip().lower()

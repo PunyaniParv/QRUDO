@@ -258,7 +258,10 @@ class TestTheLetterOnlyGoesToTheVideo(unittest.TestCase):
     def controller(self, report):
         from control.backends import macos
 
-        made = FakeMac(running={"Google Chrome"}, target="Google Chrome")
+        # target "auto" (empty), so the cautious front-tab guard is the
+        # one under test; the trust-the-chosen-target tests set a
+        # concrete target themselves.
+        made = FakeMac(running={"Google Chrome"}, target="")
         # the real refusal logic, fed a controlled focus report
         made._refuse_to_type_into_a_text_box = (
             lambda pid: macos.MacOSController._refuse_to_type_into_a_text_box(
@@ -323,6 +326,31 @@ class TestTheLetterOnlyGoesToTheVideo(unittest.TestCase):
         controller.play_pause()
 
         self.assertEqual(controller.keyed, [4242])
+
+    def test_a_chosen_target_trusts_you_past_the_front_tab(self):
+        """The user's words: once a target is chosen, control the chosen
+        one.  A pinned or resolved browser sends the letter even to a
+        background video tab -- the person said which app they mean."""
+
+        controller = self.controller(
+            ("none", "Some Other Tab - Google Chrome"))
+        controller.config.target_app = "Google Chrome"   # chosen, not auto
+
+        controller.play_pause()
+
+        self.assertEqual(controller.keyed, [4242],
+                         "a chosen target should not refuse a background tab")
+
+    def test_a_chosen_target_still_refuses_a_text_box(self):
+        """Trust does not extend to typing into a search field: k there
+        is a literal k, never a play/pause, whoever aimed."""
+
+        controller = self.controller(
+            ("editable", "Search - YouTube - Google Chrome"))
+        controller.config.target_app = "Google Chrome"
+
+        with self.assertRaises(UnsupportedCommand):
+            controller.play_pause()
 
     def test_a_front_tab_that_is_not_the_video_refuses(self):
         """Even with harmless focus: the letter can only go to that tab,
