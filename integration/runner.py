@@ -51,6 +51,7 @@ def run(engine, args, tuning=False):
 
     router = GestureRouter(cooldown=engine.config.gesture_cooldown_seconds)
     presence = Presence()
+    hand_present = False
     frame_times = deque(maxlen=30)
     last_result = None
     last_result_at = 0.0
@@ -126,7 +127,13 @@ def run(engine, args, tuning=False):
                 if presence.missing(time.time()):
                     vision.reset_state()
                     router.forget()
+                    hand_present = False
             else:
+                # Arriving is judged by the same grace as leaving, so a
+                # hand lost to blur mid-gesture does not "arrive" twice.
+                if not hand_present:
+                    router.hand_arrived(time.time())
+                    hand_present = True
                 last_hand_at = time.time()
                 presence.seen(time.time())
                 gesture = gesture_module.detect_gesture(hand)

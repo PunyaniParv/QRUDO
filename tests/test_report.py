@@ -152,6 +152,26 @@ class TestRender(unittest.TestCase):
         text = report.render(events, "commands.jsonl")
         self.assertNotIn("every", text)
 
+    def test_days_are_kept_apart(self):
+        """The tuning loop's instrument: each day judges its own change.
+
+        One rate across the whole log blurs every threshold change
+        together; the day table is what says whether yesterday's tweak
+        cut the misfires or not.
+        """
+
+        day = 24 * 3600
+        events = [event("VOLUME_UP", 0), event("VOLUME_DOWN", 1.0),
+                  event("PLAY_PAUSE", 2 * day)]
+
+        rows = report.by_day(report.from_camera(report.performed(events)),
+                             report.find_reversals(
+                                 report.from_camera(report.performed(events))))
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][1], [2, 1], "two commands, one misfire")
+        self.assertEqual(rows[1][1], [1, 0])
+
     def test_a_long_log_gets_one(self):
         """40 min of use would split at the 30-min session gap, so the
         stretch stays inside one session: 25 min, quiet but continuous."""

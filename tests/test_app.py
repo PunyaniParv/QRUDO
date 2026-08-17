@@ -17,6 +17,21 @@ sys.path.insert(0, str(ROOT))
 from control import Command
 from integration.bridge import POSE_COMMANDS, SWIPE_COMMANDS, GestureRouter
 
+#: Just past the fist's dwell, which is how long a fist takes to count.
+FIST_SETTLES = 0.4
+
+
+def make_fist(router, at):
+    """Make a fist at ``at`` and hold it until it counts.
+
+    The fist has a dwell now -- the reliability report showed a hand
+    gripping a cup reads as a fist for an instant -- so a fist in a test
+    is two frames: the one where it appears and one just past the wait.
+    """
+
+    router.update("FIST", now=at)
+    return router.update("FIST", now=at + FIST_SETTLES)
+
 
 class TestSwipes(unittest.TestCase):
     def setUp(self):
@@ -76,9 +91,9 @@ class TestSwipes(unittest.TestCase):
         self.assertIsNone(self.router.update("FIST", now=1000.2))
 
     def test_and_a_swipe_after_a_pose(self):
-        self.assertIsNotNone(self.router.update("FIST", now=1000.0))
+        self.assertIsNotNone(make_fist(self.router, 1000.0))
 
-        self.assertIsNone(self.router.update(swipe="SWIPE_UP", now=1000.2))
+        self.assertIsNone(self.router.update(swipe="SWIPE_UP", now=1000.6))
 
     def test_the_hand_leaving_clears_it(self):
         """A hand that left and came back is not one movement."""
@@ -94,7 +109,31 @@ class TestHeldPoses(unittest.TestCase):
         self.router = GestureRouter()
 
     def test_fist_plays_or_pauses(self):
-        self.assertIs(self.router.update("FIST"), Command.PLAY_PAUSE)
+        self.assertIs(make_fist(self.router, 1000.0), Command.PLAY_PAUSE)
+
+    def test_a_glimpse_of_a_fist_is_not_a_command(self):
+        """The dwell, doing its job: a grip in passing never holds still.
+
+        A hand closing around a cup reads as a fist for a frame or two.
+        Only time separates it from a fist that is meant, so the wait is
+        time -- deliberately not a stricter shape, which would punish a
+        fist at an odd angle or from an unusual hand.
+        """
+
+        self.assertIsNone(self.router.update("FIST", now=1000.0))
+        self.assertIsNone(self.router.update("FIST", now=1000.1))
+
+    def test_an_unsure_frame_does_not_restart_the_wait(self):
+        """The dwell tolerates the camera blinking mid-hold.
+
+        A wobble or a small change of angle reads as "unknown" for a
+        frame; if that restarted the clock, natural variation would keep
+        a genuine fist from ever counting.
+        """
+
+        self.router.update("FIST", now=1000.0)
+        self.router.update("UNKNOWN", now=1000.2)
+        self.assertIsNotNone(self.router.update("FIST", now=1000.4))
 
     def test_holding_a_pose_fires_once(self):
         """The vision side reports a fist on every frame it can see one.
@@ -103,10 +142,29 @@ class TestHeldPoses(unittest.TestCase):
         thirty times.
         """
 
-        self.assertIsNotNone(self.router.update("FIST"))
+        self.assertIsNotNone(make_fist(self.router, 1000.0))
 
-        for _ in range(30):
-            self.assertIsNone(self.router.update("FIST"))
+        for frame in range(30):
+            self.assertIsNone(self.router.update("FIST",
+                                                 now=1000.5 + frame * 0.05))
+
+    def test_a_fist_held_long_does_not_pause_what_it_played(self):
+        """Found by the reliability report: PLAY_PAUSE led the misfires.
+
+        A fist held past the cooldown used to read as newly made -- the
+        cooldown dropped the pose, so the first frame after the wait
+        re-armed it and the toggle fired again: play, then pause, one
+        patiently held fist.  The pose is spent now, not dropped:
+        however long the fist is held, it is one command until the hand
+        makes it again.
+        """
+
+        self.assertIsNotNone(make_fist(self.router, 1000.0))
+
+        at = 1000.5
+        while at < 1006.0:
+            self.assertIsNone(self.router.update("FIST", now=at))
+            at += 0.05
 
     def test_making_the_pose_again_fires_again(self):
         """Re-arming takes a real gesture in between, not an unsure frame.
@@ -117,9 +175,9 @@ class TestHeldPoses(unittest.TestCase):
         back does the same thing in under a second.
         """
 
-        self.assertIsNotNone(self.router.update("FIST", now=1000.0))
-        self.router.update("OPEN_PALM", now=1000.5)
-        self.assertIsNotNone(self.router.update("FIST", now=1002.0))
+        self.assertIsNotNone(make_fist(self.router, 1000.0))
+        self.router.update("OPEN_PALM", now=1001.5)
+        self.assertIsNotNone(make_fist(self.router, 1002.0))
 
     def test_unmapped_poses_do_nothing(self):
         for gesture in ("OPEN_PALM", "TWO_FINGER", "UNKNOWN"):
@@ -145,9 +203,9 @@ class TestHeldPoses(unittest.TestCase):
         self.assertNotIn("TWO_FINGER", POSE_COMMANDS)
 
     def test_hand_leaving_resets_the_pose(self):
-        self.assertIsNotNone(self.router.update("FIST"))
+        self.assertIsNotNone(make_fist(self.router, 1000.0))
         self.router.forget()
-        self.assertIsNotNone(self.router.update("FIST"))
+        self.assertIsNotNone(make_fist(self.router, 1000.5))
 
 
 class TestSwipeAndPoseTogether(unittest.TestCase):
@@ -194,17 +252,19 @@ class TestFlickerDoesNotDoubleFire(unittest.TestCase):
 
     def test_flicker_through_unknown_fires_once(self):
         router = GestureRouter()
-        self.assertIsNotNone(router.update("FIST"))
+        self.assertIsNotNone(make_fist(router, 1000.0))
 
-        for _ in range(5):
-            self.assertIsNone(router.update("UNKNOWN"))
-            self.assertIsNone(router.update("FIST"))
+        at = 1000.5
+        for _ in range(15):
+            self.assertIsNone(router.update("UNKNOWN", now=at))
+            self.assertIsNone(router.update("FIST", now=at + 0.05))
+            at += 0.1
 
     def test_a_frame_with_no_hand_does_not_re_arm(self):
         router = GestureRouter()
-        self.assertIsNotNone(router.update("FIST"))
-        self.assertIsNone(router.update(None))
-        self.assertIsNone(router.update("FIST"))
+        self.assertIsNotNone(make_fist(router, 1000.0))
+        self.assertIsNone(router.update(None, now=1000.5))
+        self.assertIsNone(router.update("FIST", now=1000.55))
 
     def test_another_real_gesture_still_re_arms(self):
         """Fist, open the hand, fist again is two deliberate gestures.
@@ -214,15 +274,15 @@ class TestFlickerDoesNotDoubleFire(unittest.TestCase):
         """
 
         router = GestureRouter()
-        self.assertIsNotNone(router.update("FIST", now=1000.0))
-        router.update("OPEN_PALM", now=1000.5)
-        self.assertIsNotNone(router.update("FIST", now=1002.0))
+        self.assertIsNotNone(make_fist(router, 1000.0))
+        router.update("OPEN_PALM", now=1001.5)
+        self.assertIsNotNone(make_fist(router, 1002.0))
 
     def test_the_hand_leaving_re_arms(self):
         router = GestureRouter()
-        self.assertIsNotNone(router.update("FIST"))
+        self.assertIsNotNone(make_fist(router, 1000.0))
         router.forget()
-        self.assertIsNotNone(router.update("FIST"))
+        self.assertIsNotNone(make_fist(router, 1000.5))
 
 
 if __name__ == "__main__":
@@ -247,22 +307,28 @@ class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
         self.now += after
         return self.router.update(gesture, now=self.now)
 
+    def hold(self, gesture, after=0.05):
+        """A pose made and held past its dwell, like a person makes one."""
+
+        self.fire(gesture, after)
+        return self.fire(gesture, FIST_SETTLES)
+
     def test_a_flicker_to_another_gesture_and_back_fires_once(self):
-        self.assertIsNotNone(self.fire("FIST"))
+        self.assertIsNotNone(self.hold("FIST"))
         self.fire("PINCH")
         self.assertIsNone(self.fire("FIST"))
 
     def test_a_deliberate_repeat_after_a_pause_still_fires(self):
-        self.assertIsNotNone(self.fire("FIST"))
+        self.assertIsNotNone(self.hold("FIST"))
         self.fire("OPEN_PALM")
-        self.assertIsNotNone(self.fire("FIST", after=1.5))
+        self.assertIsNotNone(self.hold("FIST", after=1.5))
 
     def test_the_hand_leaving_counts_as_deliberate(self):
         """Fist, drop your hand, fist again is two gestures however fast."""
 
-        self.assertIsNotNone(self.fire("FIST"))
+        self.assertIsNotNone(self.hold("FIST"))
         self.router.forget()
-        self.assertIsNotNone(self.fire("FIST"))
+        self.assertIsNotNone(self.hold("FIST"))
 
     def test_different_poses_are_unaffected_by_each_other(self):
         """Each keeps its own repeat guard.  They still wait for the
@@ -271,10 +337,49 @@ class TestFlickerBetweenTwoRealGestures(unittest.TestCase):
 
         router = GestureRouter(poses={"FIST": Command.PLAY_PAUSE,
                                       "POINT": Command.VOLUME_UP})
-        self.assertIsNotNone(router.update("FIST", now=1000.0))
-        router.update("POINT", now=1001.1)
-        self.assertIsNotNone(router.update("POINT", now=1001.7),
+        self.assertIsNotNone(make_fist(router, 1000.0))
+        router.update("POINT", now=1001.5)
+        self.assertIsNotNone(router.update("POINT", now=1002.1),
                              "held past its dwell, the second pose fires")
+
+
+class TestEntryGrace(unittest.TestCase):
+    """A hand that just entered the picture gets a moment of silence.
+
+    Most accidents are made by a hand arriving -- reaching across the
+    desk, lifting a cup into shot -- and those shapes exist only in
+    transit.  The runner reports the arrival; a router never told of
+    one behaves exactly as before, which is how every older test and
+    caller stays true.
+    """
+
+    def test_a_swipe_on_arrival_is_the_arrival(self):
+        router = GestureRouter()
+        router.hand_arrived(1000.0)
+        self.assertIsNone(router.update(swipe="SWIPE_LEFT", now=1000.2))
+
+    def test_the_same_swipe_after_settling_counts(self):
+        router = GestureRouter()
+        router.hand_arrived(1000.0)
+        self.assertIsNotNone(router.update(swipe="SWIPE_LEFT", now=1000.8))
+
+    def test_a_pose_held_from_entry_fires_when_the_grace_ends(self):
+        """Walking in already fisted is deliberate: it waits, not dies.
+
+        The hold keeps counting through the grace, so the pose fires
+        the moment the silence ends rather than being spent by it.
+        """
+
+        router = GestureRouter()
+        router.hand_arrived(1000.0)
+        self.assertIsNone(router.update("FIST", now=1000.1))
+        self.assertIsNone(router.update("FIST", now=1000.46),
+                          "past its dwell, still inside the grace")
+        self.assertIsNotNone(router.update("FIST", now=1000.6))
+
+    def test_a_router_never_told_of_arrivals_has_no_grace(self):
+        router = GestureRouter()
+        self.assertIsNotNone(router.update(swipe="SWIPE_LEFT", now=1000.0))
 
 
 class TestTheOverlayIsWhole(unittest.TestCase):

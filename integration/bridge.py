@@ -51,11 +51,27 @@ POSE_COMMANDS = {
 #: day it was bound, every swipe pose fired a phantom target switch on
 #: the way in, whose cooldown then swallowed the swipe itself.  Half a
 #: second is several times any transition and nothing to somebody
-#: actually pointing.  The fist stays instant: nothing passes through a
-#: fist on its way to anything.
+#: actually pointing.
+#:
+#: The fist was instant for a long time, on the theory that nothing
+#: passes through a fist on its way to anything.  The reliability
+#: report disagreed: PLAY_PAUSE led the misfires, because to the camera
+#: a hand gripping something -- a cup, a phone, a mouse -- is a fist.
+#: The wait is time, deliberately not shape: a fist at any angle, from
+#: any hand, still fires exactly as it did; only a grip in passing,
+#: which never holds still for a third of a second, does not.
 POSE_DWELL = {
     "POINT": 0.5,
+    "FIST": 0.35,
 }
+
+#: A hand that has just entered the picture gets a moment of silence.
+#: Most accidents are made by a hand arriving -- reaching across the
+#: desk, lifting a cup into shot -- and those shapes exist only in
+#: transit.  A gesture meant on entry survives this: keep holding it
+#: and it fires the moment the grace ends.  A hand already in the
+#: picture never waits.
+ENTRY_GRACE = 0.5
 
 #: Movements, each on its own pose so that raising a hand mid-seek cannot
 #: be read as volume.  These are already one-off events with their own
@@ -97,17 +113,31 @@ class GestureRouter:
     """
 
     def __init__(self, poses=None, swipes=None, repeat=POSE_REPEAT,
-                 cooldown=GLOBAL_COOLDOWN, dwell=None):
+                 cooldown=GLOBAL_COOLDOWN, dwell=None, entry_grace=ENTRY_GRACE):
         self.poses = POSE_COMMANDS if poses is None else poses
         self.swipes = SWIPE_COMMANDS if swipes is None else swipes
         self.repeat = repeat
         self.cooldown = cooldown
         self.dwell = POSE_DWELL if dwell is None else dwell
+        self.entry_grace = entry_grace
         self._held = None
         self._held_since = 0.0
         self._fired_this_hold = False
         self._fired_at = {}
         self._last_command_at = -1e9
+        self._arrived_at = -1e9
+
+    def hand_arrived(self, now=None):
+        """A hand just entered the picture, after really being gone.
+
+        The caller decides what "really gone" means -- the runner pairs
+        this with the same grace Presence uses for forgetting, so a
+        hand lost to blur for a few frames does not count as arriving
+        twice.  Anyone who never calls this gets a router with no entry
+        silence, which is every router that existed before it.
+        """
+
+        self._arrived_at = time.time() if now is None else now
 
     def update(self, gesture=None, swipe=None, now=None):
         """Return the command this frame should run, or None."""
@@ -115,17 +145,28 @@ class GestureRouter:
         now = time.time() if now is None else now
 
         if now - self._last_command_at < self.cooldown:
-            # Still counting down from the last one.  The pose is dropped
-            # as well, so that a hand held through the wait does not fire
-            # the moment it ends -- it has to be made again.
-            self._held = None
+            # Still counting down from the last one.  The pose is spent
+            # rather than dropped: held through the wait, it must not
+            # fire the moment the wait ends -- it has to be made again.
+            # Dropping it used to cause exactly that, because the first
+            # frame after the wait then read as a pose newly made --
+            # which is how one patiently held fist played and then
+            # paused, and how the reliability report caught it.
+            if gesture not in (None, "UNKNOWN") and gesture != self._held:
+                self._held = gesture
+                self._held_since = now
+            self._fired_this_hold = True
             return None
 
-        # A swipe is a movement that already happened, so it always counts.
+        # A swipe is a movement that already happened, so it always counts
+        # -- unless the hand making it only just entered the picture, in
+        # which case the "swipe" is the entrance itself.
         if swipe is not None and swipe in self.swipes:
             # Whatever pose was being held was part of the swipe; make it
             # ask again rather than firing as the hand settles.
             self._held = None
+            if now - self._arrived_at < self.entry_grace:
+                return None
             return self._fire(self.swipes[swipe], now)
 
         # "UNKNOWN" is not a gesture, it is the vision side saying it is
@@ -153,6 +194,12 @@ class GestureRouter:
         # through in a fraction of that, and a pose that is meant is
         # held without noticing the wait.
         if now - self._held_since < self.dwell.get(gesture, 0.0):
+            return None
+
+        # After the dwell, not before ``_fired_this_hold``: a pose made
+        # on the way in and held keeps counting, so it fires the moment
+        # the entry grace ends rather than being spent by it.
+        if now - self._arrived_at < self.entry_grace:
             return None
 
         self._fired_this_hold = True

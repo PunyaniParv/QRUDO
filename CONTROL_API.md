@@ -300,3 +300,7 @@ The heuristic errs both ways — a genuine up-then-down counts, an
 un-undone misfire is missed — but it errs the same way on every device
 and every day, which is what makes the trend worth watching before
 launch.
+
+Once the log spans more than one day the report ends with a day-by-day
+table. That is the tuning loop: change one threshold, use QRUDO for a
+day, and the next row says whether the change cut.

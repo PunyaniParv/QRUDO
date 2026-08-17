@@ -155,6 +155,24 @@ def sessions(events, gap: float = SESSION_GAP_SECONDS):
     return spans
 
 
+def by_day(camera, misfires):
+    """Camera commands and misfires per calendar day, oldest first.
+
+    This is the tuning loop's instrument: change one threshold, use
+    QRUDO for a day, and the day answers whether the change cut.  Rates
+    across whole logs blur every change together; days keep them apart.
+    """
+    fired = {id(event) for event, _undone_by in misfires}
+    days: dict[str, list[int]] = {}
+    for event in camera:
+        day = datetime.fromtimestamp(event["t"]).strftime("%Y-%m-%d")
+        row = days.setdefault(day, [0, 0])
+        row[0] += 1
+        if id(event) in fired:
+            row[1] += 1
+    return sorted(days.items())
+
+
 def render(events, path) -> str:
     """The report itself, plain text, worst news first."""
     done = performed(events)
@@ -215,6 +233,20 @@ def render(events, path) -> str:
             continue
         lines += [f"    {name:<16} {ok:>5} {throttled:>10} {failed:>7}"]
     lines += [""]
+
+    days = by_day(camera, misfires)
+    if len(days) >= 2:
+        lines += [f"    {'day':<12} {'commands':>9} {'misfires':>9}"]
+        for day, (count, taken_back) in days:
+            share = f"{100 * taken_back / count:.0f}%" if count else "-"
+            lines += [f"    {day:<12} {count:>9} {taken_back:>6} {share:>5}"]
+        lines += ["",
+                  "  Tune one thing at a time, and let the next day's row",
+                  "  say whether it cut.", ""]
+    elif camera:
+        lines += ["  A day-by-day trend appears here once the log spans",
+                  "  more than one day -- that is how a tuning change is",
+                  "  judged: against the days after it.", ""]
 
     if untagged:
         lines += [f"  {untagged} command(s) predate source tagging and were",
