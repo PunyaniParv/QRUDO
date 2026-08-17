@@ -139,24 +139,46 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None):
 
     hotkeys.watch_targets(engine)
 
+    # The model load and the camera open are independent -- half a
+    # second and the better part of a second -- and doing them in
+    # series was most of the wait before the first frame.  Opening the
+    # camera on a side thread while the model loads here overlaps them,
+    # so the slower of the two is the whole cost, not their sum.
+    import threading
+
+    camera_box = {}
+
+    def _open_camera():
+        try:
+            camera_box["camera"] = Camera(
+                args.camera,
+                width=1600 if getattr(args, "far", False) else 640,
+                height=1200 if getattr(args, "far", False) else 480,
+            ).open()
+        except CameraError as exc:
+            camera_box["error"] = exc
+
+    opening = threading.Thread(target=_open_camera)
+    opening.start()
+
     try:
         tracker = HandTracker().open()
     except TrackerError as exc:
+        opening.join()
+        opened = camera_box.get("camera")
+        if opened is not None:
+            opened.release()
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    try:
-        # More pixels reach further: a hand three metres off is about
-        # twenty pixels across at 640, which is not much to find joints in.
-        camera = Camera(
-            args.camera,
-            width=1600 if getattr(args, "far", False) else 640,
-            height=1200 if getattr(args, "far", False) else 480,
-        ).open()
-    except CameraError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    opening.join()
+
+    if "error" in camera_box:
+        print(f"error: {camera_box['error']}", file=sys.stderr)
         tracker.close()
         return 1
+
+    camera = camera_box["camera"]
 
     print(banner(engine, router, args, tuning), flush=True)
     print(picture(camera), flush=True)

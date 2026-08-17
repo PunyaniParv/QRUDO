@@ -105,6 +105,7 @@ class App:
         self.preview_photo = None   # kept, or Tk garbage-collects it
         self.ready = None           # a staged update, once one is
         self.beat = 0               # frames seen; drives the hidden dot
+        self.first_frame_seen = False
 
         from version import VERSION
 
@@ -172,8 +173,8 @@ class App:
                                       font=("Helvetica", 44, "bold"))
         self.gesture_label.place(relx=0.36, rely=0.32, anchor="center")
 
-        self.result_label = tk.Label(self.home, text="show a hand",
-                                     bg=BACKGROUND, fg=ACCENT,
+        self.result_label = tk.Label(self.home, text="starting camera...",
+                                     bg=BACKGROUND, fg=DIM,
                                      font=("Helvetica", 18),
                                      wraplength=420, justify="center")
         self.result_label.place(relx=0.36, rely=0.48, anchor="center")
@@ -348,6 +349,14 @@ class App:
         if latest is not None:
             frame, gesture, result, hint = latest
             self.latest = None
+
+            # The first frame is the camera coming alive: clear the
+            # "starting" line the moment there is a picture to show.
+            if not self.first_frame_seen:
+                self.first_frame_seen = True
+                if not self.engine.config.dry_run:
+                    self.result_label.configure(text="show a hand",
+                                                fg=ACCENT)
 
             shown = (gesture or "--").replace("_", " ")
             self.gesture_label.configure(text=shown)
