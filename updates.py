@@ -19,9 +19,15 @@ from __future__ import annotations
 from version import VERSION
 
 #: The release feed: GitHub's "latest release" for the repository.
-#: Answers with a tag like "v0.2.0" once releases exist there.
-LATEST_URL = ("https://api.github.com/repos/PunyaniParv/QRUDO"
-              "/releases/latest")
+#: Answers with a tag like "v0.2.0" once releases exist there.  The
+#: environment override is how a release drill points an app at a
+#: rehearsal feed, and how distribution moves to a website one day
+#: without rebuilding anything.
+import os
+
+LATEST_URL = (os.environ.get("QRUDO_RELEASE_FEED")
+              or "https://api.github.com/repos/PunyaniParv/QRUDO"
+                 "/releases/latest")
 
 #: Where a person goes to get it.  Shown, never opened uninvited.
 DOWNLOAD_PAGE = "github.com/PunyaniParv/QRUDO/releases"
