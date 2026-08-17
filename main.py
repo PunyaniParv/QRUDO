@@ -44,6 +44,8 @@ def build_parser():
     mode.add_argument("--report", action="store_true",
                       help="reliability numbers from the command log: "
                            "misfire rate, per-command counts")
+    mode.add_argument("--update", action="store_true",
+                      help="fetch and install a newer QRUDO, if one exists")
 
     parser.add_argument("--dry-run", action="store_true",
                         help="log commands without performing them")
@@ -77,6 +79,12 @@ def main(argv=None):
     if args.report:
         from control import report
         return report.run(ControlConfig.load(args.config))
+
+    # Updating is likewise stdlib-only, and it would be absurd for the
+    # updater to first install an environment it is about to replace.
+    if args.update:
+        import selfupdate
+        return selfupdate.run_cli()
 
     # A machine that has never seen QRUDO cannot import the vision stack.
     # This builds .venv/ and re-launches through it, once per device --

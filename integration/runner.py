@@ -52,6 +52,7 @@ def run(engine, args, tuning=False):
     router = GestureRouter(cooldown=engine.config.gesture_cooldown_seconds)
     presence = Presence()
     hand_present = False
+    installing = None
     frame_times = deque(maxlen=30)
     last_result = None
     last_result_at = 0.0
@@ -91,20 +92,36 @@ def run(engine, args, tuning=False):
     # network must never delay the camera -- the answer just appears
     # on the hint line whenever it arrives.  The checkout way of
     # running skips this: the banner already carries the commit.
+    #
+    # Noticing is stage one.  Stage two happens here too: the newer
+    # version is downloaded and checksum-verified in the same quiet
+    # thread, and only the U key -- a person deciding -- applies it.
     update_notice = [""]
+    update_ready = [None]
 
     if getattr(sys, "frozen", False):
         import threading
 
         def _ask():
+            import selfupdate
             import updates
 
             latest = updates.check()
 
-            if latest:
+            if not latest:
+                return
+
+            update_notice[0] = (
+                f"QRUDO {latest} is out (this is {updates.VERSION})"
+                f" -- {updates.DOWNLOAD_PAGE}")
+
+            ready = selfupdate.prepare()
+
+            if ready:
+                update_ready[0] = ready
                 update_notice[0] = (
-                    f"QRUDO {latest} is out (this is {updates.VERSION})"
-                    f" -- {updates.DOWNLOAD_PAGE}")
+                    f"QRUDO {latest} is downloaded and verified -- "
+                    f"press U to install and relaunch")
 
         threading.Thread(target=_ask, daemon=True).start()
 
@@ -249,6 +266,10 @@ def run(engine, args, tuning=False):
             if key == ord("h"):
                 show_legend = not show_legend
 
+            if key == ord("u") and update_ready[0]:
+                installing = update_ready[0]
+                break
+
     except CameraError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -261,6 +282,17 @@ def run(engine, args, tuning=False):
 
         if show_window:
             cv2.destroyAllWindows()
+
+    # After the camera and the engine are put away, never before: the
+    # swap is instant, but the relaunch wants the hardware released.
+    if installing is not None:
+        import selfupdate
+
+        staged, version = installing
+
+        if selfupdate.apply(staged, version):
+            selfupdate.relaunch(
+                Path(sys.executable).resolve().parents[2])
 
     print("\n  bye.")
     return 0

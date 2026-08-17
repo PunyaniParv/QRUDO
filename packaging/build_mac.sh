@@ -51,6 +51,11 @@ else
   codesign --force --deep -s - "$APP"
 fi
 
+# The release artifacts, every build: the zip a Mac updates itself
+# from, and the checksum line the updater refuses to move without.
+ditto -c -k --keepParent "$APP" dist/QRUDO.zip
+(cd dist && shasum -a 256 QRUDO.zip > SHA256SUMS)
+
 echo
 echo "  built: $APP"
 

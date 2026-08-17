@@ -27,6 +27,48 @@ LATEST_URL = ("https://api.github.com/repos/PunyaniParv/QRUDO"
 DOWNLOAD_PAGE = "github.com/PunyaniParv/QRUDO/releases"
 
 
+def _context():
+    """TLS with our own certificates.
+
+    A frozen app carries no system certificate store, so https
+    verification fails inside it unless the certificates ship too.
+    They already do -- certifi rides in with the vision stack -- it
+    just has to be pointed at.
+    """
+
+    import ssl
+
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def fetch(url, timeout=4.0):
+    """Open a release URL with the shipped certificates.  May raise."""
+
+    from urllib.request import urlopen
+
+    return urlopen(url, timeout=timeout, context=_context())
+
+
+def release(timeout=4.0):
+    """The newest release as the feed describes it, or None.
+
+    The whole answer, not just the tag: stage two needs the asset
+    list, so one call serves both askers.
+    """
+
+    try:
+        import json
+
+        with fetch(LATEST_URL, timeout=timeout) as response:
+            return json.load(response)
+    except Exception:
+        return None
+
+
 def check(timeout=4.0):
     """The newer version waiting for this machine, or None.
 
@@ -35,31 +77,15 @@ def check(timeout=4.0):
     checking may ever break starting.
     """
 
-    try:
-        import json
-        import ssl
-        from urllib.request import urlopen
+    found = release(timeout=timeout)
 
-        # A frozen app carries no system certificate store, so https
-        # verification fails inside it unless the certificates ship
-        # too.  They already do -- certifi rides in with the vision
-        # stack -- it just has to be pointed at.
-        try:
-            import certifi
-            context = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            context = ssl.create_default_context()
-
-        with urlopen(LATEST_URL, timeout=timeout,
-                     context=context) as response:
-            tag = json.load(response).get("tag_name", "")
-
-        latest = tag.lstrip("vV")
-
-        if latest and newer(latest, VERSION):
-            return latest
-    except Exception:
+    if not found:
         return None
+
+    latest = str(found.get("tag_name", "")).lstrip("vV")
+
+    if latest and newer(latest, VERSION):
+        return latest
 
     return None
 
