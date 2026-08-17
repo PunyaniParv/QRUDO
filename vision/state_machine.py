@@ -271,7 +271,16 @@ class SwipeState:
                 # movement made since -- not whatever the hand was doing on
                 # its way into shot.
                 self.armed_since = now
-                self.neutral_y = None
+
+                # But keep a resting height anchored by a recent stop.
+                # The rest a raise departs from registers before the pose
+                # finishes arming, and discarding it here re-seeded the
+                # height from the first armed frames -- which for a hand
+                # already rising is mid-flight, so the raise measured
+                # half its real size and missed the bar.  Only an anchor
+                # with no fresh stop behind it goes.
+                if now - self.y_rested_at > self.history.window + self.gap:
+                    self.neutral_y = None
 
             self.armed_until = now + self.arm_hold
             self.armed_kind = kind

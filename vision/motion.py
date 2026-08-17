@@ -276,6 +276,22 @@ def _median_step(values):
     return steps[len(steps) // 2]
 
 
+def _still_floor(readings):
+    """The jitter allowance a beat's stillness is judged against.
+
+    NOISE_MARGIN steps of the beat's own jitter -- but never as much as
+    the whole beat could span.  A uniform movement steps once per
+    sample, every step the median, so a floor of four steps asked of a
+    five-sample beat is the size of the movement itself: a hand
+    entering the frame smoothly read as a hand at rest, and the resting
+    height was anchored mid-flight.  At rest the spread is a couple of
+    median steps whatever the noise, so staying a step inside the
+    beat's span costs stillness nothing.
+    """
+
+    return min(NOISE_MARGIN, len(readings) - 2) * _median_step(readings)
+
+
 def _stretches(values):
     """Where the signal was, on average, across each stretch of the window.
 
@@ -429,23 +445,6 @@ def detect_swipe(hand, handedness=None):
         agree=0.0
     )
 
-    if not armed:
-        return None
-
-    # Only what happened after the pose settled.  Raising a hand into
-    # frame swings this reading wildly as the fingers come into view, and
-    # counting that was why simply showing two fingers fired a swipe.
-    window = [sample for sample in _state.history.recent(moment)
-              if sample[0] >= _state.armed_since]
-
-    if len(window) < SWIPE_MIN_SAMPLES:
-        return None
-
-    if window[-1][0] - window[0][0] <= 0:
-        return None
-
-    times = [sample[0] for sample in window]
-
     # Whether the hand is still right now: no more spread than jitter
     # across the last beat of readings.  Stopped is a property of that
     # beat, not of the whole window -- asking the full window to drain
@@ -456,6 +455,14 @@ def detect_swipe(hand, handedness=None):
     # Read from the raw history, not the armed window: being still is a
     # fact about the hand, not the pose, and the stillness that counts
     # mostly happens before the pose has finished arming.
+    #
+    # Which is why this runs before the armed gate too, not only off the
+    # raw history.  Registered only while armed, the rest a raise
+    # departs from -- a hand quiet at the bottom, the pose not yet made
+    # -- was never seen.  The raise was then refused for departing from
+    # no stop, the pause at its top became the first stop on record, and
+    # the way back down was the first eligible movement: palm up did
+    # nothing, and putting the hand back turned the brightness down.
     #
     # Every movement axis keeps its own "when did this last stop", and
     # every movement must begin within a window of its axis's stop.  A
@@ -486,7 +493,15 @@ def detect_swipe(hand, handedness=None):
     if covered:
         aims = [sample[1]["aim"] for sample in recent]
 
-        if max(aims) - min(aims) < SWIPE_QUIET:
+        # Against the beat's own jitter as well as the absolute bar, the
+        # same allowance the height was already given below: at a
+        # distance the aim is an asin of a noisy ratio, its wobble alone
+        # can exceed the fixed bar, and an aim that never rests refuses
+        # every turn -- which is why left and right died at range while
+        # up and down survived it.
+        aim_floor = max(SWIPE_QUIET, _still_floor(aims))
+
+        if max(aims) - min(aims) < aim_floor:
             _state.aim_rested_at = moment
 
         heights = [sample[1]["y"] for sample in recent]
@@ -498,24 +513,47 @@ def detect_swipe(hand, handedness=None):
         # spread of a beat is a couple of its median steps whatever the
         # noise; a movement's is the sum of most of them.
         scaled = [height / scale_r for height in heights]
-        floor = NOISE_MARGIN * _median_step(scaled)
+        floor = _still_floor(scaled)
 
         if max(scaled) - min(scaled) < max(LIFT_STILL * QUIET_SPAN, floor):
             arriving = moment - _state.y_rested_at > SWIPE_WINDOW + QUIET_SPAN
 
-            if arriving:
+            if arriving or not armed:
                 # The first stop after a stretch of movement is the hand
                 # arriving somewhere -- and where it stopped is its
                 # resting height.  The neutral was taken from the first
                 # visible moments instead, which for a hand entering the
                 # frame is mid-flight: the entrance then measured as a
                 # gesture the moment it ended.
+                #
+                # While the pose is down, every quiet beat re-anchors,
+                # not just the first: nothing can fire without the pose,
+                # so the height may simply follow the hand -- and the
+                # rest the next gesture departs from is then wherever
+                # the hand really was, not wherever it first paused.
                 _state.neutral_y = sorted(heights)[len(heights) // 2]
                 _state.still_since = None
 
             _state.y_rested_at = moment
 
     resting = covered and _state.aim_rested_at == moment
+
+    if not armed:
+        return None
+
+    # Only what happened after the pose settled.  Raising a hand into
+    # frame swings this reading wildly as the fingers come into view, and
+    # counting that was why simply showing two fingers fired a swipe.
+    window = [sample for sample in _state.history.recent(moment)
+              if sample[0] >= _state.armed_since]
+
+    if len(window) < SWIPE_MIN_SAMPLES:
+        return None
+
+    if window[-1][0] - window[0][0] <= 0:
+        return None
+
+    times = [sample[0] for sample in window]
 
     # Turning the wrist: works with either pose.
     turn, turn_speed, turn_agree = measure(

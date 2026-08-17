@@ -1942,5 +1942,92 @@ class TestAFingerOnTheLine(unittest.TestCase):
         self.assertFalse(self.out(0.80))
 
 
+class TestTheRestBeforeThePoseCounts(GestureTestCase):
+    """Reported as palm up doing nothing and palm down firing instead.
+
+    The rest a raise departs from is mostly made before the pose is:
+    the hand sits loose at the bottom, makes the palm, and goes up in
+    one motion.  Stops were registered only while the pose was armed,
+    so that rest was never seen -- the raise was refused for departing
+    from no stop, the pause at its top became the first stop on record,
+    and bringing the hand back down was the first eligible movement.
+    Palm up did nothing; putting the hand away turned the brightness
+    down.
+    """
+
+    LOOSE_HAND = (LOOSE, LOOSE, LOOSE, LOOSE)
+    PALM = (EXTENDED, EXTENDED, EXTENDED, EXTENDED)
+    TWO = (EXTENDED, EXTENDED, CURLED, CURLED)
+
+    def rest_loose(self, cy, seconds=0.5, frames=15):
+        for _ in range(frames):
+            motion.detect_swipe(make_hand(*self.LOOSE_HAND, cy=cy), HAND)
+            self.clock.tick(seconds / frames)
+
+    def move(self, fingers, cy_from, cy_to, seconds=0.30, frames=12):
+        fired = []
+
+        for i in range(frames):
+            cy = cy_from + (cy_to - cy_from) * (i / (frames - 1))
+            got = motion.detect_swipe(make_hand(*fingers, cy=cy), HAND)
+
+            if got:
+                fired.append(got)
+
+            self.clock.tick(seconds / (frames - 1))
+
+        return fired
+
+    def test_a_raise_straight_from_a_loose_rest_fires(self):
+        """Make the pose and go up in one motion, as people actually do."""
+
+        self.rest_loose(0.55)
+
+        self.assertEqual(self.move(self.PALM, 0.55, 0.35), ["PALM_UP"])
+
+    def test_the_two_finger_raise_works_the_same_way(self):
+        self.rest_loose(0.55)
+
+        self.assertEqual(self.move(self.TWO, 0.55, 0.35), ["SWIPE_UP"])
+
+    def test_putting_the_hand_back_fires_nothing(self):
+        """The raise fires; the way back must not fire its opposite."""
+
+        self.rest_loose(0.55)
+        self.assertEqual(self.move(self.PALM, 0.55, 0.35), ["PALM_UP"])
+        self.move(self.PALM, 0.35, 0.35, seconds=0.2, frames=6)
+
+        self.assertEqual(self.move(self.PALM, 0.35, 0.55), [])
+
+
+class TestAJitteryAimStillRests(GestureTestCase):
+    """At a distance the aim wobbles at rest, and a rest must still count.
+
+    The aim is an asin of a noisy ratio, so far from the camera its
+    wobble alone can exceed the fixed stillness bar.  An aim that never
+    rests refuses every turn -- a turn must depart from a rested aim --
+    which is why left and right died at range while up and down, whose
+    stillness already allowed for the reading's own jitter, survived
+    it.  The same allowance now applies to both.
+    """
+
+    def test_a_turn_fires_though_the_resting_aim_wobbles(self):
+        wobble = (0.0, 4.0, -4.0)
+
+        for i in range(18):
+            motion.detect_swipe(
+                peace_sign(roll=math.radians(wobble[i % 3])), HAND)
+            self.clock.tick(1.0 / 30)
+
+        result = None
+
+        for i in range(12):
+            result = result or motion.detect_swipe(
+                peace_sign(roll=math.radians(-35 * (i / 11))), HAND)
+            self.clock.tick(0.30 / 11)
+
+        self.assertEqual(result, "SWIPE_LEFT")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
