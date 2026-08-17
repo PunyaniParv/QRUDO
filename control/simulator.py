@@ -101,7 +101,7 @@ def run(engine: ControlEngine | None = None, seek_delay: float = 3.0) -> int:
 
         # force=True: a keypress is a deliberate human action, so it should
         # never be swallowed by the gesture debounce.
-        result = engine.execute(command, force=True)
+        result = engine.execute(command, force=True, source="simulator")
         marker = "ok " if result.ok else "ERR"
         print(f"    [{marker}] {result.command}: {result.detail or result.error}")
 

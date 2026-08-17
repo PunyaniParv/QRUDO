@@ -41,6 +41,9 @@ def build_parser():
                       help="listen for ctrl+alt+U/D/P/L/R/B/N from any app")
     mode.add_argument("--command", metavar="NAME",
                       help="execute a single command, e.g. VOLUME_UP")
+    mode.add_argument("--report", action="store_true",
+                      help="reliability numbers from the command log: "
+                           "misfire rate, per-command counts")
 
     parser.add_argument("--dry-run", action="store_true",
                         help="log commands without performing them")
@@ -68,6 +71,12 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    # The report reads a log file with the standard library alone, so it
+    # must never trigger the first-run install below.
+    if args.report:
+        from control import report
+        return report.run(ControlConfig.load(args.config))
 
     # A machine that has never seen QRUDO cannot import the vision stack.
     # This builds .venv/ and re-launches through it, once per device --
@@ -200,7 +209,7 @@ def run_one(engine, args):
     if args.delay:
         print(" " * 70, end="\r")
 
-    result = engine.execute(command, force=True)
+    result = engine.execute(command, force=True, source="cli")
     print(result)
 
     return 0 if result.ok else 1

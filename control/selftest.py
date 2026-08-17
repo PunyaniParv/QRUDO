@@ -44,7 +44,7 @@ def run(engine: ControlEngine | None = None) -> int:
 
     results = []
     for command, undo in plan:
-        result = engine.execute(command, force=True)
+        result = engine.execute(command, force=True, source="selftest")
         results.append(result)
         print(f"  {'PASS' if result.ok else 'FAIL'}  {command.value:<16} "
               f"{result.detail or result.error}  ({result.duration_ms:.0f} ms)")
@@ -53,21 +53,21 @@ def run(engine: ControlEngine | None = None) -> int:
         # 100%, volume already at 0% -- the command is a no-op, and undoing it
         # anyway would leave the machine dimmer or quieter than we found it.
         if NO_CHANGE not in result.detail:
-            engine.execute(undo, force=True)
+            engine.execute(undo, force=True, source="selftest")
             time.sleep(PAUSE_BETWEEN)
 
     # Behaviour checks that do not touch the OS.
     print()
     _check("Command.NONE is a safe no-op",
-           engine.execute(Command.NONE).status == "NOOP")
+           engine.execute(Command.NONE, source="selftest").status == "NOOP")
     _check("unknown command is reported, not raised",
-           engine.execute("NOT_A_COMMAND").status == "ERROR")
+           engine.execute("NOT_A_COMMAND", source="selftest").status == "ERROR")
     time.sleep(engine.config.cooldown_seconds + 0.05)  # clear the window first
-    first = engine.execute(Command.VOLUME_UP)
+    first = engine.execute(Command.VOLUME_UP, source="selftest")
     _check("repeat within cooldown is throttled",
-           engine.execute(Command.VOLUME_UP).status == "THROTTLED")
+           engine.execute(Command.VOLUME_UP, source="selftest").status == "THROTTLED")
     if first.ok:
-        engine.execute(Command.VOLUME_DOWN, force=True)
+        engine.execute(Command.VOLUME_DOWN, force=True, source="selftest")
 
     # Paired undos keep the machine roughly steady during the run, but they
     # cannot be exact: near the end of a scale a command clamps while its

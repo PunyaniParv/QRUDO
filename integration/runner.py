@@ -163,7 +163,7 @@ def run(engine, args, tuning=False):
                         # submit, not execute: a brightness change can take
                         # over a second on Windows, and the camera must not
                         # wait for it.
-                        engine.submit(command)
+                        engine.submit(command, source="gesture")
 
                 if swipe:
                     last_swipe = swipe

@@ -25,6 +25,10 @@ missing.
 The first run also spends a minute measuring your hand, so the gestures
 suit your camera and where you stand.
 
+After you have used it a while, `python3 main.py --report` reads the
+command log back and reports how often a gesture fired that you then
+took straight back -- the misfire rate, measured from real use.
+
 ## More
 
 - `CONTROL_API.md` -- the contract between the vision half and the

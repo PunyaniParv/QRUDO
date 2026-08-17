@@ -44,6 +44,10 @@ class CommandResult:
     error: str | None = None
     duration_ms: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    #: The route the command arrived by -- "gesture", "hotkey", "simulator",
+    #: "selftest", "cli".  It travels into the event log so the reliability
+    #: report can judge the camera by the camera's own commands alone.
+    source: str = ""
 
     @property
     def ok(self) -> bool:
@@ -145,32 +149,37 @@ class ControlEngine:
 
     # -- public API ---------------------------------------------------------
 
-    def execute(self, command: Command | str, *, force: bool = False) -> CommandResult:
+    def execute(self, command: Command | str, *, force: bool = False,
+                source: str = "") -> CommandResult:
         """Run one command.  Never raises.
 
         ``force=True`` bypasses the cooldown (used by the simulator, where every
-        keypress is a deliberate human action).
+        keypress is a deliberate human action).  ``source`` names the route the
+        command arrived by; it is carried into the event log, nothing more.
         """
         try:
             command = Command(command) if not isinstance(command, Command) else command
         except ValueError:
             return self._finish(CommandResult(
                 command=str(command), status=Status.ERROR,
-                error=f"unknown command {command!r}"))
+                error=f"unknown command {command!r}", source=source))
 
         if command is Command.NONE:
-            return self._finish(CommandResult(command=command.value, status=Status.NOOP))
+            return self._finish(CommandResult(
+                command=command.value, status=Status.NOOP, source=source))
 
         now = time.monotonic()
         if not force and (now - self._last_run.get(command.value, -1e9)) < self.config.cooldown_seconds:
             return self._finish(CommandResult(
                 command=command.value, status=Status.THROTTLED,
-                detail=f"within {self.config.cooldown_seconds:g}s cooldown"))
+                detail=f"within {self.config.cooldown_seconds:g}s cooldown",
+                source=source))
 
         if self.config.dry_run:
             self._last_run[command.value] = now
             return self._finish(CommandResult(
-                command=command.value, status=Status.OK, detail="dry-run, OS untouched"))
+                command=command.value, status=Status.OK,
+                detail="dry-run, OS untouched", source=source))
 
         started = time.perf_counter()
         try:
@@ -187,9 +196,9 @@ class ControlEngine:
 
         return self._finish(CommandResult(
             command=command.value, status=status, detail=detail or "",
-            error=error, duration_ms=round(elapsed, 1)))
+            error=error, duration_ms=round(elapsed, 1), source=source))
 
-    def submit(self, command: Command | str) -> None:
+    def submit(self, command: Command | str, source: str = "") -> None:
         """Non-blocking version of :meth:`execute` for the camera loop.
 
         Volume changes cost ~200 ms because macOS makes us shell out to
@@ -203,7 +212,7 @@ class ControlEngine:
         if self._worker is None:
             self._start_worker()
         try:
-            self._queue.put_nowait(command)
+            self._queue.put_nowait((command, source))
         except queue.Full:
             # The backlog is already several commands deep; dropping is the
             # right call -- a stale volume nudge helps nobody.
@@ -236,10 +245,11 @@ class ControlEngine:
 
     def _drain(self) -> None:
         while True:
-            command = self._queue.get()
-            if command is _STOP:
+            item = self._queue.get()
+            if item is _STOP:
                 return
-            result = self.execute(command)
+            command, source = item
+            result = self.execute(command, source=source)
             if self.on_result is not None:
                 try:
                     self.on_result(result)

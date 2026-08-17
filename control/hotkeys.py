@@ -115,7 +115,7 @@ def _fire(engine: ControlEngine, letter: str) -> None:
     """
     command = KEY_MAP.get(letter)
     if command is not None:
-        engine.submit(command)
+        engine.submit(command, source="hotkey")
 
 
 def _report(engine: ControlEngine) -> None:
@@ -155,7 +155,7 @@ def _run_macos(engine: ControlEngine, targets_only: bool = False) -> int:
                 and flags & Quartz.kCGEventFlagMaskShift):
             arrow = _MAC_ARROWS.get(keycode)
             if arrow is not None:
-                engine.submit(TARGET_KEYS[arrow])
+                engine.submit(TARGET_KEYS[arrow], source="hotkey")
                 return None  # swallow it
 
         if targets_only:
@@ -261,7 +261,7 @@ def _run_windows(engine: ControlEngine, targets_only: bool = False) -> int:
                     and user32.GetAsyncKeyState(VK_SHIFT) & HELD):
                 arrow = _WIN_ARROWS.get(key)
                 if arrow is not None:
-                    engine.submit(TARGET_KEYS[arrow])
+                    engine.submit(TARGET_KEYS[arrow], source="hotkey")
                     return 1  # swallow it
 
             if not targets_only and (

@@ -182,7 +182,13 @@ result.detail       # "volume 60% -> 65%"
 result.error        # None, or the reason it failed
 result.duration_ms
 result.timestamp    # UTC ISO-8601
+result.source       # "gesture" | "hotkey" | "simulator" | "selftest" | "cli"
 ```
+
+`source` is set by whoever calls `execute()`/`submit()` — pass
+`source="gesture"` from the camera loop. It changes nothing at runtime; it
+travels into the event log so `--report` can judge the camera by the
+camera's own commands alone.
 
 Useful for the on-screen overlay: draw `result.detail` when `result.ok`, and
 `result.error` in red when it isn't. Ignore `THROTTLED` in the UI — it's normal.
@@ -269,3 +275,28 @@ not QRUDO has focus, so nothing about gestures depends on capturing keystrokes.
 - `logs/commands.jsonl` — one JSON object per command; load it with
   `pandas.read_json("logs/commands.jsonl", lines=True)` if we want accuracy
   numbers for the demo.
+
+## The reliability report
+
+```bash
+python main.py --report
+```
+
+Reads `commands.jsonl` back and prints the number that decides whether
+people keep QRUDO installed: how often a gesture fired that nobody meant.
+Nobody files a bug for a wrong volume nudge — they take it back, and the
+taking-back is in the log as a command followed within 3 s by its
+opposite (PLAY_PAUSE counts as its own opposite: a toggle nobody meant
+gets toggled straight back). Each pair is a suspected misfire; the report
+leads with the rate, then per-command counts.
+
+Two rules keep the number honest: only commands that arrived by camera
+are judged (`source` tells the routes apart — hotkeys, the simulator,
+the selftest and `--command` are deliberate by construction), and a
+repeat of the same command reads as leaning on the gesture on purpose,
+so two notches up and one down blames only the second notch.
+
+The heuristic errs both ways — a genuine up-then-down counts, an
+un-undone misfire is missed — but it errs the same way on every device
+and every day, which is what makes the trend worth watching before
+launch.
