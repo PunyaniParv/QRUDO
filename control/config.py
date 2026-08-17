@@ -166,6 +166,11 @@ class ControlConfig:
     """Log what would happen but never touch the OS.  Useful for demos and for
     the Vision Engine's own testing."""
 
+    show_preview: bool = True
+    """Whether the application window shows the camera's view.  The gestures
+    never needed it -- the engine reads frames whether or not anyone watches
+    them -- so this is purely about what a person wants to look at."""
+
     log_dir: str = "logs"
 
     @classmethod

@@ -184,10 +184,35 @@ class App:
 
         # The camera, in the corner: above the Quit button, small on
         # purpose -- the product is the gestures, not the video feed.
-        self.preview = tk.Label(self.home, bg=PANEL,
-                                width=PREVIEW_SIZE[0] // 2,
-                                height=PREVIEW_SIZE[1] // 2)
+        # Click it to hide it entirely; the gestures never needed the
+        # picture, only the person did, and some people would rather
+        # not watch themselves.  The choice is kept in the config.
+        self.preview = tk.Label(self.home, bg=PANEL, fg=DIM,
+                                font=("Helvetica", 12),
+                                cursor="pointinghand"
+                                if sys.platform == "darwin" else "hand2")
         self.preview.place(relx=1, rely=1, anchor="se", x=-16, y=-64)
+        self.preview.bind("<Button-1>", lambda _e: self.toggle_preview())
+        self._dress_preview()
+
+    def _dress_preview(self):
+        if self.engine.config.show_preview:
+            self.preview.configure(text="", padx=0, pady=0)
+        else:
+            self.preview.configure(image="", text="camera hidden -- click "
+                                                  "to show", padx=12, pady=8,
+                                   width=0, height=0)
+            self.preview_photo = None
+
+    def toggle_preview(self):
+        config = self.engine.config
+        config.show_preview = not config.show_preview
+        self._dress_preview()
+
+        try:
+            config.save()
+        except OSError:
+            pass
 
     def _build_settings(self):
         self._corner(self.settings, "Back", self.show_home,
@@ -329,18 +354,20 @@ class App:
 
             self.hint_label.configure(text=hint or "")
 
-            try:
-                import cv2
-                from PIL import Image, ImageTk
+            if self.engine.config.show_preview:
+                try:
+                    import cv2
+                    from PIL import Image, ImageTk
 
-                small = cv2.resize(frame, PREVIEW_SIZE)
-                image = Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
-                self.preview_photo = ImageTk.PhotoImage(image)
-                self.preview.configure(image=self.preview_photo,
-                                       width=PREVIEW_SIZE[0],
-                                       height=PREVIEW_SIZE[1])
-            except Exception:
-                pass
+                    small = cv2.resize(frame, PREVIEW_SIZE)
+                    image = Image.fromarray(
+                        cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+                    self.preview_photo = ImageTk.PhotoImage(image)
+                    self.preview.configure(image=self.preview_photo,
+                                           width=PREVIEW_SIZE[0],
+                                           height=PREVIEW_SIZE[1])
+                except Exception:
+                    pass
 
         if not self.stop.is_set():
             self.root.after(40, self.tick)
