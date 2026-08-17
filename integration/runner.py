@@ -34,7 +34,8 @@ NOTHING_SEEN_FOR = 6.0
 UNKNOWN_SAID_AFTER = 1.0
 
 
-def run(engine, args, tuning=False, on_frame=None, should_stop=None):
+def run(engine, args, tuning=False, on_frame=None, should_stop=None,
+        camera=None):
     """Run QRUDO until q is pressed or the camera goes away.
 
     ``tuning`` shows the numbers behind each decision and performs
@@ -44,6 +45,14 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None):
     rides this loop without owning it: every frame is offered to the
     callback, and the loop asks the callable whether it is time to go.
     The classic cv2 window is simply this loop with neither.
+
+    ``camera`` may be a camera already opened by the caller.  The
+    application window must open it that way, on the main thread:
+    AVFoundation acquires the camera through the main run loop, and in
+    the packaged app -- where the main thread is busy with the window's
+    toolkit and this loop runs on a worker -- a camera opened from the
+    worker waits on a run loop that never comes, and hangs.  Opened on
+    the main thread first and handed in here, it is already live.
     """
 
     import cv2
@@ -139,46 +148,37 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None):
 
     hotkeys.watch_targets(engine)
 
-    # The model load and the camera open are independent -- half a
-    # second and the better part of a second -- and doing them in
-    # series was most of the wait before the first frame.  Opening the
-    # camera on a side thread while the model loads here overlaps them,
-    # so the slower of the two is the whole cost, not their sum.
-    import threading
+    # Both are opened here, on this thread, in series.  Opening the
+    # camera on a *second* background thread once looked like free
+    # speed -- the model could load while it opened -- and it deadlocked
+    # the packaged app: AVFoundation's camera setup wants the main
+    # thread's run loop, and from a worker nested under the UI thread
+    # (itself under Tk's mainloop) that run loop never comes, so every
+    # thread parked forever and the camera was never acquired.  The
+    # window still opens instantly and says "starting camera" while
+    # this runs; that is where the felt speed comes from, not from
+    # racing the two opens.
+    try:
+        tracker = HandTracker().open()
+    except TrackerError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
-    camera_box = {}
-
-    def _open_camera():
+    # A camera handed in was opened by the caller on the main thread --
+    # the only safe place in the packaged app; see the docstring.  Only
+    # open one here when none was, which is the terminal path, where
+    # this loop is itself on the main thread.
+    if camera is None:
         try:
-            camera_box["camera"] = Camera(
+            camera = Camera(
                 args.camera,
                 width=1600 if getattr(args, "far", False) else 640,
                 height=1200 if getattr(args, "far", False) else 480,
             ).open()
         except CameraError as exc:
-            camera_box["error"] = exc
-
-    opening = threading.Thread(target=_open_camera)
-    opening.start()
-
-    try:
-        tracker = HandTracker().open()
-    except TrackerError as exc:
-        opening.join()
-        opened = camera_box.get("camera")
-        if opened is not None:
-            opened.release()
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-    opening.join()
-
-    if "error" in camera_box:
-        print(f"error: {camera_box['error']}", file=sys.stderr)
-        tracker.close()
-        return 1
-
-    camera = camera_box["camera"]
+            print(f"error: {exc}", file=sys.stderr)
+            tracker.close()
+            return 1
 
     print(banner(engine, router, args, tuning), flush=True)
     print(picture(camera), flush=True)

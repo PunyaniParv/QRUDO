@@ -79,6 +79,39 @@ class TestTheShellRidesTheRunner(unittest.TestCase):
         self.assertIn("on_frame", parameters)
         self.assertIn("should_stop", parameters)
 
+    def test_the_runner_accepts_a_preopened_camera(self):
+        """The two-minute freeze, guarded.
+
+        AVFoundation acquires the camera through the main run loop, so
+        in the packaged app the window must open it on the main thread
+        and hand it in -- a camera opened on the vision worker (under
+        the toolkit's mainloop) waits on a run loop that never comes.
+        The runner must keep accepting one already open, or the window
+        is forced back to opening it on the worker, which hangs.
+        """
+
+        from integration import runner
+
+        self.assertIn("camera", inspect.signature(runner.run).parameters)
+
+    def test_the_window_opens_the_camera_before_the_worker(self):
+        """It must open on the main thread, which run() is, not inside
+        the vision() thread it spawns -- so the source names Camera in
+        run() ahead of the worker start."""
+
+        import inspect as _inspect
+
+        from ui.app import App
+
+        source = _inspect.getsource(App.run)
+        camera_at = source.find("Camera(")
+        worker_at = source.find("Thread(target=vision")
+
+        self.assertNotEqual(camera_at, -1, "run() must open the camera")
+        self.assertNotEqual(worker_at, -1, "run() must start the worker")
+        self.assertLess(camera_at, worker_at,
+                        "the camera must open before the worker starts")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -404,14 +404,35 @@ class App:
 
     def run(self):
         from integration import runner
+        from vision import Camera, CameraError
+
+        # The camera is opened here, on the main thread, before the
+        # vision worker starts -- AVFoundation acquires it through the
+        # main run loop, and a camera opened from the worker (under the
+        # window's mainloop) hangs waiting for a run loop that never
+        # comes.  This was the two-minute freeze.  A failure to open
+        # leaves the window standing with a plain reason on it, rather
+        # than an empty crash.
+        camera = None
+        far = getattr(self.args, "far", False)
+
+        try:
+            camera = Camera(self.args.camera,
+                            width=1600 if far else 640,
+                            height=1200 if far else 480).open()
+        except CameraError as exc:
+            self.result_label.configure(text=f"no camera: {exc}",
+                                        fg="#e06c75")
 
         def vision():
             runner.run(self.engine, self.args,
                        on_frame=self.take_frame,
-                       should_stop=self.stop.is_set)
+                       should_stop=self.stop.is_set,
+                       camera=camera)
 
-        self.worker = threading.Thread(target=vision, daemon=True)
-        self.worker.start()
+        if camera is not None:
+            self.worker = threading.Thread(target=vision, daemon=True)
+            self.worker.start()
 
         self.root.after(40, self.tick)
         self.root.mainloop()
