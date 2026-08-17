@@ -127,12 +127,27 @@ class App:
     # -- pages ---------------------------------------------------------
 
     def _corner(self, page, text, command, relx, rely, anchor):
-        button = tk.Button(page, text=text, command=command,
-                           bg=PANEL, fg=INK, activebackground=ACCENT,
-                           activeforeground=BACKGROUND, relief="flat",
-                           padx=14, pady=6, highlightthickness=0)
-        button.place(relx=relx, rely=rely, anchor=anchor, x=(16 if relx == 0 else -16),
+        """A button that is actually visible on every platform.
+
+        Not tk.Button: macOS draws those in native Aqua, ignoring the
+        dark background entirely -- which left near-white text on a
+        white face, and a person clicking buttons they could not see.
+        A Label with a click binding obeys its colours everywhere.
+        """
+
+        button = tk.Label(page, text=text, bg=PANEL, fg=INK,
+                          font=("Helvetica", 14), padx=16, pady=8,
+                          cursor="pointinghand" if sys.platform == "darwin"
+                          else "hand2")
+        button.place(relx=relx, rely=rely, anchor=anchor,
+                     x=(16 if relx == 0 else -16),
                      y=(14 if rely == 0 else -14))
+
+        button.bind("<Button-1>", lambda _event: command())
+        button.bind("<Enter>", lambda _e: button.configure(bg=ACCENT,
+                                                           fg=BACKGROUND))
+        button.bind("<Leave>", lambda _e: button.configure(bg=PANEL,
+                                                           fg=INK))
         return button
 
     def _build_home(self, version):
@@ -142,26 +157,30 @@ class App:
 
         self._corner(self.home, "Settings", self.show_settings,
                      relx=1, rely=0, anchor="ne")
-        self.pause_button = self._corner(self.home, "Pause",
-                                         self.toggle_pause,
-                                         relx=0, rely=1, anchor="sw")
+        self.pause_button = self._corner(
+            self.home,
+            "Resume" if self.engine.config.dry_run else "Pause",
+            self.toggle_pause, relx=0, rely=1, anchor="sw")
         self._corner(self.home, "Quit", self.quit,
                      relx=1, rely=1, anchor="se")
 
+        # The words keep to the left three-fifths of the window, so
+        # nothing ever runs underneath the preview in the right corner.
         self.gesture_label = tk.Label(self.home, text="--",
                                       bg=BACKGROUND, fg=INK,
                                       font=("Helvetica", 44, "bold"))
-        self.gesture_label.place(relx=0.5, rely=0.34, anchor="center")
+        self.gesture_label.place(relx=0.36, rely=0.32, anchor="center")
 
         self.result_label = tk.Label(self.home, text="show a hand",
                                      bg=BACKGROUND, fg=ACCENT,
-                                     font=("Helvetica", 18))
-        self.result_label.place(relx=0.5, rely=0.5, anchor="center")
+                                     font=("Helvetica", 18),
+                                     wraplength=420, justify="center")
+        self.result_label.place(relx=0.36, rely=0.48, anchor="center")
 
         self.hint_label = tk.Label(self.home, text="", bg=BACKGROUND,
                                    fg=DIM, font=("Helvetica", 13),
-                                   wraplength=520, justify="center")
-        self.hint_label.place(relx=0.5, rely=0.88, anchor="center")
+                                   wraplength=460, justify="left")
+        self.hint_label.place(relx=0, rely=1, anchor="sw", x=18, y=-72)
 
         # The camera, in the corner: above the Quit button, small on
         # purpose -- the product is the gestures, not the video feed.
