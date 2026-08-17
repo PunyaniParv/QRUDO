@@ -34,7 +34,11 @@ def setup(log_dir: str | Path = "logs", *, console: bool = True,
     if _configured:
         return logger
 
-    directory = Path(log_dir)
+    # Anchored where QRUDO's files live, so the packaged app -- whose
+    # working directory is nowhere useful -- logs beside its data.
+    from paths import resolve
+
+    directory = resolve(log_dir)
     directory.mkdir(parents=True, exist_ok=True)
     _event_path = directory / "commands.jsonl"
 

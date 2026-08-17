@@ -547,10 +547,18 @@ class MacOSController(Controller):
                 "AppleScript and only work with a known player running. "
                 "Fix: pip install pyobjc-framework-Quartz pyobjc-framework-Cocoa")
         elif not self._can_post_events():
+            # Packaged, the grant belongs to QRUDO itself; run from a
+            # terminal, it belongs to whatever launched us -- and naming
+            # the wrong one sends the user to a checkbox that fixes
+            # nothing.
+            import sys as _sys
+            grantee = ("QRUDO" if getattr(_sys, "frozen", False)
+                       else "the app that launches QRUDO "
+                            "(Terminal / iTerm / VS Code)")
             warnings.append(
                 "Accessibility permission not granted: media keys and seeking will do nothing. "
-                "Fix: System Settings > Privacy & Security > Accessibility, enable the app "
-                "that launches QRUDO (Terminal / iTerm / VS Code).")
+                "Fix: System Settings > Privacy & Security > Accessibility, "
+                f"enable {grantee}.")
         if self._display_services is None and not self._brightness_cli:
             warnings.append(
                 "no precise brightness control available; falling back to brightness HID keys "

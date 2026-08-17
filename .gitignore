@@ -32,6 +32,10 @@ Thumbs.db
 # Local runtime/log files
 logs/
 
+# Packaging output
+dist/
+build/
+
 # Local configuration
 qrudo_config.json
 

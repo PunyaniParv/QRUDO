@@ -54,7 +54,9 @@ DELIBERATE_SOURCES = {"hotkey", "simulator", "selftest", "cli"}
 
 def run(config, path: str | Path | None = None) -> int:
     """Print the reliability report.  The CLI lands here for --report."""
-    path = Path(path) if path else Path(config.log_dir) / "commands.jsonl"
+    from paths import resolve
+
+    path = Path(path) if path else resolve(config.log_dir) / "commands.jsonl"
     if not path.exists():
         print(f"  no command log at {path} yet -- run QRUDO, use it a"
               f"\n  while, and come back.")

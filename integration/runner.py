@@ -69,8 +69,22 @@ def run(engine, args, tuning=False):
 
     engine.on_result = remember
 
-    for warning in engine.preflight():
+    warnings = engine.preflight()
+
+    for warning in warnings:
         print(f"  ! {warning}\n")
+
+    # Launched from an icon, there is no terminal for those lines to
+    # reach -- the camera window is the only place QRUDO can speak.  So
+    # the one permission macOS never prompts for by itself rides the
+    # overlay's hint line, and the packaged app walks the user to the
+    # exact Settings pane, once per installation.
+    permission_hint = next(
+        ("play/pause and seeking need Accessibility -- System Settings "
+         "> Privacy & Security > Accessibility"
+         for warning in warnings if "Accessibility" in warning), "")
+
+    walk_to_settings(warnings)
 
     # Keep the target fresh in the background, and let ctrl+shift+arrows
     # step it from any app.  Both are best effort: a machine that cannot
@@ -194,7 +208,8 @@ def run(engine, args, tuning=False):
             overlay.draw_hint(cv2, frame,
                               refused
                               or out_of_range(time.time() - last_hand_at,
-                                              args))
+                                              args)
+                              or permission_hint)
 
             if tuning:
                 state = motion.debug_state()
@@ -226,6 +241,45 @@ def run(engine, args, tuning=False):
 
     print("\n  bye.")
     return 0
+
+
+def walk_to_settings(warnings):
+    """Open the Accessibility pane for the packaged app, once ever.
+
+    Camera permission asks for itself the first time the camera opens,
+    with QRUDO's name on the dialog.  Accessibility never asks -- it
+    just silently does nothing -- and an app launched from an icon has
+    no terminal to explain that in.  So the first launch that finds
+    the permission missing opens the exact Settings pane, and a marker
+    in the data folder keeps every later launch from nagging: from
+    then on the overlay's hint line carries the reminder instead.
+
+    Run from a terminal this does nothing at all -- the printed
+    warning is readable there, and opening windows nobody asked for is
+    not how a command line behaves.
+    """
+
+    if not getattr(sys, "frozen", False) or sys.platform != "darwin":
+        return
+
+    if not any("Accessibility" in warning for warning in warnings):
+        return
+
+    from paths import data_dir
+
+    marker = data_dir() / ".accessibility-walked"
+
+    if marker.exists():
+        return
+
+    marker.write_text("")
+
+    import subprocess
+
+    subprocess.run(
+        ["open", "x-apple.systempreferences:com.apple.preference."
+                 "security?Privacy_Accessibility"],
+        check=False)
 
 
 def picture(camera):

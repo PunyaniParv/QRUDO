@@ -382,6 +382,66 @@ class TestEntryGrace(unittest.TestCase):
         self.assertIsNotNone(router.update(swipe="SWIPE_LEFT", now=1000.0))
 
 
+class TestWalkToSettings(unittest.TestCase):
+    """The packaged app's one guided step, and everyone else's silence.
+
+    Accessibility never prompts by itself -- it silently does nothing
+    -- and an app launched from an icon has no terminal to explain
+    that in.  So the first packaged launch that finds it missing opens
+    the exact Settings pane, once ever; terminals keep their printed
+    warning and get no surprise windows.
+    """
+
+    WARNING = ["Accessibility permission not granted: ..."]
+
+    def setUp(self):
+        import tempfile
+        from unittest import mock
+
+        from integration import runner
+        self.runner = runner
+
+        self.opened = []
+        self.tmp = Path(tempfile.mkdtemp())
+
+        patches = [
+            mock.patch.object(runner.sys, "frozen", True, create=True),
+            mock.patch.object(runner.sys, "platform", "darwin"),
+            mock.patch("paths.data_dir", lambda: self.tmp),
+            mock.patch("subprocess.run",
+                       lambda cmd, **kw: self.opened.append(cmd)),
+        ]
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_the_first_launch_opens_the_pane(self):
+        self.runner.walk_to_settings(self.WARNING)
+
+        self.assertEqual(len(self.opened), 1)
+        self.assertIn("Privacy_Accessibility", self.opened[0][1])
+
+    def test_only_ever_once(self):
+        self.runner.walk_to_settings(self.WARNING)
+        self.runner.walk_to_settings(self.WARNING)
+
+        self.assertEqual(len(self.opened), 1)
+
+    def test_nothing_missing_means_nothing_opened(self):
+        self.runner.walk_to_settings([])
+
+        self.assertEqual(self.opened, [])
+
+    def test_a_terminal_gets_no_surprise_windows(self):
+        from unittest import mock
+
+        with mock.patch.object(self.runner.sys, "frozen", False,
+                               create=True):
+            self.runner.walk_to_settings(self.WARNING)
+
+        self.assertEqual(self.opened, [])
+
+
 class TestTheOverlayIsWhole(unittest.TestCase):
     """Everything the app draws with has to be there.
 

@@ -47,6 +47,12 @@ if sys.platform == "darwin":
 
 def ensure():
     """Return with the dependencies importable, or hand off to .venv."""
+    # A packaged app carries everything inside itself; there is nothing
+    # to install and no interpreter to hand off to.  A missing import
+    # there is a packaging bug, and the loud ImportError names it.
+    if getattr(sys, "frozen", False):
+        return
+
     if not missing():
         return
 

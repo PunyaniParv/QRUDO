@@ -20,7 +20,9 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-DEFAULT_PATH = Path(__file__).resolve().parent.parent / "qrudo_calibration.json"
+from paths import data_dir
+
+DEFAULT_PATH = data_dir() / "qrudo_calibration.json"
 
 #: The fingers that get measured, in the order they are named everywhere
 #: else.  Kept here rather than imported so this module still loads

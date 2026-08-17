@@ -29,6 +29,28 @@ After you have used it a while, `python3 main.py --report` reads the
 command log back and reports how often a gesture fired that you then
 took straight back -- the misfire rate, measured from real use.
 
+## The app
+
+```bash
+packaging/build_mac.sh          # macOS: dist/QRUDO.app
+packaging\build_windows.bat     # Windows: dist\QRUDO\QRUDO.exe (+ installer)
+```
+
+The bundle carries everything -- Python, the vision stack, the hand
+model -- so it installs by dragging, and the permission dialogs say
+**QRUDO** instead of Terminal.  Camera permission asks for itself on
+first run; if Accessibility is missing, the app opens the right
+Settings pane once and the camera window carries the reminder.  The
+packaged app keeps its calibration, config and logs in the platform's
+own place (`~/Library/Application Support/QRUDO` on macOS,
+`%APPDATA%\QRUDO` on Windows).
+
+Unsigned builds run on your own machines.  Handing the app to
+strangers needs Apple's notarization (an Apple Developer ID, $99/yr)
+-- the build script does the whole ceremony once
+`QRUDO_SIGN_IDENTITY` and `QRUDO_NOTARIZE_PROFILE` are set; see the
+comments in `packaging/build_mac.sh`.
+
 ## More
 
 - `CONTROL_API.md` -- the contract between the vision half and the

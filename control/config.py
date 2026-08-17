@@ -11,7 +11,9 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "qrudo_config.json"
+from paths import data_dir
+
+DEFAULT_CONFIG_PATH = data_dir() / "qrudo_config.json"
 
 
 @dataclass
