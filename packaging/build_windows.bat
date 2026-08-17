@@ -16,8 +16,16 @@ rem early users and the reason to buy the certificate eventually.
 
 cd /d "%~dp0.."
 
+rem A fresh Windows machine has no environment yet; build it the same
+rem way a first run of QRUDO would, so this script is one command on a
+rem machine that has only Python and this repository.
 set PYTHON=.venv\Scripts\python.exe
-if not exist %PYTHON% set PYTHON=python
+if not exist %PYTHON% (
+  where py >nul 2>nul
+  if %errorlevel%==0 (py -3 -m venv .venv) else (python -m venv .venv)
+  %PYTHON% -m pip install -r requirements.txt
+  if errorlevel 1 exit /b 1
+)
 
 %PYTHON% -c "import PyInstaller" 2>nul || %PYTHON% -m pip install pyinstaller
 %PYTHON% -m PyInstaller --noconfirm --clean packaging\qrudo.spec
