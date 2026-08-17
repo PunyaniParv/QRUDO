@@ -3,7 +3,8 @@
 
 [Setup]
 AppName=QRUDO
-AppVersion=0.1
+; Keep in step with version.py, which is what the update check compares.
+AppVersion=0.1.0
 AppPublisher=QRUDO
 DefaultDirName={autopf}\QRUDO
 DefaultGroupName=QRUDO

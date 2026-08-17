@@ -86,6 +86,28 @@ def run(engine, args, tuning=False):
 
     walk_to_settings(warnings)
 
+    # A customer's app cannot git pull; it has to notice its own age.
+    # Asked off the main thread with a hard timeout, because a slow
+    # network must never delay the camera -- the answer just appears
+    # on the hint line whenever it arrives.  The checkout way of
+    # running skips this: the banner already carries the commit.
+    update_notice = [""]
+
+    if getattr(sys, "frozen", False):
+        import threading
+
+        def _ask():
+            import updates
+
+            latest = updates.check()
+
+            if latest:
+                update_notice[0] = (
+                    f"QRUDO {latest} is out (this is {updates.VERSION})"
+                    f" -- {updates.DOWNLOAD_PAGE}")
+
+        threading.Thread(target=_ask, daemon=True).start()
+
     # Keep the target fresh in the background, and let ctrl+shift+arrows
     # step it from any app.  Both are best effort: a machine that cannot
     # watch the keyboard still has the pointing gesture and the config.
@@ -209,7 +231,8 @@ def run(engine, args, tuning=False):
                               refused
                               or out_of_range(time.time() - last_hand_at,
                                               args)
-                              or permission_hint)
+                              or permission_hint
+                              or update_notice[0])
 
             if tuning:
                 state = motion.debug_state()

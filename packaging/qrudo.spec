@@ -19,6 +19,10 @@ from PyInstaller.utils.hooks import collect_all
 ROOT = os.path.dirname(SPECPATH) if os.path.basename(SPECPATH) == "packaging" \
     else SPECPATH
 
+sys.path.insert(0, ROOT)
+
+from version import VERSION
+
 # The hand model, where hand_tracker expects it: models/ beside the code.
 datas = [(os.path.join(ROOT, "models", "hand_landmarker.task"), "models")]
 binaries = []
@@ -69,5 +73,6 @@ if sys.platform == "darwin":
                 "gestures can control this computer.",
             "NSHighResolutionCapable": True,
             "LSApplicationCategoryType": "public.app-category.utilities",
+            "CFBundleShortVersionString": VERSION,
         },
     )
