@@ -1,4 +1,4 @@
-# SARV Control Engine — interface for the Vision Engine
+# QRUDO Control Engine — interface for the Vision Engine
 
 This is everything the vision side needs to know. You never import `cv2` or
 `mediapipe` into the control layer, and the control layer never imports them
@@ -74,7 +74,7 @@ Two of the seven are sensitive to keyboard focus:
 That's why seeking from `--simulate` appears to do nothing: you are typing into
 the terminal, so the terminal is focused and swallows the arrows.
 
-**Name the app you are controlling.** In `sarv_config.json`:
+**Name the app you are controlling.** In `qrudo_config.json`:
 
 ```json
 { "target_app": "Google Chrome" }
@@ -87,14 +87,14 @@ a target named, play/pause goes to that app instead: a scriptable player like
 Spotify is told directly, and a browser is sent the keyboard's own play/pause
 key, which reaches whatever is actually playing.
 
-That key is sent only when something genuinely is playing, or when SARV was
+That key is sent only when something genuinely is playing, or when QRUDO was
 what paused it — CoreAudio is asked. It is a message to the system rather than
 to a player, and the system answers one with nothing playing by opening Music.
 With nothing to pause, PLAY_PAUSE says so instead.
 
 `browser_play_key` is `"k"` by default — the site shortcut, sent to the browser
 and nowhere else. A shortcut is a letter, and a letter lands in the browser's
-**front tab**, wherever its keyboard focus is. So before sending it SARV asks
+**front tab**, wherever its keyboard focus is. So before sending it QRUDO asks
 two questions through Accessibility: is the focus something that takes typing
 (a chat box, a search field — refused with a message), and does the front tab's
 title look like the video (`browser_video_titles`, default `"youtube"`). A
@@ -189,26 +189,24 @@ Useful for the on-screen overlay: draw `result.detail` when `result.ok`, and
 
 ## Setup on your machine
 
-**Windows** — nothing extra to install; the backend uses only `ctypes` and
-PowerShell, both built in.
+None, usually.  `python3 main.py` (or `py main.py` on Windows) notices a
+machine that has never seen QRUDO, builds `.venv/` beside `main.py`, and
+installs requirements.txt into it -- once per device, see `bootstrap.py`.
+The pyobjc frameworks ride along on macOS via platform markers in
+requirements.txt, so one file installs both halves on both platforms.
 
-```powershell
-pip install -r requirements.txt
-python main.py --check
-```
-
-**macOS** — needs pyobjc for the media keys. (Do *not* run this on Windows;
-pyobjc is macOS-only and will fail to build.)
+Manual setup still works, for anyone who wants their own environment --
+bootstrap leaves any interpreter that can already import everything
+alone:
 
 ```bash
 pip install -r requirements.txt
-pip install pyobjc-framework-Quartz pyobjc-framework-Cocoa
 python main.py --check
 ```
 
 `--check` tells you what works on your laptop. On macOS, if it warns about
 Accessibility, grant it in System Settings → Privacy & Security → Accessibility
-for whatever launches SARV (Terminal / iTerm / VS Code); volume and brightness
+for whatever launches QRUDO (Terminal / iTerm / VS Code); volume and brightness
 work without it, play/pause and seeking don't. Windows needs no such permission.
 
 Then run `python main.py --selftest` — it fires all seven commands and puts your
@@ -216,7 +214,7 @@ machine back the way it was.
 
 ## Configuration
 
-Defaults live in `control/config.py`. To override, drop a `sarv_config.json` next
+Defaults live in `control/config.py`. To override, drop a `qrudo_config.json` next
 to `main.py`:
 
 ```json
@@ -263,11 +261,11 @@ Chords need ctrl+alt so a bare `u` still types a u everywhere. Matched chords
 are swallowed and never reach the app you are in.
 
 **The vision half does not need this.** Your camera loop reads frames whether or
-not SARV has focus, so nothing about gestures depends on capturing keystrokes.
+not QRUDO has focus, so nothing about gestures depends on capturing keystrokes.
 
 ## Logs
 
-- `logs/sarv.log` — human readable.
+- `logs/qrudo.log` — human readable.
 - `logs/commands.jsonl` — one JSON object per command; load it with
   `pandas.read_json("logs/commands.jsonl", lines=True)` if we want accuracy
   numbers for the demo.

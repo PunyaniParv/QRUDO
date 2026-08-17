@@ -1,4 +1,4 @@
-"""SARV Control Engine: commands in, OS actions out.
+"""QRUDO Control Engine: commands in, OS actions out.
 
 The Computer Control Engine's public surface is deliberately tiny::
 

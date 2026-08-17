@@ -112,7 +112,7 @@ class TestExecution(unittest.TestCase):
 
 
 class TestFailureHandling(unittest.TestCase):
-    """Spec F: a failed OS action must not crash SARV."""
+    """Spec F: a failed OS action must not crash QRUDO."""
 
     class Exploding(NullController):
         def volume_up(self, step): raise ControlError("audio device went away")
@@ -271,7 +271,7 @@ class TestTheGestureCooldownIsASetting(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        path = Path(tempfile.mkdtemp()) / "sarv_config.json"
+        path = Path(tempfile.mkdtemp()) / "qrudo_config.json"
         path.write_text(json.dumps({"gesture_cooldown_seconds": 0.6}))
 
         self.assertAlmostEqual(

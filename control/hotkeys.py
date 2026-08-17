@@ -1,9 +1,9 @@
-"""Global hotkeys: drive SARV from any app, without the terminal focused.
+"""Global hotkeys: drive QRUDO from any app, without the terminal focused.
 
     python main.py --hotkeys
 
 This is a fallback, not the product.  Gestures do not need it -- the camera
-loop reads frames whether or not SARV has focus, so the vision half never has
+loop reads frames whether or not QRUDO has focus, so the vision half never has
 to capture a keypress.  What this buys is demo insurance: if the lighting is
 bad or recognition misfires in front of an audience, you can drive the same
 seven commands from the keyboard while the video stays fullscreen.
@@ -41,7 +41,7 @@ _WIN_KEYCODES = {ord(letter.upper()): letter
 
 
 def banner(engine: ControlEngine) -> str:
-    lines = ["", f"  SARV global hotkeys  --  backend: {engine.controller.name}", ""]
+    lines = ["", f"  QRUDO global hotkeys  --  backend: {engine.controller.name}", ""]
     for letter, command in KEY_MAP.items():
         lines.append(f"    {MODIFIERS}+{letter}   {command.value}")
     lines += ["", "  works in any app; ctrl+c here to stop", ""]
@@ -100,7 +100,7 @@ def watch_targets(engine: ControlEngine):
             log.get_logger("hotkeys").warning(
                 "target chords unavailable: %s", exc)
 
-    thread = threading.Thread(target=worker, name="sarv-target-keys",
+    thread = threading.Thread(target=worker, name="qrudo-target-keys",
                               daemon=True)
     thread.start()
     return thread

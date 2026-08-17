@@ -1,4 +1,4 @@
-"""Shared command vocabulary for SARV.
+"""Shared command vocabulary for QRUDO.
 
 This module is the contract between the Vision Engine (Teammate 1) and the
 Computer Control Engine (Teammate 2).  It deliberately imports nothing beyond

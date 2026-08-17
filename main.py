@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""SARV -- control your computer with hand gestures.
+"""QRUDO -- control your computer with hand gestures.
 
-    python main.py                       # run SARV: camera on, gestures live
+    python main.py                       # run QRUDO: camera on, gestures live
     python main.py --tune                # camera on, gestures shown, nothing done
     python main.py --check               # what this machine can control
     python main.py --selftest            # run all seven commands, then restore
@@ -23,7 +23,7 @@ from control import ControlConfig, ControlEngine, log, parse_command
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="sarv", description=__doc__,
+        prog="qrudo", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     mode = parser.add_mutually_exclusive_group()
@@ -69,6 +69,13 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
+    # A machine that has never seen QRUDO cannot import the vision stack.
+    # This builds .venv/ and re-launches through it, once per device --
+    # and costs a few milliseconds everywhere else.  It must come before
+    # anything that touches the heavy imports.
+    import bootstrap
+    bootstrap.ensure()
+
     config = ControlConfig.load(args.config)
 
     if args.dry_run:
@@ -90,7 +97,7 @@ def main(argv=None):
 
     for note in getattr(measured, "pulled", ()):
         print(f"  ! {note}"
-              f"\n    (outside the range SARV trusts, so it was pulled back)\n")
+              f"\n    (outside the range QRUDO trusts, so it was pulled back)\n")
 
     for note in getattr(measured, "notes", ()):
         print(f"  ! {note}"
@@ -149,7 +156,7 @@ def first_run_notice():
         "",
         "  It measures your hand so the gestures suit your camera and how",
         "  far away you stand, and shows you what each one does.  Stand",
-        "  where you actually mean to use SARV.",
+        "  where you actually mean to use QRUDO.",
         "",
         "  --skip-setup starts without it, using thresholds that were",
         "  guessed rather than measured.",

@@ -1,6 +1,6 @@
 """A backend that does nothing but report what it was asked to do.
 
-Used on unsupported platforms and in tests, so the rest of SARV can be exercised
+Used on unsupported platforms and in tests, so the rest of QRUDO can be exercised
 on any machine.  Also the template to copy when someone adds Windows or Linux
 support: implement the same seven methods.
 """

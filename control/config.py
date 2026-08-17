@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "sarv_config.json"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "qrudo_config.json"
 
 
 @dataclass
@@ -51,7 +51,7 @@ class ControlConfig:
     """
 
     target_app: str = ""
-    """The app SARV is controlling, e.g. "Google Chrome" or "Spotify".
+    """The app QRUDO is controlling, e.g. "Google Chrome" or "Spotify".
 
     Worth setting.  Without it, PLAY_PAUSE is the keyboard's media key, and
     macOS answers a media key with nothing playing by opening Music -- so

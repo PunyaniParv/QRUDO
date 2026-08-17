@@ -1,4 +1,4 @@
-"""SARV Vision Engine: camera in, gesture names out.
+"""QRUDO Vision Engine: camera in, gesture names out.
 
     from vision import Camera, HandTracker, detect_gesture, detect_swipe
 

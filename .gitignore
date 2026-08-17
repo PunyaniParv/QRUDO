@@ -33,6 +33,6 @@ Thumbs.db
 logs/
 
 # Local configuration
-sarv_config.json
+qrudo_config.json
 
 

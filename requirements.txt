@@ -1,4 +1,4 @@
-# SARV -- both halves install from this one file.
+# QRUDO -- both halves install from this one file.
 #
 #   python3 -m venv .venv
 #   .venv/bin/python -m pip install -r requirements.txt      (macOS/Linux)

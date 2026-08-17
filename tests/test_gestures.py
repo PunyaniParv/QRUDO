@@ -528,7 +528,7 @@ class TestRestingHandAsksForNothing(GestureTestCase):
     Reported after the pose recorded during setup -- the hand at rest --
     started firing gestures.  A resting hand has fingers straighter than a
     fist and slacker than a spread one, and with a single line to fall on
-    it landed on "open", which is the gesture that turns SARV off.
+    it landed on "open", which is the gesture that turns QRUDO off.
     """
 
     def resting(self, **viewpoint):

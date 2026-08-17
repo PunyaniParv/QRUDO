@@ -10,7 +10,7 @@ API:
 * **Media (play/pause, seek)** -- synthetic keyboard events via Quartz, which
   is what a real keyboard's media keys send.  This keeps us
   application-independent (spec C) but needs Accessibility permission for the
-  app running SARV (Terminal / VS Code / Python.app).
+  app running QRUDO (Terminal / VS Code / Python.app).
 """
 
 from __future__ import annotations
@@ -237,7 +237,7 @@ class MacOSController(Controller):
 
         raise UnsupportedCommand(
             "nothing to play or pause -- open a player, or name one as "
-            "target_app in sarv_config.json")
+            "target_app in qrudo_config.json")
 
     #: Players that can simply be told, without being brought forward.
     SCRIPTABLE = ("Spotify", "Music", "VLC", "QuickTime Player", "TV")
@@ -355,7 +355,7 @@ class MacOSController(Controller):
         return (f"seek {direction} ~{presses * step}s{where} "
                 f"({presses}x {name}, {seconds}s requested)")
 
-    #: Set when SARV was the one that paused, so it knows it may resume.
+    #: Set when QRUDO was the one that paused, so it knows it may resume.
     _paused_it = False
 
     def _media_play_pause(self, name: str, pid: int) -> str:
@@ -550,7 +550,7 @@ class MacOSController(Controller):
             warnings.append(
                 "Accessibility permission not granted: media keys and seeking will do nothing. "
                 "Fix: System Settings > Privacy & Security > Accessibility, enable the app "
-                "that launches SARV (Terminal / iTerm / VS Code).")
+                "that launches QRUDO (Terminal / iTerm / VS Code).")
         if self._display_services is None and not self._brightness_cli:
             warnings.append(
                 "no precise brightness control available; falling back to brightness HID keys "

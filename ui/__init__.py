@@ -1,4 +1,4 @@
-"""What the user sees while SARV is running."""
+"""What the user sees while QRUDO is running."""
 
 from .overlay import (
     draw_gesture,

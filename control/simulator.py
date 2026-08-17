@@ -41,7 +41,7 @@ QUIT_KEYS = {"q", "\x03", "\x04"}  # q, Ctrl-C, Ctrl-D
 def help_text(engine: ControlEngine) -> str:
     lines = [
         "",
-        f"  SARV command simulator  --  backend: {engine.controller.name}"
+        f"  QRUDO command simulator  --  backend: {engine.controller.name}"
         f"{'  [DRY RUN]' if engine.config.dry_run else ''}",
         "",
     ]

@@ -35,7 +35,7 @@ UNKNOWN_SAID_AFTER = 1.0
 
 
 def run(engine, args, tuning=False):
-    """Run SARV until q is pressed or the camera goes away.
+    """Run QRUDO until q is pressed or the camera goes away.
 
     ``tuning`` shows the numbers behind each decision and performs
     nothing, which is the mode to use when a gesture will not fire.
@@ -194,7 +194,7 @@ def run(engine, args, tuning=False):
                 state["fps"] = frame_rate(frame_times)
                 overlay.draw_tuning(cv2, frame, state, motion, hand_state)
 
-            cv2.imshow("SARV", frame)
+            cv2.imshow("QRUDO", frame)
 
             key = cv2.waitKey(1) & 0xFF
 
@@ -352,7 +352,7 @@ def _commits_behind():
 def banner(engine, router, args, tuning):
     lines = [
         "",
-        f"  SARV  --  {engine.controller.name}"
+        f"  QRUDO  --  {engine.controller.name}"
         f"{'  [TUNING: gestures shown, NO commands run]' if tuning else ''}"
         f"{'  [DRY RUN]' if engine.config.dry_run and not tuning else ''}",
         build_stamp(),

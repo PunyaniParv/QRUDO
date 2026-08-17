@@ -116,7 +116,7 @@ class TestTheReadingsAreKept(unittest.TestCase):
         self.assertGreater(measured.swipe_lift, 0.0)
         self.assertIsNotNone(measured.crosstalk_turn)
 
-        path = Path(tempfile.mkdtemp()) / "sarv_calibration.json"
+        path = Path(tempfile.mkdtemp()) / "qrudo_calibration.json"
         measured.save(path, profile=profile)
 
         again, _ = Profile.load(path).derive(DEFAULTS)
@@ -129,7 +129,7 @@ class TestTheReadingsAreKept(unittest.TestCase):
         profile = Profile.from_samples(self.poses(), self.moves())
         measured, _ = profile.derive(DEFAULTS)
 
-        path = Path(tempfile.mkdtemp()) / "sarv_calibration.json"
+        path = Path(tempfile.mkdtemp()) / "qrudo_calibration.json"
         measured.save(path, profile=profile)
 
         return path, measured
@@ -155,7 +155,7 @@ class TestTheReadingsAreKept(unittest.TestCase):
     def test_a_file_without_readings_still_works(self):
         """Every calibration anyone has already done."""
 
-        path = Path(tempfile.mkdtemp()) / "sarv_calibration.json"
+        path = Path(tempfile.mkdtemp()) / "qrudo_calibration.json"
         path.write_text(json.dumps({
             "extended_ratio": 0.80, "open_ratio": 0.91, "fist_reach": 1.12,
             "swipe_turn": 0.40, "swipe_turn_speed": 1.70,
@@ -796,7 +796,7 @@ class TestABadFrameOrTwo(unittest.TestCase):
 
 
 class TestRangeOnlyLoosens(unittest.TestCase):
-    """Calibrating close by must not shorten how far SARV can see.
+    """Calibrating close by must not shorten how far QRUDO can see.
 
     A hand is about a tenth of the frame across at a metre and a thirtieth
     at three.  Setting the floor from a calibration taken at the keyboard

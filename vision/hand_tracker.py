@@ -44,7 +44,7 @@ class HandTracker:
     #: 0.7 is its own suggestion and suits a hand filling the frame.  A
     #: hand three metres away is twenty pixels across, and the model is
     #: rightly less certain about it -- at 0.7 it says nothing at all,
-    #: which reads as SARV not working from across the room.  Lower, it
+    #: which reads as QRUDO not working from across the room.  Lower, it
     #: offers a guess, and the gesture tests behind it are strict enough to
     #: throw away the bad ones.
     DEFAULT_CONFIDENCE = 0.5

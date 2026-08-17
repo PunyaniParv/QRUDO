@@ -181,14 +181,14 @@ while ($true) {{
         self.log = log
         self._process: subprocess.Popen | None = None
         self._broken = False
-        self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sarv-ps")
+        self._reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qrudo-ps")
         atexit.register(self.close)
 
     def prewarm(self) -> None:
         """Launch the helper now so the first command does not wait for it.
 
         Popen returns immediately, and PowerShell does its own start-up while
-        SARV carries on booting -- so by the time a gesture arrives, the second
+        QRUDO carries on booting -- so by the time a gesture arrives, the second
         or so of launch cost has already been paid.
         """
         self._start()

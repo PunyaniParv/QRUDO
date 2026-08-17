@@ -1,4 +1,4 @@
-"""Walk the user through showing SARV each gesture, and measure them.
+"""Walk the user through showing QRUDO each gesture, and measure them.
 
 Four poses held still, then a few movements repeated.  Each step gives a
 moment to get into position before it starts recording, so the transition
@@ -241,7 +241,7 @@ class _Session:
         self.overlay.draw_prompt(self.cv2, frame, prompt, note, remaining,
                                  hand is not None, purpose)
 
-        self.cv2.imshow("SARV - calibrating", frame)
+        self.cv2.imshow("QRUDO - calibrating", frame)
 
         if self.cv2.waitKey(1) & 0xFF == ord("q"):
             raise _Cancelled
@@ -264,7 +264,7 @@ def _bigger(biggest, state):
 def banner():
     return "\n".join([
         "",
-        "  SARV setup",
+        "  QRUDO setup",
         "",
         "  Four shapes to hold, then four movements to repeat.  Stand where",
         "  you actually intend to use it -- the numbers depend on how big",

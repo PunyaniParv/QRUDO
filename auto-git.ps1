@@ -1,7 +1,7 @@
-# SARV Auto Git
+# QRUDO Auto Git
 # Automatically detects changes, commits them, and pushes to origin/main.
 
-$Repo = "C:\Users\samak\Sarv"
+$Repo = "C:\Users\samak\Qrudo"
 $Branch = "main"
 $Remote = "origin"
 
@@ -9,7 +9,7 @@ Set-Location $Repo
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "       SARV AUTO GIT WATCHER" -ForegroundColor Cyan
+Write-Host "       QRUDO AUTO GIT WATCHER" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Repository: $Repo"
 Write-Host "Branch:     $Branch"
@@ -84,7 +84,7 @@ function Commit-And-Push {
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
-    $commitMessage = "auto: update SARV - $timestamp"
+    $commitMessage = "auto: update QRUDO - $timestamp"
 
     Write-Host ""
     Write-Host "Committing..." -ForegroundColor Cyan

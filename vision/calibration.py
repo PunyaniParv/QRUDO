@@ -20,7 +20,7 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-DEFAULT_PATH = Path(__file__).resolve().parent.parent / "sarv_calibration.json"
+DEFAULT_PATH = Path(__file__).resolve().parent.parent / "qrudo_calibration.json"
 
 #: The fingers that get measured, in the order they are named everywhere
 #: else.  Kept here rather than imported so this module still loads
@@ -733,7 +733,7 @@ class Profile:
 
         # How small a hand may look and still be read.  Taken from how
         # large yours looked while calibrating, so calibrating across the
-        # room lets SARV reach that far.  It can only ever loosen the
+        # room lets QRUDO reach that far.  It can only ever loosen the
         # limit, never tighten it -- see BOUNDS, which is what actually
         # holds that line.
         min_hand = (min(self.scale[self.LOW] * 0.6, current.min_hand_on_screen)

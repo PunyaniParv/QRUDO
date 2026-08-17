@@ -19,7 +19,7 @@ PAUSE_BETWEEN = 0.4
 def run(engine: ControlEngine | None = None) -> int:
     engine = engine or ControlEngine()
 
-    print(f"\n  SARV control self-test  --  backend: {engine.controller.name}"
+    print(f"\n  QRUDO control self-test  --  backend: {engine.controller.name}"
           f"{'  [DRY RUN]' if engine.config.dry_run else ''}\n")
     for warning in engine.preflight():
         print(f"  ! {warning}\n")

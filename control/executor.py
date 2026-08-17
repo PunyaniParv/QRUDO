@@ -5,7 +5,7 @@ calls.  It never raises and never blocks for long: every failure comes back as
 a ``CommandResult`` with ``status == ERROR``, because a missing audio device
 must not kill the camera loop (spec F).
 
-Platform specifics live in ``sarv.backends``; nothing in this file knows what
+Platform specifics live in ``qrudo.backends``; nothing in this file knows what
 an osascript is.
 """
 
@@ -112,7 +112,7 @@ class Controller(ABC):
 
 
 class ControlEngine:
-    """Dispatch, debounce, log.  This is the object the rest of SARV holds."""
+    """Dispatch, debounce, log.  This is the object the rest of QRUDO holds."""
 
     def __init__(self, controller: Controller | None = None,
                  config: ControlConfig | None = None,
@@ -231,7 +231,7 @@ class ControlEngine:
 
     def _start_worker(self) -> None:
         self._worker = threading.Thread(
-            target=self._drain, name="sarv-control", daemon=True)
+            target=self._drain, name="qrudo-control", daemon=True)
         self._worker.start()
 
     def _drain(self) -> None:

@@ -178,7 +178,7 @@ class TargetResolver:
                     self.apply()
 
         self._thread = threading.Thread(
-            target=keep_fresh, name="sarv-targets", daemon=True)
+            target=keep_fresh, name="qrudo-targets", daemon=True)
         self._thread.start()
 
     def stop(self):

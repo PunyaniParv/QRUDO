@@ -2,7 +2,7 @@
 
 Two sinks:
 
-* ``logs/sarv.log``     -- human-readable rotating text log.
+* ``logs/qrudo.log``     -- human-readable rotating text log.
 * ``logs/commands.jsonl`` -- one JSON object per executed command, easy to load
   into a notebook when we want to show hit/miss rates in the demo.
 
@@ -20,14 +20,14 @@ from dataclasses import asdict, is_dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-_LOGGER_NAME = "sarv"
+_LOGGER_NAME = "qrudo"
 _configured = False
 _event_path: Path | None = None
 
 
 def setup(log_dir: str | Path = "logs", *, console: bool = True,
           level: int = logging.INFO) -> logging.Logger:
-    """Configure and return the shared ``sarv`` logger.  Safe to call twice."""
+    """Configure and return the shared ``qrudo`` logger.  Safe to call twice."""
     global _configured, _event_path
 
     logger = logging.getLogger(_LOGGER_NAME)
@@ -42,7 +42,7 @@ def setup(log_dir: str | Path = "logs", *, console: bool = True,
     logger.propagate = False
 
     file_handler = RotatingFileHandler(
-        directory / "sarv.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+        directory / "qrudo.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8"
     )
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -59,7 +59,7 @@ def setup(log_dir: str | Path = "logs", *, console: bool = True,
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
-    """Child logger, e.g. ``get_logger("macos")`` -> ``sarv.macos``."""
+    """Child logger, e.g. ``get_logger("macos")`` -> ``qrudo.macos``."""
     setup()
     return logging.getLogger(_LOGGER_NAME if not name else f"{_LOGGER_NAME}.{name}")
 
