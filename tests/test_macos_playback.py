@@ -90,11 +90,12 @@ class TestNothingPlaying(unittest.TestCase):
     def test_a_browser_open_but_idle_does_not_get_the_media_key(self):
         """The case that reopened Music: Chrome was running, not playing.
 
-        A running browser is not a playing one, and the media key goes
-        wherever the system thinks the music is -- which is Music.
+        Nothing playing and QRUDO did not pause it, so the media key
+        would go wherever the system thinks the music is -- which is
+        Music.  The letter starts the fresh video instead.
         """
 
-        controller = FakeMac(running={"Google Chrome"}, play_key="k")
+        controller = FakeMac(running={"Google Chrome"})
         controller.play_pause()
 
         self.assertEqual(controller.media_keys, [])
@@ -143,39 +144,58 @@ class TestWhichKeyTheBrowserGets(unittest.TestCase):
         self.assertEqual(controller.media_keys, [])
 
 
-class TestNothingReachesMusic(unittest.TestCase):
-    """Music opening has been reported, fixed, and reported again three
-    times.  Each fix guarded the system-wide media key instead of not
-    sending it, and the last guard asked CoreAudio whether audio was
-    playing -- which is a different question from whether any app has
-    claimed the system's now-playing role, and it is the second that
-    decides where the key goes.  Sound can come from something that never
-    claimed it, and with the role unclaimed macOS answers the key by
-    opening Music.
-
-    So the key is not sent.  Play/pause goes to the app, as the app's own
-    shortcut, on every path.
+class TestTheMediaKeyIsSafeWhenAPlayerIsThere(unittest.TestCase):
+    """The system now-playing key -- the default -- fixes three faults
+    at once: it reaches the playing tab wherever it sits, it is genuine
+    play/pause on YouTube Music, and it never lands in a chat box.  Its
+    one hazard is the empty case, where macOS opens Music, and the
+    backend is built to avoid exactly that: the key goes out only when
+    something is playing, or when QRUDO paused it and so knows a player
+    is sitting there.  These pin both halves.
     """
 
     def controller(self, **kwargs):
         kwargs.setdefault("play_key", ControlConfig().browser_play_key)
         return FakeMac(target="Google Chrome", **kwargs)
 
-    def test_the_default_never_sends_a_system_key(self):
-        for running in ({"Google Chrome"}, {"Google Chrome", "Music"}):
-            for playing in (True, False):
-                with self.subTest(open=sorted(running), playing=playing):
-                    controller = self.controller(running=running,
-                                                 playing=playing)
-                    controller.play_pause()
-
-                    self.assertEqual(controller.media_keys, [])
-
-    def test_nor_any_apple_event_to_music(self):
-        controller = self.controller(running={"Google Chrome", "Music"},
+    def test_playing_now_gets_the_system_key(self):
+        controller = self.controller(running={"Google Chrome"},
                                      playing=True)
         controller.play_pause()
 
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_paused_by_us_resumes_with_the_system_key(self):
+        """Pause something, and the next fist resumes it -- no audio to
+        detect, but QRUDO knows it left a player paused."""
+
+        controller = self.controller(running={"Google Chrome"},
+                                     playing=True)
+        controller.play_pause()                 # pauses; playing was True
+        controller.playing = False              # now silent, because paused
+
+        controller.play_pause()                 # must still take the key
+
+        self.assertEqual(len(controller.media_keys), 2)
+
+    def test_nothing_playing_never_sends_the_system_key(self):
+        """The empty case, which is the one that opened Music: silent,
+        and QRUDO did not pause it, so the letter is used instead."""
+
+        controller = self.controller(running={"Google Chrome"},
+                                     playing=False)
+        note = controller.play_pause()
+
+        self.assertEqual(controller.media_keys, [])
+        self.assertEqual(controller.keyed, [4242])
+        self.assertIn("nothing was playing", note)
+
+    def test_the_empty_case_never_events_music(self):
+        controller = self.controller(running={"Google Chrome", "Music"},
+                                     playing=False)
+        controller.play_pause()
+
+        self.assertEqual(controller.media_keys, [])
         self.assertFalse([said for said in controller.told if "Music" in said])
 
     def test_it_reaches_the_browser_instead(self):
@@ -395,13 +415,20 @@ class TestPlayPauseTakesWhicheverRouteIsSafe(unittest.TestCase):
         self.assertEqual(len(controller.media_keys), 1)
 
     def test_pausing_then_starting_again(self):
-        """The pair, in the order anyone would do them."""
+        """The pair, in the order anyone would do them.
+
+        The second press resumes through the system key, not the
+        letter: QRUDO paused it and so knows a player is sitting there,
+        which is the case the letter used to have to cover because
+        nothing tracked it.  Resuming on the same route that paused
+        reaches the same tab, wherever it sits."""
 
         controller = FakeMac(running={"Google Chrome"}, playing=True)
         self.assertIn("paused", controller.play_pause())
 
         controller.playing = False          # it stopped, because we stopped it
-        self.assertIn("nothing was playing", controller.play_pause())
+        self.assertIn("resumed", controller.play_pause())
+        self.assertEqual(len(controller.media_keys), 2)
 
     def test_a_machine_that_cannot_be_asked_uses_the_app(self):
         """Without CoreAudio there is no telling, and of the two risks

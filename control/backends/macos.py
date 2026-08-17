@@ -301,31 +301,73 @@ class MacOSController(Controller):
         return self._play_pause_key(name, pid)
 
     def _play_pause_key(self, name: str, pid: int) -> str:
-        """Send whichever key plays and pauses inside this browser.
+        """Play or pause a browser, by the surest route available.
 
-        Which key it is depends on the site rather than the browser: k is
-        YouTube's, most other players use the spacebar, and the keyboard's
-        own media key works wherever something is genuinely playing.
+        Typing a letter at the browser was the old default, and it is
+        the source of three complaints at once: it lands in whatever
+        tab is at the *front*, so the video has to be the front tab or
+        nothing happens; the letter it types, ``k``, is next-track on
+        YouTube Music rather than play/pause; and when the front tab is
+        a chat box the letter is refused outright, which reads as the
+        gesture doing nothing.
+
+        The system's own now-playing key has none of those faults.  It
+        reaches whichever tab actually holds the playing media, in any
+        browser, wherever that tab sits -- and it is genuinely
+        play/pause on YouTube Music.  Its one hazard is the empty case:
+        sent with nothing playing and no app owning the now-playing
+        role, macOS answers it by opening Music.  So it is used exactly
+        when that cannot happen -- when something is playing now, or
+        when QRUDO is the one that paused it and so knows a player is
+        sitting there paused, waiting to be resumed.
+
+        Only when the system reports nothing playing and QRUDO did not
+        pause it does the letter come back, for the first press that
+        starts a fresh, silent video -- and ``browser_play_key`` still
+        forces either route by hand: "media" or "k"/"space".
         """
 
         wanted = self.config.browser_play_key.strip().lower()
 
-        if wanted == "media":
-            # Music being open used to divert this to the browser's own
-            # shortcut, on the grounds that the system would hand the
-            # media key to Music.  That is only true of a media key sent
-            # with nothing playing, which is now refused outright -- and
-            # the diversion is what typed a letter into whatever had the
-            # keyboard focus.  When something is playing, the key goes to
-            # the thing that is playing, which is the whole point of it.
-            return self._media_play_pause(name, pid)
+        if wanted in ("space", "spacebar", "k"):
+            key = KEY_SPACE if wanted != "k" else KEY_K
+            self._refuse_to_type_into_a_text_box(pid)
+            self._post_key(key, to_pid=pid)
 
-        key = KEY_SPACE if wanted in ("space", "spacebar") else KEY_K
+            return f"play/pause ({wanted}) to {name}"
 
+        # "media" or unset: the system now-playing key, when it is safe.
+        playing = self._audio_playing()
+
+        # Safe whenever a player is sitting there for the key to reach:
+        # something audible now, or something QRUDO paused and can
+        # resume.  Either way the key toggles it, so flip our record of
+        # which side of the toggle we are on.
+        if playing or self._paused_it:
+            was_playing = bool(playing)
+            self._post_media_key(NX_KEYTYPE_PLAY)
+            self._paused_it = was_playing
+
+            return ("paused what was playing" if was_playing
+                    else "resumed what QRUDO paused")
+
+        if playing is None:
+            # The audio question could not be asked, so the safe line
+            # cannot be drawn -- fall to the letter, which at worst is
+            # useless and never opens Music.
+            self._refuse_to_type_into_a_text_box(pid)
+            self._post_key(KEY_K, to_pid=pid)
+
+            return f"play/pause (k) to {name}"
+
+        # Nothing playing and we did not pause it: the first press on a
+        # fresh video.  The letter starts it in the front tab; from the
+        # next press on, it is audible and the now-playing route takes
+        # over.
         self._refuse_to_type_into_a_text_box(pid)
-        self._post_key(key, to_pid=pid)
+        self._post_key(KEY_K, to_pid=pid)
 
-        return f"play/pause ({wanted}) to {name}"
+        return f"play/pause (k) to {name} -- nothing was playing"
 
     def rewind(self, seconds: int) -> str:
         return self._seek(seconds, forward=False)

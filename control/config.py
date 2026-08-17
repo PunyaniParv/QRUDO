@@ -81,26 +81,30 @@ class ControlConfig:
     Empty means "send to whatever has focus", the old behaviour.
     """
 
-    browser_play_key: str = "k"
+    browser_play_key: str = "media"
     """Which key plays and pauses inside a browser.
 
-    YouTube's own shortcut, sent to the browser and nowhere else.  Its
-    fault is that it is a letter: land it while the keyboard focus is in
-    a search box and a k is typed there instead.
+    "media" -- the default -- is the system's own now-playing key.  It
+    reaches whichever tab actually holds the playing media, in any
+    browser, wherever that tab sits, and it is genuinely play/pause on
+    YouTube Music rather than next-track.  Three complaints came from
+    the old default and this cures them: a fist worked only when the
+    video was the front tab, it changed tracks on YouTube Music, and it
+    silently did nothing when a chat box was in front.
 
-    "media" is the keyboard's own play/pause key, which reaches whatever
-    is actually playing whichever site it is on, and needs no shortcut
-    guessed for it.  It is not the default and should not be, because it
-    is a message to the system rather than to a player: when no app has
-    claimed the system's now-playing role, macOS answers it by opening
-    Music -- which then holds that role and takes every media key
-    afterwards.  Guarding it on whether audio is playing is not enough,
-    because audio playing and an app having claimed that role are
-    different things.
+    Its one hazard is the empty case: sent with nothing playing and no
+    app owning the now-playing role, macOS answers it by opening Music.
+    So the backend uses it only when that cannot happen -- when
+    something is playing, or when QRUDO is the one that paused it -- and
+    falls back to the letter for the first press on a fresh, silent
+    video.  Audio-playing and role-owning are different questions, and
+    that fallback is where the difference is handled rather than
+    guessed.
 
-    A letter typed in the wrong place is a nuisance.  Music opening takes
-    the app over until it is quit.  "space" is the other letter, and
-    scrolls the page when the player is not selected.
+    "k" forces YouTube's letter shortcut (the old default); it lands in
+    the front tab and is typed literally if the focus is a search box.
+    "space" is the other letter, and scrolls the page when the player
+    is not selected.
     """
 
     browser_seek_keys: str = "arrows"

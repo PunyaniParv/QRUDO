@@ -92,21 +92,27 @@ what paused it — CoreAudio is asked. It is a message to the system rather than
 to a player, and the system answers one with nothing playing by opening Music.
 With nothing to pause, PLAY_PAUSE says so instead.
 
-`browser_play_key` is `"k"` by default — the site shortcut, sent to the browser
-and nowhere else. A shortcut is a letter, and a letter lands in the browser's
-**front tab**, wherever its keyboard focus is. So before sending it QRUDO asks
-two questions through Accessibility: is the focus something that takes typing
+`browser_play_key` is `"media"` by default — the system's own now-playing
+key. It reaches whichever tab actually holds the playing media, in any
+browser, wherever that tab sits — so a fist pauses YouTube even when a
+WhatsApp tab is in front — and it is genuine play/pause on YouTube Music
+rather than next-track. Its one hazard is the empty case: sent with nothing
+playing and no app owning the now-playing role, macOS answers it by opening
+Music. So QRUDO sends it only when that cannot happen — when something is
+playing (CoreAudio is asked), or when QRUDO is the one that paused it and so
+knows a player is sitting there paused. For the first press on a fresh, silent
+video it falls back to the letter below.
+
+`"k"` forces YouTube's letter shortcut (the old default). A letter lands in the
+browser's **front tab**, wherever its keyboard focus is, so QRUDO asks two
+questions through Accessibility first: is the focus something that takes typing
 (a chat box, a search field — refused with a message), and does the front tab's
 title look like the video (`browser_video_titles`, default `"youtube"`). A
 front tab that is not the video refuses too, because the letter can go nowhere
-else — a `k` once went into a ChatGPT composer exactly that way, with the
-browser in the background reporting no focus at all. Watching video on another
-site, add it: `"browser_video_titles": "youtube, vimeo"`.
-
-`"media"` sends the keyboard's own play/pause key instead. It is not the
-default because it is a message to the system rather than to a player: with
-the now-playing role unclaimed, macOS answers it by opening Music, which then
-holds that role and takes every media key afterwards.
+else — a `k` once went into a ChatGPT composer exactly that way. Watching video
+on another site, add it: `"browser_video_titles": "youtube, vimeo"`. This mode
+is the one to pick if you dislike the media key touching a music player you keep
+open for other reasons.
 
 macOS matches the app name; Windows matches any part of the window title (so
 `"YouTube"` works). The keys are then delivered to that app whether or not it
