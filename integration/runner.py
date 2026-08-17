@@ -34,11 +34,16 @@ NOTHING_SEEN_FOR = 6.0
 UNKNOWN_SAID_AFTER = 1.0
 
 
-def run(engine, args, tuning=False):
+def run(engine, args, tuning=False, on_frame=None, should_stop=None):
     """Run QRUDO until q is pressed or the camera goes away.
 
     ``tuning`` shows the numbers behind each decision and performs
     nothing, which is the mode to use when a gesture will not fire.
+
+    ``on_frame`` and ``should_stop`` are how the application window
+    rides this loop without owning it: every frame is offered to the
+    callback, and the loop asks the callable whether it is time to go.
+    The classic cv2 window is simply this loop with neither.
     """
 
     import cv2
@@ -165,6 +170,9 @@ def run(engine, args, tuning=False):
 
     try:
         for frame in camera.frames():
+            if should_stop is not None and should_stop():
+                break
+
             frame_times.append(time.time())
             hand = tracker.track(frame)
 
@@ -235,11 +243,21 @@ def run(engine, args, tuning=False):
             if last_swipe and time.time() - last_swipe_at < SWIPE_SHOWN_FOR:
                 gesture = last_swipe
 
-            if not show_window:
-                continue
-
             if last_result and time.time() - last_result_at > RESULT_SHOWN_FOR:
                 last_result = None
+
+            if on_frame is not None:
+                # The window draws its own words; it gets the picture,
+                # the settled gesture, and whatever just happened.  A
+                # broken callback must not take the camera loop down.
+                try:
+                    on_frame(frame, gesture, last_result,
+                             refused or permission_hint or update_notice[0])
+                except Exception:
+                    pass
+
+            if not show_window:
+                continue
 
             overlay.draw_gesture(cv2, frame, gesture)
             overlay.draw_result(cv2, frame, last_result)

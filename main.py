@@ -46,6 +46,9 @@ def build_parser():
                            "misfire rate, per-command counts")
     mode.add_argument("--update", action="store_true",
                       help="fetch and install a newer QRUDO, if one exists")
+    mode.add_argument("--ui", action="store_true",
+                      help="the application window: two pages, buttons, "
+                           "the camera in a corner")
 
     parser.add_argument("--dry-run", action="store_true",
                         help="log commands without performing them")
@@ -161,6 +164,19 @@ def main(argv=None):
 
         calibrate.run(args)
         vision.load_and_apply()
+
+    # The packaged app opens the application window by default -- a
+    # product is a window, not a video feed -- and any checkout gets it
+    # with --ui.  If Tk is missing (some minimal Pythons), the classic
+    # window still stands, so a broken toolkit never blocks the camera.
+    if args.ui or (getattr(sys, "frozen", False) and not args.tune):
+        try:
+            from ui.app import run_app
+        except Exception as exc:
+            print(f"  ! the application window is unavailable ({exc}); "
+                  f"classic window instead")
+        else:
+            return run_app(engine, args)
 
     from integration.runner import run
     return run(engine, args, tuning=args.tune)
