@@ -53,3 +53,12 @@ fi
 
 echo
 echo "  built: $APP"
+
+# An installed copy is a promise to keep it current: if QRUDO lives in
+# /Applications, every build refreshes it.  Deleting a running app is
+# safe on macOS -- the running one keeps its files until it quits.
+if [ -d "/Applications/QRUDO.app" ]; then
+  rm -rf /Applications/QRUDO.app
+  ditto "$APP" /Applications/QRUDO.app
+  echo "  refreshed: /Applications/QRUDO.app"
+fi
