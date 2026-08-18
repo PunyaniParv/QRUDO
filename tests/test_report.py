@@ -128,6 +128,49 @@ class TestLoader(unittest.TestCase):
         self.assertEqual(events[0]["command"], "VOLUME_UP")
 
 
+class TestTestingIsNotAMisfire(unittest.TestCase):
+    """Rhythmic back-and-forth is someone testing, not misfiring.
+
+    Counting it inflates the rate with the act of evaluating, which
+    argues for tightening a gesture that worked -- the detection-floor
+    mistake.  Only isolated reversals are the honest number.
+    """
+
+    def test_a_rhythmic_run_is_set_aside(self):
+        # up, down, up, down, up, down at a steady ~1.5s tempo
+        commands = []
+        for i in range(6):
+            cmd = "BRIGHTNESS_UP" if i % 2 == 0 else "BRIGHTNESS_DOWN"
+            commands.append(event(cmd, i * 1.5))
+
+        pairs = report.find_reversals(commands)
+        testing = [p for p in pairs if report.looks_like_testing(p, commands)]
+
+        self.assertTrue(testing, "a steady oscillation should read as testing")
+        self.assertEqual(len(testing), len(pairs),
+                         "every pair in the run is testing")
+
+    def test_an_isolated_reversal_is_a_real_misfire(self):
+        commands = [event("VOLUME_UP", 0), event("VOLUME_DOWN", 1.0),
+                    event("PLAY_PAUSE", 30.0)]
+
+        pairs = report.find_reversals(commands)
+
+        self.assertEqual(len(pairs), 1)
+        self.assertFalse(report.looks_like_testing(pairs[0], commands),
+                         "one up-then-down alone is a genuine misfire")
+
+    def test_the_report_separates_them(self):
+        commands = [event("BRIGHTNESS_UP", i * 1.4) if i % 2 == 0
+                    else event("BRIGHTNESS_DOWN", i * 1.4) for i in range(6)]
+        commands.append(event("VOLUME_UP", 100.0))
+        commands.append(event("VOLUME_DOWN", 101.0))
+
+        text = report.render(commands, "commands.jsonl")
+
+        self.assertIn("set aside as testing", text)
+
+
 class TestRender(unittest.TestCase):
     def test_the_verdict_leads_and_the_numbers_agree(self):
         events = [event("VOLUME_UP", 0),
