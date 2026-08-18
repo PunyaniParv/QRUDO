@@ -150,12 +150,14 @@ class ControlEngine:
     # -- public API ---------------------------------------------------------
 
     def execute(self, command: Command | str, *, force: bool = False,
-                source: str = "") -> CommandResult:
+                source: str = "", payload: str = "") -> CommandResult:
         """Run one command.  Never raises.
 
         ``force=True`` bypasses the cooldown (used by the simulator, where every
         keypress is a deliberate human action).  ``source`` names the route the
         command arrived by; it is carried into the event log, nothing more.
+        ``payload`` rides with ``Command.CUSTOM``: the keystroke a taught
+        gesture presses, which the enum name deliberately does not carry.
         """
         try:
             command = Command(command) if not isinstance(command, Command) else command
@@ -168,22 +170,32 @@ class ControlEngine:
             return self._finish(CommandResult(
                 command=command.value, status=Status.NOOP, source=source))
 
+        # A custom keystroke throttles on the keys it presses, not on the
+        # bare name CUSTOM -- two different taught shortcuts are two
+        # different actions and must not block each other.
+        cooldown_key = (f"CUSTOM:{payload}" if command is Command.CUSTOM
+                        else command.value)
+
         now = time.monotonic()
-        if not force and (now - self._last_run.get(command.value, -1e9)) < self.config.cooldown_seconds:
+        if not force and (now - self._last_run.get(cooldown_key, -1e9)) < self.config.cooldown_seconds:
             return self._finish(CommandResult(
                 command=command.value, status=Status.THROTTLED,
                 detail=f"within {self.config.cooldown_seconds:g}s cooldown",
                 source=source))
 
         if self.config.dry_run:
-            self._last_run[command.value] = now
+            self._last_run[cooldown_key] = now
             return self._finish(CommandResult(
                 command=command.value, status=Status.OK,
-                detail="dry-run, OS untouched", source=source))
+                detail=f"dry-run, OS untouched{f' ({payload})' if payload else ''}",
+                source=source))
 
         started = time.perf_counter()
         try:
-            detail = self._handlers[command]()
+            if command is Command.CUSTOM:
+                detail = self._run_custom(payload)
+            else:
+                detail = self._handlers[command]()
             status, error = Status.OK, None
         except UnsupportedCommand as exc:
             detail, status, error = "", Status.UNSUPPORTED, str(exc)
@@ -192,13 +204,29 @@ class ControlEngine:
         elapsed = (time.perf_counter() - started) * 1000
 
         if status is Status.OK:
-            self._last_run[command.value] = now
+            self._last_run[cooldown_key] = now
 
         return self._finish(CommandResult(
             command=command.value, status=status, detail=detail or "",
             error=error, duration_ms=round(elapsed, 1), source=source))
 
-    def submit(self, command: Command | str, source: str = "") -> None:
+    def _run_custom(self, payload: str) -> str:
+        """Press a user-taught keystroke.  Raises like any handler on
+        failure, so it turns into a result rather than crashing the loop."""
+
+        if not payload:
+            raise UnsupportedCommand("a custom gesture carried no keystroke")
+
+        send = getattr(self.controller, "send_combo", None)
+
+        if send is None:
+            raise UnsupportedCommand(
+                "this platform cannot send custom keystrokes yet")
+
+        return send(payload)
+
+    def submit(self, command: Command | str, source: str = "",
+               payload: str = "") -> None:
         """Non-blocking version of :meth:`execute` for the camera loop.
 
         Volume changes cost ~200 ms because macOS makes us shell out to
@@ -212,7 +240,7 @@ class ControlEngine:
         if self._worker is None:
             self._start_worker()
         try:
-            self._queue.put_nowait((command, source))
+            self._queue.put_nowait((command, source, payload))
         except queue.Full:
             # The backlog is already several commands deep; dropping is the
             # right call -- a stale volume nudge helps nobody.
@@ -248,8 +276,8 @@ class ControlEngine:
             item = self._queue.get()
             if item is _STOP:
                 return
-            command, source = item
-            result = self.execute(command, source=source)
+            command, source, payload = item
+            result = self.execute(command, source=source, payload=payload)
             if self.on_result is not None:
                 try:
                     self.on_result(result)

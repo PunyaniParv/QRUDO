@@ -226,6 +226,57 @@ class TestSwipeAndPoseTogether(unittest.TestCase):
         self.assertIs(router.update("FIST", "SWIPE_RIGHT"), Command.FORWARD)
 
 
+class TestCustomGestureRouting(unittest.TestCase):
+    """A taught gesture routes to its binding, through the same guards.
+
+    The router does not know what a custom gesture is; it is handed a
+    resolver that turns a matched name into (Command, payload).  An
+    action binding is an ordinary command; a keystroke binding is
+    CUSTOM carrying the combo, read from last_payload.
+    """
+
+    def resolver(self, table):
+        return lambda name: table.get(name)
+
+    def test_a_custom_action_gesture_fires_its_command(self):
+        router = GestureRouter(resolve_custom=self.resolver(
+            {"THREE": (Command.VOLUME_UP, "")}))
+
+        self.assertIs(router.update("THREE"), Command.VOLUME_UP)
+
+    def test_a_custom_keystroke_gesture_carries_its_payload(self):
+        router = GestureRouter(resolve_custom=self.resolver(
+            {"ROCK": (Command.CUSTOM, "cmd+shift+n")}))
+
+        self.assertIs(router.update("ROCK"), Command.CUSTOM)
+        self.assertEqual(router.last_payload, "cmd+shift+n")
+
+    def test_a_built_in_still_wins_over_the_resolver(self):
+        """The resolver is only consulted when no built-in pose matched.
+
+        The fist has a dwell, so it is held past it -- the point is that
+        the built-in command comes out, not the resolver's VOLUME_UP."""
+
+        router = GestureRouter(resolve_custom=self.resolver(
+            {"FIST": (Command.VOLUME_UP, "")}))
+
+        router.update("FIST", now=1000.0)
+        self.assertIs(router.update("FIST", now=1000.4), Command.PLAY_PAUSE)
+
+    def test_an_unknown_custom_name_does_nothing(self):
+        router = GestureRouter(resolve_custom=self.resolver({}))
+
+        self.assertIsNone(router.update("WHATEVER"))
+
+    def test_a_custom_gesture_inherits_the_cooldown(self):
+        router = GestureRouter(resolve_custom=self.resolver(
+            {"THREE": (Command.VOLUME_UP, "")}))
+
+        self.assertIsNotNone(router.update("THREE", now=1000.0))
+        self.assertIsNone(router.update("THREE", now=1000.5),
+                          "inside the cooldown, custom like any other")
+
+
 class TestMapping(unittest.TestCase):
     def test_every_mapped_command_is_real(self):
         for name, command in {**POSE_COMMANDS, **SWIPE_COMMANDS}.items():

@@ -592,6 +592,37 @@ class MacOSController(Controller):
             return
         self._osascript(f'tell application "System Events" to key code {key_code}')
 
+    def send_combo(self, combo: str) -> str:
+        """Press a user-taught keyboard shortcut, e.g. "cmd+shift+n".
+
+        The base key is pressed with the modifier flags set on the event,
+        so the system reads it as the whole chord.  This is how a taught
+        gesture reaches an action QRUDO has no handler for -- next track,
+        mute, a window shortcut -- with the key the app already uses.
+
+        It goes to whatever has focus, deliberately: a chord like
+        cmd+shift+n means something to the frontmost app, and unlike the
+        play/pause letter there is no safe way to aim it at a background
+        window.
+        """
+
+        from ..keystroke import parse
+
+        parsed = parse(combo)          # raises ComboError -> UNSUPPORTED
+
+        if self._quartz is not None:
+            quartz, _ = self._quartz
+            for pressed in (True, False):
+                event = quartz.CGEventCreateKeyboardEvent(
+                    None, parsed.key_code, pressed)
+                quartz.CGEventSetFlags(event, parsed.flags)
+                quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+
+            return f"sent {parsed.describe()}"
+
+        raise UnsupportedCommand(
+            "custom keystrokes need Quartz (pyobjc) -- not available here")
+
     # ------------------------------------------------------------- subprocess
 
     def _osascript(self, script: str) -> str:

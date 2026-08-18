@@ -34,6 +34,12 @@ class Command(str, Enum):
     TARGET_NEXT = "TARGET_NEXT"
     TARGET_PREV = "TARGET_PREV"
 
+    # A user-taught keystroke.  The one open-ended member: which keys it
+    # presses ride alongside as a payload rather than in the name, so the
+    # enum stays closed -- everything still logs and serialises "CUSTOM"
+    # -- while a taught gesture can reach an action QRUDO has no code for.
+    CUSTOM = "CUSTOM"
+
     # Emitted by the Vision Engine when no gesture is recognised.  Executing it
     # is always a safe no-op, so the vision side never needs a null check.
     NONE = "NONE"
