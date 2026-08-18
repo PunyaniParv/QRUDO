@@ -111,6 +111,11 @@ def main(argv=None):
 
     measured = vision.load_and_apply()
 
+    # Gestures the user has taught, loaded into the isolated matcher.
+    # An empty or absent store is normal and costs nothing.
+    from vision import custom
+    custom.load()
+
     # The one gesture threshold that is a preference rather than a
     # measurement, so it lives with the settings and not the calibration.
     vision.motion.set_cooldown(config.gesture_cooldown_seconds)
