@@ -311,11 +311,17 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
 
             if on_frame is not None:
                 # The window draws its own words; it gets the picture,
-                # the settled gesture, and whatever just happened.  A
-                # broken callback must not take the camera loop down.
+                # the settled gesture, whatever just happened, and this
+                # frame's finger spans -- the last so the gesture
+                # recorder can measure a shape from the same reading the
+                # detector used.  A broken callback must not take the
+                # camera loop down.
+                spans = hand_state.finger_span(hand) if hand is not None \
+                    else None
                 try:
                     on_frame(frame, gesture, last_result,
-                             refused or permission_hint or update_notice[0])
+                             refused or permission_hint or update_notice[0],
+                             spans)
                 except Exception:
                     pass
 

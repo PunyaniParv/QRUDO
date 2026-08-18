@@ -100,11 +100,15 @@ class App:
         self.engine = engine
         self.args = args
         self.latest = None          # (frame, gesture, result, hint)
+        self.last_spans = None      # this frame's finger spans, for recording
         self.stop = threading.Event()
         self.worker = None
         self.preview_photo = None   # kept, or Tk garbage-collects it
         self.ready = None           # a staged update, once one is
         self.beat = 0               # frames seen; drives the hidden dot
+        self._recorded_name = ""
+        self._recorded_signature = None
+        self._recorded_direction = ""
         self.first_frame_seen = False
 
         from version import VERSION
@@ -364,12 +368,16 @@ class App:
         self.add_gesture.tkraise()
 
     def record_gesture(self):
-        """Record the shape held to the camera.  Wired in the next phase;
-        for now it tells the truth about that rather than pretending."""
+        """Open the recorder: hold a shape, then choose motion or skip.
 
-        self.add_note.configure(
-            text="gesture recording is the next piece -- the form is here "
-                 "first so you can shape it")
+        The sequence the user asked for: record the still shape, then two
+        buttons -- choose a motion or skip it -- then name it (both names
+        if a motion was kept).  The shape is measured from the live
+        camera frames the app already receives, so no second camera is
+        opened.
+        """
+
+        Recorder(self).begin()
 
     def save_gesture(self):
         """Turn the three boxes into a saved custom gesture.
@@ -412,7 +420,30 @@ class App:
                      f"to save it.")
             return
 
-        self.add_note.configure(text="(saving wired in the next phase)")
+        # Everything is here: a recorded shape, an action.  Build and
+        # store the custom gesture, then reload the live registry so it
+        # works without a restart.
+        from vision import custom
+        from vision.custom import CustomError, CustomGesture
+
+        try:
+            gesture = CustomGesture(
+                name=self._recorded_name,
+                signature=self._recorded_signature,
+                tolerance=0.15,
+                kind="move" if self._recorded_direction else "pose",
+                direction=self._recorded_direction,
+                actions=[action],
+                command="", binding_type="action")
+            custom.add(gesture)
+            custom.load()
+        except CustomError as exc:
+            self.add_note.configure(text=f"could not save: {exc}")
+            return
+
+        self.add_note.configure(
+            text=f"saved! \"{self._recorded_name}\" now does: {summary}")
+        self._recorded_signature = None   # ready for the next one
 
     def show_settings(self):
         self.settings.tkraise()
@@ -497,8 +528,25 @@ class App:
 
     # -- the vision thread and the pulse -------------------------------
 
-    def take_frame(self, frame, gesture, result, hint):
+    def take_frame(self, frame, gesture, result, hint, spans=None):
         self.latest = (frame, gesture, result, hint)
+        # The finger spans of this frame, for the gesture recorder to
+        # measure a shape from the same reading the detector used.
+        self.last_spans = spans
+
+    def attach_recorded(self, name, signature, direction):
+        """The recorder hands a finished shape back here; remember it so
+        the form's Save ties it to the chosen action."""
+
+        self._recorded_name = name
+        self._recorded_signature = signature
+        self._recorded_direction = direction
+        self.gesture_status.configure(
+            text=f"recorded: {name}"
+                 + (f" ({direction} swipe)" if direction else " (still)"),
+            fg=ACCENT)
+        self.add_note.configure(
+            text="gesture recorded — now pick what it does and press Save")
 
     def tick(self):
         latest = self.latest
@@ -600,3 +648,175 @@ class App:
             self.worker.join(timeout=3.0)
 
         return 0
+
+
+#: How long a shape is held to be recorded, and how many good frames it
+#: takes before the readings are trusted.
+RECORD_SECONDS = 3.0
+MIN_GOOD_FRAMES = 12
+
+
+class Recorder:
+    """The record-a-gesture flow, as an overlay over the Add Gesture page.
+
+    A small state machine matching the sequence the user described:
+    hold the shape (measured from the app's live frames), then choose a
+    motion or skip it, then name it.  It reads frames from ``app.latest``
+    -- the same stream the window draws -- so no second camera opens and
+    the deadlock-prone path is never touched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self.samples = []          # per-frame finger spans while holding
+        self.signature = None      # the settled shape, once recorded
+        self.direction = ""        # a motion direction, if chosen
+        self._polling = False
+
+        self.panel = tk.Frame(app.add_gesture, bg=PANEL,
+                              highlightthickness=1,
+                              highlightbackground=ACCENT)
+        self.panel.place(relx=0.5, rely=0.5, anchor="center",
+                         relwidth=0.7, relheight=0.6)
+
+        self.title = tk.Label(self.panel, text="", bg=PANEL, fg=INK,
+                              font=("Helvetica", 18, "bold"))
+        self.title.place(relx=0.5, rely=0.15, anchor="center")
+
+        self.body = tk.Label(self.panel, text="", bg=PANEL, fg=DIM,
+                             font=("Helvetica", 14), wraplength=420,
+                             justify="center")
+        self.body.place(relx=0.5, rely=0.42, anchor="center")
+
+        self.row = tk.Frame(self.panel, bg=PANEL)
+        self.row.place(relx=0.5, rely=0.72, anchor="center")
+
+        self.name_entry = None
+
+    # -- steps ---------------------------------------------------------
+
+    def begin(self):
+        self.title.configure(text="Hold your hand shape to the camera")
+        self.body.configure(
+            text="Make the shape you want and hold it still.\n"
+                 "Recording starts now — keep holding.")
+        self._buttons([("Cancel", self.cancel)])
+        self.samples = []
+        self._polling = True
+        self._deadline = None
+        self._poll()
+
+    def _poll(self):
+        """Collect a finger reading each tick while holding the shape."""
+
+        if not self._polling:
+            return
+
+        import time as _t
+
+        if self._deadline is None:
+            self._deadline = _t.time() + RECORD_SECONDS
+
+        spans = self.app.last_spans
+        if spans:
+            self.samples.append(spans)
+
+        remaining = self._deadline - _t.time()
+        self.body.configure(
+            text=f"Hold it still... {max(0, remaining):.0f}s\n"
+                 f"({len(self.samples)} readings)")
+
+        if remaining <= 0:
+            self._polling = False
+            self._finish_recording()
+            return
+
+        self.app.root.after(80, self._poll)
+
+    def _finish_recording(self):
+        if len(self.samples) < MIN_GOOD_FRAMES:
+            self.title.configure(text="Didn't catch a steady shape")
+            self.body.configure(
+                text="Make sure your hand is clearly in view, then try "
+                     "again.")
+            self._buttons([("Try again", self.begin),
+                           ("Cancel", self.cancel)])
+            return
+
+        # The settled shape: the middle reading of each finger, so a
+        # stray frame does not define it.
+        from vision.custom import FINGERS
+        self.signature = {}
+        for finger in FINGERS:
+            values = sorted(s.get(finger, 0.0) for s in self.samples)
+            self.signature[finger] = values[len(values) // 2]
+
+        self.title.configure(text="Got the shape")
+        self.body.configure(
+            text="Now: does this gesture move in a direction (a swipe), "
+                 "or is it a still shape held in place?")
+        self._buttons([("Choose motion", self.choose_motion),
+                       ("Skip motion", self.skip_motion)])
+
+    def choose_motion(self):
+        self.title.configure(text="Which direction?")
+        self.body.configure(text="Pick the way your hand moves.")
+        self._buttons([("Left", lambda: self._set_motion("left")),
+                       ("Right", lambda: self._set_motion("right")),
+                       ("Up", lambda: self._set_motion("up")),
+                       ("Down", lambda: self._set_motion("down"))])
+
+    def _set_motion(self, direction):
+        self.direction = direction
+        self.name_step()
+
+    def skip_motion(self):
+        self.direction = ""
+        self.name_step()
+
+    def name_step(self):
+        kind = f"{self.direction} swipe" if self.direction else "still shape"
+        self.title.configure(text=f"Name your gesture ({kind})")
+        self.body.configure(text="A short name, e.g. THREE or ROCK.")
+
+        self.name_entry = tk.Entry(self.panel, bg=BACKGROUND, fg=INK,
+                                   insertbackground=INK, relief="flat",
+                                   font=("Helvetica", 16), width=18,
+                                   justify="center")
+        self.name_entry.place(relx=0.5, rely=0.55, anchor="center")
+        self.name_entry.focus_set()
+        self._buttons([("Save this gesture", self.done),
+                       ("Cancel", self.cancel)])
+
+    def done(self):
+        name = (self.name_entry.get() if self.name_entry else "").strip()
+
+        if not name:
+            self.body.configure(text="Give it a name first.")
+            return
+
+        # Hand the recorded shape back to the form; the form's Save
+        # button then ties it to the chosen action and writes it.
+        self.app.attach_recorded(name, self.signature, self.direction)
+        self.close()
+
+    # -- chrome --------------------------------------------------------
+
+    def _buttons(self, items):
+        for child in self.row.winfo_children():
+            child.destroy()
+
+        for text, command in items:
+            b = tk.Label(self.row, text=text, bg=BACKGROUND, fg=INK,
+                        font=("Helvetica", 13), padx=14, pady=7,
+                        cursor="pointinghand" if sys.platform == "darwin"
+                        else "hand2")
+            b.pack(side="left", padx=6)
+            b.bind("<Button-1>", lambda _e, c=command: c())
+
+    def cancel(self):
+        self.close()
+
+    def close(self):
+        self._polling = False
+        self.panel.destroy()
