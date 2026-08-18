@@ -89,6 +89,35 @@ class TestRepresentation(unittest.TestCase):
         self.assertLess(g.distance(near), g.distance(far))
 
 
+class TestActions(unittest.TestCase):
+    """The generalised binding, and that old files still work."""
+
+    def test_an_actions_chain_is_kept(self):
+        g = a_gesture(actions=[{"type": "open_app", "app": "Spotify"},
+                               {"type": "open_url", "url": "gmail.com"}],
+                      command="", binding_type="action")
+        self.assertEqual([a["type"] for a in g.actions],
+                         ["open_app", "open_url"])
+
+    def test_a_legacy_action_binding_becomes_a_builtin_action(self):
+        """A gesture saved before chains, bound to a command, still fires
+        that command -- normalised into a one-element actions list."""
+
+        g = a_gesture(binding_type="action", command="VOLUME_UP")
+        self.assertEqual(g.actions,
+                         [{"type": "builtin", "command": "VOLUME_UP"}])
+
+    def test_a_legacy_keystroke_binding_becomes_a_keystroke_action(self):
+        g = a_gesture(binding_type="keystroke", combo="cmd+n", command="")
+        self.assertEqual(g.actions,
+                         [{"type": "keystroke", "combo": "cmd+n"}])
+
+    def test_a_bad_action_in_the_chain_is_refused(self):
+        with self.assertRaises(CustomError):
+            a_gesture(actions=[{"type": "nonsense"}], command="",
+                      binding_type="action")
+
+
 class TestStore(unittest.TestCase):
     def setUp(self):
         self.path = Path(tempfile.mkdtemp()) / "qrudo_gestures.json"

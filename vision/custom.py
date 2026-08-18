@@ -79,6 +79,13 @@ class CustomGesture:
     tolerance: float
     kind: str = "pose"
     direction: str = ""
+    #: What firing does: an ordered list of actions (the source of truth).
+    #: A gesture saved before chains existed carries the legacy binding
+    #: fields instead, and the normaliser below turns those into a
+    #: one-element ``actions`` list -- so old files keep working and new
+    #: builds read one shape.
+    actions: list = field(default_factory=list)
+    #: Legacy, kept writable so a downgrade does not brick the store.
     binding_type: str = "action"   # "action" | "keystroke"
     command: str = ""              # when binding_type == "action"
     combo: str = ""                # when binding_type == "keystroke"
@@ -113,13 +120,37 @@ class CustomGesture:
             raise CustomError(
                 "a move gesture needs a direction: left, right, up or down")
 
-        if self.binding_type == "action" and not self.command:
-            raise CustomError("an action gesture needs a command")
+        self._resolve_actions()
 
-        if self.binding_type == "keystroke" and not self.combo:
-            raise CustomError("a keystroke gesture needs a combo")
+    def _resolve_actions(self):
+        """Settle on a validated ``actions`` list, source of truth.
 
-        if self.binding_type not in ("action", "keystroke"):
+        If actions were given, they win and are validated.  If not, the
+        legacy binding fields are turned into a one-element chain -- an
+        "action" binding into a builtin action, a "keystroke" binding
+        into a keystroke action -- so a gesture saved by an older build
+        keeps doing exactly what it did.
+        """
+
+        from control.actions import ActionError as _AE
+        from control.actions import normalise
+
+        if self.actions:
+            try:
+                self.actions = normalise(self.actions)
+            except _AE as exc:
+                raise CustomError(str(exc)) from exc
+            return
+
+        if self.binding_type == "keystroke":
+            if not self.combo:
+                raise CustomError("a keystroke gesture needs a combo")
+            self.actions = [{"type": "keystroke", "combo": self.combo}]
+        elif self.binding_type == "action":
+            if not self.command:
+                raise CustomError("an action gesture needs a command")
+            self.actions = [{"type": "builtin", "command": self.command}]
+        else:
             raise CustomError(f"unknown binding {self.binding_type!r}")
 
     def distance(self, spans: dict) -> float:

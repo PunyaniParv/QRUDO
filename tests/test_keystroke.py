@@ -82,10 +82,15 @@ class RecordingController(Controller):
 
     def __init__(self):
         self.sent = []
+        self.opened = []
 
     def send_combo(self, combo):
         self.sent.append(combo)
         return f"sent {combo}"
+
+    def open_argv(self, argv):
+        self.opened.append(argv)
+        return f"ran {argv}"
 
     # unused OS actions
     def volume_up(self, step): return ""

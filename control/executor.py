@@ -211,19 +211,40 @@ class ControlEngine:
             error=error, duration_ms=round(elapsed, 1), source=source))
 
     def _run_custom(self, payload: str) -> str:
-        """Press a user-taught keystroke.  Raises like any handler on
-        failure, so it turns into a result rather than crashing the loop."""
+        """Run a user-taught action or chain.  Raises like any handler on
+        failure, so it turns into a result rather than crashing the loop.
+
+        The payload is a serialised action chain -- open a thing, launch
+        an app, press keys, a built-in, or a confirmed command -- and an
+        old bare-combo payload still parses as a single keystroke.  The
+        ActionRunner is handed the backend's opener, the keystroke
+        sender, and the built-in dispatcher, so nothing OS-specific lives
+        outside the backend.
+        """
 
         if not payload:
-            raise UnsupportedCommand("a custom gesture carried no keystroke")
+            raise UnsupportedCommand("a custom gesture carried no action")
 
+        from . import actions as action_mod
+
+        opener = getattr(self.controller, "open_argv", None)
         send = getattr(self.controller, "send_combo", None)
 
-        if send is None:
+        if opener is None or send is None:
             raise UnsupportedCommand(
-                "this platform cannot send custom keystrokes yet")
+                "this platform cannot run custom actions yet")
 
-        return send(payload)
+        def builtin(command_value):
+            result = self.execute(Command(command_value), force=True,
+                                  source="chain")
+            if not result.ok:
+                raise UnsupportedCommand(result.error or "built-in failed")
+            return result.detail or command_value
+
+        runner = action_mod.ActionRunner(
+            opener=opener, keystroke=send, builtin=builtin)
+
+        return runner.run(payload)
 
     def submit(self, command: Command | str, source: str = "",
                payload: str = "") -> None:

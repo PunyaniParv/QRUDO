@@ -628,6 +628,14 @@ class MacOSController(Controller):
     def _osascript(self, script: str) -> str:
         return self._run(["osascript", "-e", script])
 
+    def open_argv(self, argv: list[str]) -> str:
+        """Run an argv list for a custom action -- open a file, launch an
+        app, a confirmed command.  A list, never a shell string, so
+        nothing in it is re-interpreted; the danger screening happened
+        in control/actions before this is ever reached."""
+
+        return self._run(argv)
+
     def _run(self, argv: list[str]) -> str:
         try:
             proc = subprocess.run(argv, capture_output=True, text=True,

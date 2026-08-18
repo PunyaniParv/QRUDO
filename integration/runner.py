@@ -70,22 +70,22 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
         """A matched custom gesture -> (Command, payload), or None.
 
         Read from the live registry each time, so a gesture taught while
-        the app runs works without rebuilding the router.  An action
-        binding becomes its command with no payload; a keystroke binding
-        becomes CUSTOM carrying the combo.
+        the app runs works without rebuilding the router.  Its action
+        chain rides as the CUSTOM payload -- serialised once here, run by
+        the ActionRunner in the executor.  A single built-in action is
+        the common case and still goes through the same path.
         """
+
+        from control import actions as action_mod
 
         gesture = custom.by_name(name)
 
-        if gesture is None:
+        if gesture is None or not gesture.actions:
             return None
 
-        if gesture.binding_type == "keystroke":
-            return Command.CUSTOM, gesture.combo
-
         try:
-            return Command(gesture.command), ""
-        except ValueError:
+            return Command.CUSTOM, action_mod.serialize(gesture.actions)
+        except action_mod.ActionError:
             return None
 
     router = GestureRouter(cooldown=engine.config.gesture_cooldown_seconds,
