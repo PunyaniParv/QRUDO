@@ -238,11 +238,17 @@ class App:
         self._corner(self.settings, "Save", self.save_settings,
                      relx=1, rely=1, anchor="se")
 
-        # The one that opens the three-box form.  Centred at the bottom
-        # so it is plainly a different kind of thing than the config
-        # rows above it.
-        self._corner(self.settings, "+ Add Gesture", self.show_add_gesture,
-                     relx=0.5, rely=1, anchor="s")
+        # The one that opens the three-box form.  Given the accent colour
+        # and placed on its own, high and centred, so it plainly reads as
+        # the thing to click rather than one more dark button among the
+        # corners -- the earlier version blended into the bottom edge.
+        add = tk.Label(self.settings, text="+  Add Gesture",
+                       bg=ACCENT, fg=BACKGROUND,
+                       font=("Helvetica", 15, "bold"), padx=22, pady=10,
+                       cursor="pointinghand" if sys.platform == "darwin"
+                       else "hand2")
+        add.place(relx=0.5, rely=0.14, anchor="center")
+        add.bind("<Button-1>", lambda _e: self.show_add_gesture())
 
         form = tk.Frame(self.settings, bg=BACKGROUND)
         form.place(relx=0.5, rely=0.45, anchor="center")
