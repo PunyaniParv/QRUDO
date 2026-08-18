@@ -8,6 +8,7 @@ swipe direction depends on that.
 from __future__ import annotations
 
 import sys
+import time
 
 
 class CameraError(RuntimeError):
@@ -30,21 +31,46 @@ class Camera:
         self._capture = None
         self._cv2 = None
 
+    #: How many times, and how long between, to retry a failed open.
+    #: The camera is a shared device: a QRUDO that just quit, a video
+    #: call closing, the system settling a fresh permission grant -- any
+    #: of these holds it for a moment, and the first attempt lands in
+    #: that moment.  "could not open camera 0" was almost always this,
+    #: and a second try a breath later found it free.  So the open waits
+    #: rather than giving up on the first no.
+    OPEN_ATTEMPTS = 5
+    OPEN_BACKOFF = 0.4
+
     def open(self):
         import cv2
 
         self._cv2 = cv2
 
-        # Windows defaults to the Media Foundation backend, which is slow
-        # to open and slow per frame on many webcams.  DirectShow is the
-        # one that behaves.
-        if sys.platform == "win32":
-            self._capture = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
-        else:
-            self._capture = cv2.VideoCapture(self.index)
+        for attempt in range(self.OPEN_ATTEMPTS):
+            # Windows defaults to the Media Foundation backend, which is
+            # slow to open and slow per frame on many webcams.
+            # DirectShow is the one that behaves.
+            if sys.platform == "win32":
+                self._capture = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
+            else:
+                self._capture = cv2.VideoCapture(self.index)
 
-        if not self._capture.isOpened():
-            raise CameraError(f"could not open camera {self.index}")
+            if self._capture.isOpened():
+                break
+
+            # Let go of the half-open handle before waiting, or the
+            # retry contends with our own dead claim.
+            self._capture.release()
+            self._capture = None
+
+            if attempt < self.OPEN_ATTEMPTS - 1:
+                time.sleep(self.OPEN_BACKOFF)
+
+        if self._capture is None or not self._capture.isOpened():
+            raise CameraError(
+                f"could not open camera {self.index} after "
+                f"{self.OPEN_ATTEMPTS} tries -- another app may be using "
+                f"it, or another copy of QRUDO is already running")
 
         # Range is bought with pixels.  Landmark error is roughly fixed in
         # pixels, so it grows against the hand as the hand shrinks, and a

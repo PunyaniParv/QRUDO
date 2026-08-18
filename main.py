@@ -152,6 +152,23 @@ def main(argv=None):
     if args.command:
         return run_one(engine, args)
 
+    # One QRUDO at a time, because there is one camera.  A second launch
+    # -- a stray double-click while the window is behind others -- would
+    # otherwise fail to open the camera the first one holds and show
+    # "could not open camera 0" with no idea why.  The lock is held for
+    # the life of the process and freed automatically when it ends.
+    import singleton
+
+    lock = singleton.SingleInstance()
+
+    try:
+        lock.acquire()
+    except singleton.AlreadyRunning:
+        print("  QRUDO is already running -- look for its window.\n"
+              "  (only one copy can use the camera at a time.)",
+              file=sys.stderr)
+        return 0
+
     # First time in front of this camera: measure the hand before using
     # it.  Nobody discovers a --calibrate flag on their own, and the
     # thresholds are guesses until somebody runs it -- so it is part of
