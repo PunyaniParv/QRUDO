@@ -303,12 +303,20 @@ class App:
                      font=("Helvetica", 14), anchor="e", width=22).grid(
                 row=r, column=0, padx=8, pady=10, sticky="e")
 
-        # Box 1 -- what is the work
+        # Box 1 -- what is the work.  Editable, not a locked list: the
+        # menu offers the jobs QRUDO already knows the shortcut for, and
+        # a person can type anything else -- "open my email", "launch
+        # Blender" -- which the save step turns into an action.
         row(0, "1.  What should it do?")
         self.job_choice = ttk.Combobox(form, values=catalog.job_names(),
-                                       state="readonly", width=24)
+                                       width=24)   # editable (no readonly)
         self.job_choice.set("Next track")
         self.job_choice.grid(row=0, column=1, padx=8, pady=10, sticky="w")
+        tk.Label(form,
+                 text="pick one, or type your own — e.g. \"open Downloads\", "
+                      "\"launch Spotify\", \"go to gmail.com\"",
+                 bg=BACKGROUND, fg=DIM, font=("Helvetica", 11)).grid(
+            row=0, column=2, padx=8, sticky="w")
 
         # Box 2 -- which gesture (recording wired in the next phase)
         row(1, "2.  Which gesture?")
@@ -371,26 +379,37 @@ class App:
         what is missing rather than saving half a gesture.
         """
 
-        from control import catalog
+        from control import catalog, phrase
 
-        job = self.job_choice.get()
+        job = self.job_choice.get().strip()
         app_label = self.app_choice.get()
         locked = app_label != "Front app (auto)"
 
         app_key = {"YouTube Music": "youtube_music",
                    "Spotify": "spotify"}.get(app_label, "any")
 
+        # A menu job first (it knows the per-app shortcut); then, if the
+        # person typed something else, the plain-rule parser turns it
+        # into an action; if neither places it, say so rather than save
+        # a gesture that does nothing.
         action = catalog.resolve(job, app_key, lock_to_app=locked)
 
         if action is None:
+            action = phrase.parse(job)
+
+        if action is None:
             self.add_note.configure(
-                text=f"no built-in shortcut for {job!r} on {app_label} yet")
+                text=f"not sure what {job!r} means — try \"open <name>\", "
+                     f"\"launch <app>\", or \"go to <site>\"")
             return
+
+        from control import actions as action_mod
+        summary = action_mod.describe([action])
 
         if self._recorded_signature is None:
             self.add_note.configure(
-                text=f"ready: {job} → {app_label}. Now record a gesture "
-                     f"(step 2) to save it.")
+                text=f"ready: {summary}. Now record a gesture (step 2) "
+                     f"to save it.")
             return
 
         self.add_note.configure(text="(saving wired in the next phase)")
