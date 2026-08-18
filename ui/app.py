@@ -118,12 +118,14 @@ class App:
 
         self.home = tk.Frame(self.root, bg=BACKGROUND)
         self.settings = tk.Frame(self.root, bg=BACKGROUND)
+        self.add_gesture = tk.Frame(self.root, bg=BACKGROUND)
 
-        for page in (self.home, self.settings):
+        for page in (self.home, self.settings, self.add_gesture):
             page.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         self._build_home(VERSION)
         self._build_settings()
+        self._build_add_gesture()
         self.home.tkraise()
 
     # -- pages ---------------------------------------------------------
@@ -141,8 +143,11 @@ class App:
                           font=("Helvetica", 14), padx=16, pady=8,
                           cursor="pointinghand" if sys.platform == "darwin"
                           else "hand2")
+        # Nudge off the very edge, except a centred button which wants no
+        # horizontal nudge at all.
+        nudge_x = 0 if relx == 0.5 else (16 if relx == 0 else -16)
         button.place(relx=relx, rely=rely, anchor=anchor,
-                     x=(16 if relx == 0 else -16),
+                     x=nudge_x,
                      y=(14 if rely == 0 else -14))
 
         button.bind("<Button-1>", lambda _event: command())
@@ -233,6 +238,12 @@ class App:
         self._corner(self.settings, "Save", self.save_settings,
                      relx=1, rely=1, anchor="se")
 
+        # The one that opens the three-box form.  Centred at the bottom
+        # so it is plainly a different kind of thing than the config
+        # rows above it.
+        self._corner(self.settings, "+ Add Gesture", self.show_add_gesture,
+                     relx=0.5, rely=1, anchor="s")
+
         form = tk.Frame(self.settings, bg=BACKGROUND)
         form.place(relx=0.5, rely=0.45, anchor="center")
 
@@ -255,7 +266,128 @@ class App:
                                       font=("Helvetica", 13))
         self.settings_note.place(relx=0.5, rely=0.87, anchor="center")
 
+    def _build_add_gesture(self):
+        """The three-box form: what work, which gesture, which app.
+
+        Deliberately plain and readable -- this is the screen the user
+        asked to see so they can react to it.  The 'work' box is the
+        catalog; the 'gesture' box will record a shape (wired next); the
+        'app' box names where the action lands, with the global/locked
+        choice.
+        """
+
+        from tkinter import ttk
+
+        from control import catalog
+
+        self._corner(self.add_gesture, "Back", self.show_settings,
+                     relx=0, rely=0, anchor="nw")
+        self._corner(self.add_gesture, "Save gesture", self.save_gesture,
+                     relx=1, rely=1, anchor="se")
+
+        tk.Label(self.add_gesture, text="Teach QRUDO a new gesture",
+                 bg=BACKGROUND, fg=INK, font=("Helvetica", 20, "bold")).place(
+            relx=0.5, rely=0.1, anchor="center")
+
+        form = tk.Frame(self.add_gesture, bg=BACKGROUND)
+        form.place(relx=0.5, rely=0.48, anchor="center")
+
+        def row(r, label):
+            tk.Label(form, text=label, bg=BACKGROUND, fg=INK,
+                     font=("Helvetica", 14), anchor="e", width=22).grid(
+                row=r, column=0, padx=8, pady=10, sticky="e")
+
+        # Box 1 -- what is the work
+        row(0, "1.  What should it do?")
+        self.job_choice = ttk.Combobox(form, values=catalog.job_names(),
+                                       state="readonly", width=24)
+        self.job_choice.set("Next track")
+        self.job_choice.grid(row=0, column=1, padx=8, pady=10, sticky="w")
+
+        # Box 2 -- which gesture (recording wired in the next phase)
+        row(1, "2.  Which gesture?")
+        self.gesture_status = tk.Label(
+            form, text="record it  (coming: hold your shape to the camera)",
+            bg=PANEL, fg=DIM, font=("Helvetica", 13), padx=12, pady=8,
+            cursor="pointinghand" if sys.platform == "darwin" else "hand2")
+        self.gesture_status.grid(row=1, column=1, padx=8, pady=10, sticky="w")
+        self.gesture_status.bind("<Button-1>",
+                                 lambda _e: self.record_gesture())
+
+        # Box 3 -- which app, and whether locked
+        row(2, "3.  Which app?")
+        self.app_choice = ttk.Combobox(
+            form, values=["YouTube Music", "Spotify", "Front app (auto)"],
+            state="readonly", width=24)
+        self.app_choice.set("YouTube Music")
+        self.app_choice.grid(row=2, column=1, padx=8, pady=10, sticky="w")
+
+        # Scope -- where the gesture applies
+        row(3, "Where it works:")
+        self.scope_choice = ttk.Combobox(
+            form, values=["Global (anywhere)",
+                          "Only when that app is in front"],
+            state="readonly", width=24)
+        self.scope_choice.set("Global (anywhere)")
+        self.scope_choice.grid(row=3, column=1, padx=8, pady=10, sticky="w")
+
+        tk.Label(self.add_gesture,
+                 text="Tip: Ctrl+Shift+←/→ switches the target app "
+                      "live, any time.",
+                 bg=BACKGROUND, fg=DIM, font=("Helvetica", 12)).place(
+            relx=0.5, rely=0.82, anchor="center")
+
+        self.add_note = tk.Label(self.add_gesture, text="", bg=BACKGROUND,
+                                 fg=ACCENT, font=("Helvetica", 13))
+        self.add_note.place(relx=0.5, rely=0.9, anchor="center")
+
+        #: Filled once a shape is recorded.
+        self._recorded_signature = None
+
     # -- what the corners do -------------------------------------------
+
+    def show_add_gesture(self):
+        self.add_gesture.tkraise()
+
+    def record_gesture(self):
+        """Record the shape held to the camera.  Wired in the next phase;
+        for now it tells the truth about that rather than pretending."""
+
+        self.add_note.configure(
+            text="gesture recording is the next piece -- the form is here "
+                 "first so you can shape it")
+
+    def save_gesture(self):
+        """Turn the three boxes into a saved custom gesture.
+
+        The work and app resolve through the catalog; the shape comes
+        from recording.  Without a recorded shape yet, this explains
+        what is missing rather than saving half a gesture.
+        """
+
+        from control import catalog
+
+        job = self.job_choice.get()
+        app_label = self.app_choice.get()
+        locked = app_label != "Front app (auto)"
+
+        app_key = {"YouTube Music": "youtube_music",
+                   "Spotify": "spotify"}.get(app_label, "any")
+
+        action = catalog.resolve(job, app_key, lock_to_app=locked)
+
+        if action is None:
+            self.add_note.configure(
+                text=f"no built-in shortcut for {job!r} on {app_label} yet")
+            return
+
+        if self._recorded_signature is None:
+            self.add_note.configure(
+                text=f"ready: {job} → {app_label}. Now record a gesture "
+                     f"(step 2) to save it.")
+            return
+
+        self.add_note.configure(text="(saving wired in the next phase)")
 
     def show_settings(self):
         self.settings.tkraise()
