@@ -37,6 +37,11 @@ ACTION_TYPES = {
     "run_command": ("command",),  # a shell command -- the guarded one
 }
 
+#: Optional keys an action may also carry, kept if present.  ``target_app``
+#: locks a keystroke to one app -- "global trigger, land it in YouTube
+#: Music" -- delivered to that app even while another window is focused.
+OPTIONAL_KEYS = {"target_app"}
+
 #: Patterns a shell command may never contain, however it was saved.
 #: Deliberately blunt and broad: this is a backstop behind the
 #: confirmation flag, not the primary guard, so it errs toward refusing.
@@ -79,6 +84,14 @@ def validate(action: dict) -> dict:
         if not isinstance(value, str) or not value.strip():
             raise ActionError(f"a {kind} action needs a non-empty {key!r}")
         clean[key] = value.strip()
+
+    # Optional extras, kept only when they are a non-empty string, so a
+    # gesture locked to one app carries that app and one that is not
+    # carries nothing rather than an empty marker.
+    for key in OPTIONAL_KEYS:
+        value = action.get(key)
+        if isinstance(value, str) and value.strip():
+            clean[key] = value.strip()
 
     if kind == "run_command":
         # The confirmation flag rides along, but it is trusted only as
@@ -208,7 +221,8 @@ class ActionRunner:
             return f"opened {action['url']}"
 
         if kind == "keystroke":
-            return self._keystroke(action["combo"])
+            return self._keystroke(action["combo"],
+                                   action.get("target_app", ""))
 
         if kind == "builtin":
             return self._builtin(action["command"])

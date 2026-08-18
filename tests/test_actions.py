@@ -104,7 +104,8 @@ class RecordingRunner(ActionRunner):
         self.builtins = []
         super().__init__(
             opener=lambda argv: self.opened.append(argv),
-            keystroke=lambda combo: self.keyed.append(combo) or f"sent {combo}",
+            keystroke=lambda combo, target="": self.keyed.append(
+                (combo, target)) or f"sent {combo}",
             builtin=lambda cmd: self.builtins.append(cmd) or f"did {cmd}")
 
 
@@ -130,7 +131,7 @@ class TestRunner(unittest.TestCase):
              {"type": "keystroke", "combo": "cmd+n"},
              {"type": "builtin", "command": "VOLUME_UP"}]))
         self.assertEqual(self.runner.opened, [["open", "-a", "A"]])
-        self.assertEqual(self.runner.keyed, ["cmd+n"])
+        self.assertEqual(self.runner.keyed, [("cmd+n", "")])
         self.assertEqual(self.runner.builtins, ["VOLUME_UP"])
 
     def test_an_unconfirmed_command_refuses_at_run_time(self):

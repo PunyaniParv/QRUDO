@@ -64,6 +64,38 @@ class TestResolve(unittest.TestCase):
                     Command(action["command"])   # raises if not real
 
 
+class TestLockedToOneApp(unittest.TestCase):
+    """The user's whole point: global trigger, landing in one app.
+
+    "Next track for YouTube Music, locked" is a keystroke tagged with
+    YouTube Music's real name, so the swipe fires from anywhere and the
+    key still lands there -- not on YouTube, not on the front window.
+    """
+
+    def test_next_track_locked_to_youtube_music(self):
+        action = catalog.resolve("Next track", "youtube_music",
+                                 lock_to_app=True)
+
+        self.assertEqual(action["combo"], "shift+n")
+        self.assertEqual(action["target_app"], "YouTube Music")
+
+    def test_youtube_music_is_not_youtube(self):
+        """They are different targets; only the real app can be locked."""
+
+        music = catalog.resolve("Next track", "youtube_music",
+                                lock_to_app=True)
+        site = catalog.resolve("Next track", "youtube", lock_to_app=True)
+
+        self.assertEqual(music.get("target_app"), "YouTube Music")
+        self.assertNotIn("target_app", site,
+                         "a browser site has no app of its own to lock to")
+
+    def test_unlocked_carries_no_target(self):
+        action = catalog.resolve("Next track", "youtube_music",
+                                 lock_to_app=False)
+        self.assertNotIn("target_app", action)
+
+
 class TestForm(unittest.TestCase):
     def test_apps_for_a_keystroke_job_lists_its_apps(self):
         apps = catalog.apps_for("Next track")

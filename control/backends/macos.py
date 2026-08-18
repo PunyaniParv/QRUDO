@@ -592,7 +592,7 @@ class MacOSController(Controller):
             return
         self._osascript(f'tell application "System Events" to key code {key_code}')
 
-    def send_combo(self, combo: str) -> str:
+    def send_combo(self, combo: str, target_app: str = "") -> str:
         """Press a user-taught keyboard shortcut, e.g. "cmd+shift+n".
 
         The base key is pressed with the modifier flags set on the event,
@@ -600,9 +600,12 @@ class MacOSController(Controller):
         gesture reaches an action QRUDO has no handler for -- next track,
         mute, a window shortcut -- with the key the app already uses.
 
-        It goes to whatever has focus, deliberately: a chord like
-        cmd+shift+n means something to the frontmost app, and unlike the
-        play/pause letter there is no safe way to aim it at a background
+        With ``target_app`` the chord is delivered to that app's process
+        even while another window is focused -- which is what "global
+        trigger, locked to YouTube Music" needs: the swipe fires from
+        anywhere and the key still lands in YouTube Music.  Without it,
+        the chord goes to whatever has focus.  A named app that is not
+        running refuses, rather than firing the key into the wrong
         window.
         """
 
@@ -610,15 +613,27 @@ class MacOSController(Controller):
 
         parsed = parse(combo)          # raises ComboError -> UNSUPPORTED
 
+        to_pid = None
+        if target_app:
+            to_pid = self._target_pid(target_app)
+            if to_pid is None:
+                raise UnsupportedCommand(
+                    f"{target_app} is not running, so its shortcut has "
+                    f"nowhere to go")
+
         if self._quartz is not None:
             quartz, _ = self._quartz
             for pressed in (True, False):
                 event = quartz.CGEventCreateKeyboardEvent(
                     None, parsed.key_code, pressed)
                 quartz.CGEventSetFlags(event, parsed.flags)
-                quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+                if to_pid is None:
+                    quartz.CGEventPost(quartz.kCGHIDEventTap, event)
+                else:
+                    quartz.CGEventPostToPid(to_pid, event)
 
-            return f"sent {parsed.describe()}"
+            where = f" to {target_app}" if target_app else ""
+            return f"sent {parsed.describe()}{where}"
 
         raise UnsupportedCommand(
             "custom keystrokes need Quartz (pyobjc) -- not available here")

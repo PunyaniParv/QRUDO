@@ -84,8 +84,8 @@ class RecordingController(Controller):
         self.sent = []
         self.opened = []
 
-    def send_combo(self, combo):
-        self.sent.append(combo)
+    def send_combo(self, combo, target_app=""):
+        self.sent.append((combo, target_app) if target_app else combo)
         return f"sent {combo}"
 
     def open_argv(self, argv):

@@ -85,13 +85,29 @@ def apps_for(job_name):
     return list(entry["keys"])
 
 
-def resolve(job_name, app="any"):
+#: The app each catalog key belongs to, as its real macOS app name, so
+#: a keystroke locked to it can be delivered to that app by name.  A
+#: browser-site job ("youtube") has no app of its own -- it lives in a
+#: browser -- so it stays unlocked and rides the front window.
+APP_NAMES = {
+    "youtube_music": "YouTube Music",
+    "spotify": "Spotify",
+}
+
+
+def resolve(job_name, app="any", lock_to_app=False):
     """The action a named job becomes, for a chosen app.
 
     Returns a single action dict (the same shape control/actions uses),
     or None if the job is unknown.  A keystroke job with no key for the
     chosen app falls back to its "any" key, and if it has none, to None
     -- the form then asks the person to type the shortcut instead.
+
+    ``lock_to_app`` is the "global trigger, land it in one app" wish: a
+    keystroke is tagged with the app's real name so it is delivered
+    there whatever window is focused.  Only apps with a known real name
+    (a real application, not a browser site) can be locked; a site job
+    stays on the front window because it has no app of its own.
     """
 
     entry = JOBS.get(job_name)
@@ -100,6 +116,8 @@ def resolve(job_name, app="any"):
         return None
 
     if entry["kind"] == "builtin":
+        # Built-ins are system-wide already; the target is the config's
+        # job, not this action's.
         return {"type": "builtin", "command": entry["command"]}
 
     keys = entry["keys"]
@@ -108,4 +126,9 @@ def resolve(job_name, app="any"):
     if not combo:
         return None
 
-    return {"type": "keystroke", "combo": combo}
+    action = {"type": "keystroke", "combo": combo}
+
+    if lock_to_app and app in APP_NAMES:
+        action["target_app"] = APP_NAMES[app]
+
+    return action
