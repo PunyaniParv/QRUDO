@@ -30,7 +30,7 @@ def _env_microphone_device() -> str | int | None:
 @dataclass(frozen=True)
 class VoiceConfig:
     # --- Audio capture ---
-    sample_rate: int = 16000          # Porcupine and Whisper both want 16kHz mono
+    sample_rate: int = 16000          # openWakeWord and Whisper both want 16kHz mono
     channels: int = 1
 
     # Which microphone to use. None = the operating system's default input
@@ -43,21 +43,32 @@ class VoiceConfig:
     # disconnected), SARV falls back to the OS default instead of crashing.
     microphone_device: str | int | None = _env_microphone_device()
 
-    # --- Wake word (Picovoice Porcupine) ---
-    # Get a free AccessKey at https://console.picovoice.ai
-    # Set it as an environment variable rather than hardcoding it:
-    #   Windows (PowerShell):  setx PICOVOICE_ACCESS_KEY "your-key-here"
-    picovoice_access_key: str = os.getenv("PICOVOICE_ACCESS_KEY", "")
+    # --- Wake word (local, replaceable engine) ---
+    # Which wake-word backend to use. The rest of the pipeline only talks to
+    # the WakeWordEngine interface (voice/wake_word.py); this field selects the
+    # concrete implementation. Currently only "openwakeword" is supported.
+    wake_word_engine: str = os.getenv("SARV_WAKE_WORD_ENGINE", "openwakeword")
 
-    # Path to the custom "Hey Qrudo" .ppn file you download from the
-    # Picovoice console (choose Windows as the target platform).
-    # Place it in this project and point to it here, e.g.:
-    #   voice/models/hey-qrudo_en_windows.ppn
-    wake_word_path: str = os.getenv(
-        "SARV_WAKE_WORD_PATH",
-        os.path.join(os.path.dirname(__file__), "models", "hey-qrudo_en_windows.ppn"),
+    # Which bundled openWakeWord *pretrained* model name to use when
+    # wake_word_model_path is unset. Valid names: alexa, hey_jarvis,
+    # hey_mycroft, hey_rhasspy, timer, weather.
+    # LICENSE CAVEAT: these pretrained models are CC BY-NC-SA 4.0
+    # (non-commercial). Fine for local development/manual testing, but MUST NOT
+    # be shipped in a commercial QRUDO build. For production, train a custom
+    # "Hey QRUDO" model on permissive data and point wake_word_model_path at it.
+    wake_word_model_name: str = os.getenv("SARV_WAKE_WORD_MODEL_NAME", "hey_jarvis")
+
+    # Absolute path to a custom wake-word model file (.onnx). When set, this
+    # takes precedence over wake_word_model_name. This is where a trained
+    # "Hey QRUDO" model goes. Leave None to use wake_word_model_name.
+    wake_word_model_path: str | None = (
+        os.getenv("SARV_WAKE_WORD_MODEL_PATH") or None
     )
-    wake_word_sensitivity: float = 0.6  # 0.0 (fewer false positives) to 1.0 (more sensitive)
+
+    # Detection threshold: 0.0 (fewest false positives, less sensitive) to 1.0
+    # (most sensitive, more false positives). 0.5 is openwakeword's recommended
+    # default.
+    wake_word_sensitivity: float = 0.5
 
     # --- Silence-based end-of-utterance detection ---
     # Simple RMS energy check — no extra native dependency (avoids webrtcvad

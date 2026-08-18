@@ -1,4 +1,4 @@
 faster-whisper==1.0.3
-pvporcupine==3.0.2
+openwakeword==0.6.0
 sounddevice==0.4.6
 numpy>=1.24,<2.0

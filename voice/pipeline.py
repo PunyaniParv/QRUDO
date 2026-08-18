@@ -11,7 +11,7 @@ this file — keep this module's job narrow so it stays fast and testable.
 import time
 from typing import Callable
 
-from voice.wake_word import WakeWordListener
+from voice.wake_word import WakeWordError, create_wake_word_engine
 from voice.audio_capture import record_until_silence
 from voice.stt import SpeechToText
 
@@ -35,9 +35,18 @@ def run_voice_loop(on_text: TextHandler, on_listening: Callable[[], None] | None
     stt = SpeechToText()
 
     print("[SARV] Starting wake word listener...")
-    listener = WakeWordListener()
+    try:
+        listener = create_wake_word_engine()
+        listener.initialize()
+    except WakeWordError as exc:
+        print(f"[SARV] Wake-word unavailable: {exc}")
+        print("[SARV] Voice control will not start. No commands executed.")
+        return
+    except Exception as exc:  # genuine (non-anticipated) startup failure
+        print(f"[SARV] Failed to start wake-word listener: {exc}")
+        raise
 
-    print('[SARV] Ready. Say "Hey Qrudo" to speak a command.')
+    print(f'[SARV] Ready. Say the wake phrase ({listener.name}).')
     try:
         while True:
             listener.wait_for_wake_word()
