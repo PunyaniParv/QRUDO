@@ -175,8 +175,9 @@ class Camera:
 
         raise CameraError(
             f"lost the camera: {self.MISSES_ALLOWED} frames in a row came "
-            f"back empty. Another program may have taken it, or it may have "
-            f"been unplugged.")
+            f"back empty. Another program may have taken it, it may have "
+            f"been unplugged -- or macOS may be blocking it: System "
+            f"Settings > Privacy & Security > Camera, enable QRUDO.")
 
     def frames(self):
         """Every frame until the camera stops."""

@@ -103,6 +103,8 @@ class App:
         self.last_spans = None      # this frame's finger spans, for recording
         self._frame_seq = 0         # bumped per frame; latest is not nulled
         self._drawn_seq = -1        # so the recorder can read latest too
+        self._vision_died = False   # set by the worker when the loop ends
+        self._auto_retried = False  # one free auto-recovery per death
         self.stop = threading.Event()
         self.worker = None
         self.preview_photo = None   # kept, or Tk garbage-collects it
@@ -632,6 +634,9 @@ class App:
         # measure a shape from the same reading the detector used.
         self.last_spans = spans
         self._frame_seq += 1
+        # Frames flowing again means any camera trouble passed; the next
+        # death gets its free auto-recovery back.
+        self._auto_retried = False
 
     def attach_recorded(self, name, signature, direction, thumb_gap=None):
         """The recorder hands a finished shape back here; remember it so
@@ -649,6 +654,12 @@ class App:
             text="gesture recorded — now pick what it does and press Save")
 
     def tick(self):
+        # A vision loop that ended without being asked to is a dead
+        # camera; handle it here on the main thread, where Tk is safe.
+        if self._vision_died and not self.stop.is_set():
+            self._vision_died = False
+            self._camera_died()
+
         latest = self.latest
 
         # Only redraw when the frame is new -- but do NOT null latest,
@@ -764,9 +775,38 @@ class App:
                        on_frame=self.take_frame,
                        should_stop=self.stop.is_set,
                        camera=camera)
+            # The loop ended.  If nobody asked it to stop, the camera
+            # died under us -- reads coming back empty (another app took
+            # it, or macOS blocked it).  Flag it for the main-thread
+            # tick, which explains and recovers; a worker thread must
+            # not touch Tk itself.
+            if not self.stop.is_set():
+                self._vision_died = True
 
         self.worker = threading.Thread(target=vision, daemon=True)
         self.worker.start()
+
+    def _camera_died(self):
+        """The camera stopped mid-session: explain, and heal.
+
+        The first death auto-retries after a beat -- most causes (an app
+        briefly grabbing the camera, a permission dialog settling) clear
+        by themselves, and the person should not have to click for
+        that.  A second death in a row stops auto-retrying and leaves
+        the button and the privacy hint, so a genuinely blocked camera
+        is a clear message rather than a silent light going off.
+        """
+
+        self.result_label.configure(
+            text="The camera stopped -- another app may have taken it, "
+                 "or macOS is blocking it (System Settings > Privacy & "
+                 "Security > Camera > QRUDO).", fg="#e06c75")
+
+        if not self._auto_retried:
+            self._auto_retried = True
+            self.root.after(2000, self._start_vision)
+        else:
+            self._show_retry()
 
     def _show_retry(self):
         if self._retry_button is not None:
