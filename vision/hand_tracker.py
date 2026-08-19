@@ -116,41 +116,31 @@ class Scanner:
     WIDEN = 1.5
     MISSES_TO_SWEEP = 5
 
-    #: While following a NEAR hand, every this-many-th look is the full
-    #: frame instead of the window -- because the window is exactly why
-    #: a second hand could never join: it hugs the first hand, and a
-    #: hand raised anywhere else was simply not in the picture.  Both
-    #: palms read as one palm for that reason alone.  A near hand is
-    #: found in full frames easily (full frames were all there was
-    #: before the scanner), so the wide look costs nothing there; a
-    #: FAR hand is not, so far tracking keeps the pure window and the
-    #: range floor keeps its ground -- far two-hand poses can wait.
-    FULL_LOOK_EVERY = 6
-    NEAR_ENOUGH = 0.07
-
     def __init__(self):
         self._step = 0
         self._window = None
         self._misses = 0
         self._span = 0.0
-        self._beat = 0
 
     def view(self):
         """The (x0, y0, w, h) fraction of the frame to look at now."""
 
         if self._window is not None:
-            self._beat += 1
-
-            if (self._span >= self.NEAR_ENOUGH
-                    and self._beat % self.FULL_LOOK_EVERY == 0):
-                return self.FULL
-
             return self._window
 
         view = self.SWEEP[self._step % len(self.SWEEP)]
         self._step += 1
 
         return view
+
+    def following_near(self):
+        """Whether a hand near enough for full-frame work is tracked.
+
+        The spotter (see HandTracker.track) asks this before spending
+        a look on the whole frame: near hands are found there easily,
+        far hands are not, and far is the window's territory."""
+
+        return self._window is not None and self._span >= 0.07
 
     def found(self, cx, cy, span):
         """A hand at (cx, cy), ``span`` hand-scale, all frame fractions."""
@@ -207,6 +197,7 @@ class HandTracker:
         self.model_path = Path(model_path)
         self.confidence = confidence
         self._landmarker = None
+        self._spotter = None
         self._mp = None
         self._warned_no_world = False
         self._scanner = Scanner()
@@ -246,6 +237,29 @@ class HandTracker:
                 min_tracking_confidence=self.confidence,
             )
         )
+
+        # A second, STATELESS landmarker with one job: noticing that a
+        # second hand has entered the frame.  The follow window hugs
+        # the tracked hand -- which is exactly why a second hand could
+        # never join a pose: it was not in the picture the detector
+        # saw.  And the video-mode tracker cannot simply glance at the
+        # full frame now and then, because video mode leans on frame-
+        # to-frame continuity and a jumping view breaks it.  So the
+        # main tracker keeps its steady window, and this image-mode
+        # spotter -- no memory, no continuity to break -- checks the
+        # whole frame every few frames while a near hand is followed.
+        # When it sees two hands, the window is widened to hold both,
+        # and from then on the main tracker follows the pair.
+        self._spotter = vision.HandLandmarker.create_from_options(
+            vision.HandLandmarkerOptions(
+                base_options=mp_python.BaseOptions(
+                    model_asset_path=str(self.model_path)),
+                running_mode=vision.RunningMode.IMAGE,
+                num_hands=2,
+                min_hand_detection_confidence=self.confidence,
+            )
+        )
+        self._spot_beat = 0
 
         self._last_ms = 0
         self._last_centre = None   # where the primary hand last was
@@ -371,12 +385,43 @@ class HandTracker:
 
         self._scanner.found(c0.x, c0.y, s0)
 
+        # One hand tracked: every sixth frame, while it is near enough
+        # for full-frame work, the spotter checks whether a second hand
+        # is out there.  Seeing one, it widens the window to hold both;
+        # the pair itself is then tracked by the main landmarker from
+        # the very next frame.
+        self._spot_beat += 1
+
+        if (self._spot_beat % 6 == 0 and self._scanner.following_near()
+                and self._spotter is not None):
+            whole = self._mp.Image(
+                image_format=self._mp.ImageFormat.SRGB,
+                data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            spotted = self._spotter.detect(whole)
+
+            if len(spotted.hand_landmarks) > 1:
+                def mid(lm):
+                    return lm[hand_state.MIDDLE_MCP]
+
+                a, b = spotted.hand_landmarks[0], spotted.hand_landmarks[1]
+                sa, sb = hand_state.hand_scale(a), hand_state.hand_scale(b)
+                dist = ((mid(a).x - mid(b).x) ** 2
+                        + (mid(a).y - mid(b).y) ** 2) ** 0.5
+                span = max(sa, sb,
+                           (dist + sa + sb) / self._scanner.WINDOW_SPANS)
+                self._scanner.found((mid(a).x + mid(b).x) / 2,
+                                    (mid(a).y + mid(b).y) / 2, span)
+
         return primary
 
     def close(self):
         if self._landmarker is not None:
             self._landmarker.close()
             self._landmarker = None
+
+        if self._spotter is not None:
+            self._spotter.close()
+            self._spotter = None
 
     def __enter__(self):
         return self.open()

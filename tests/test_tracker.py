@@ -130,31 +130,34 @@ class TestFollowing(unittest.TestCase):
 
         self.assertEqual(scanner.view(), Scanner.FULL)
 
-    def test_a_near_follow_takes_a_wide_look_for_the_second_hand(self):
-        """The window hugs the first hand -- which is exactly why a
-        second hand could never join a pose: it was not in the picture
-        the detector saw.  Near, every sixth look is the full frame,
-        so both-hands gestures can form wherever the second hand comes
-        up."""
+    def test_the_follow_view_never_jumps(self):
+        """Video-mode tracking leans on frame-to-frame continuity, so
+        the follow view must stay the steady window every single
+        frame -- the whole-frame check for a second hand belongs to
+        the stateless spotter, never to this view."""
 
         scanner = Scanner()
         scanner.found(0.5, 0.5, span=0.12)
 
-        views = [scanner.view() for _ in range(Scanner.FULL_LOOK_EVERY)]
+        views = {scanner.view() for _ in range(20)}
 
-        self.assertEqual(views.count(Scanner.FULL), 1)
+        self.assertEqual(len(views), 1)
+        self.assertNotIn(Scanner.FULL, views)
 
-    def test_a_far_follow_never_leaves_its_window(self):
-        """Far hands are what the window exists for: a far hand is not
-        findable in the full frame at all, so out there the follow
-        stays pure and the range floor keeps its ground."""
+    def test_near_is_spotter_territory_and_far_is_not(self):
+        """The spotter only spends full-frame looks where full frames
+        can actually find hands: near.  Far is the window's ground,
+        and the range floor keeps it."""
 
         scanner = Scanner()
+        scanner.found(0.5, 0.5, span=0.12)
+        self.assertTrue(scanner.following_near())
+
         scanner.found(0.5, 0.5, span=0.03)
+        self.assertFalse(scanner.following_near())
 
-        views = [scanner.view() for _ in range(3 * Scanner.FULL_LOOK_EVERY)]
-
-        self.assertNotIn(Scanner.FULL, views)
+        scanner._window = None
+        self.assertFalse(scanner.following_near())
 
     def test_a_miss_with_no_window_is_quiet(self):
         """The sweep misses constantly by nature; only the window cares."""

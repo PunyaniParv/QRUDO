@@ -364,11 +364,12 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                     # of my hand fired") arrives with the measurements
                     # to tune from, not just the verdict.
                     vision_log.info(
-                        "hand ext=%s gesture=%s thumb(rise=%.2f "
+                        "hand ext=%s gesture=%s hands=%d thumb(rise=%.2f "
                         "spread=%.2f gap=%.2f) why=%s",
                         {name: round(span, 2) for name, span
                          in hand_state.finger_span(hand).items()},
                         gesture,
+                        2 if partner is not None else 1,
                         hand_state.thumb_rise(hand),
                         hand_state.thumb_spread(hand),
                         hand_state.thumb_gap(hand),
