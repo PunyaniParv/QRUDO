@@ -112,10 +112,21 @@ def _warm_font_cache():
     """
 
     import os
+    import sys as _sys
+
+    if "matplotlib" in _sys.modules:
+        # Already imported before we could point it anywhere -- nothing
+        # to do, and forcing the dir now would not move its cache.
+        return
 
     try:
         from paths import data_dir
-        os.environ.setdefault("MPLCONFIGDIR", str(data_dir() / "mpl-cache"))
+        cache = data_dir() / "mpl-cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        # Force, not setdefault: a packaged app may already carry an
+        # MPLCONFIGDIR pointing inside the read-only bundle, where the
+        # cache cannot be written and so is rebuilt every launch.
+        os.environ["MPLCONFIGDIR"] = str(cache)
         import matplotlib.font_manager  # noqa: F401  (builds the cache)
     except Exception:
         pass
