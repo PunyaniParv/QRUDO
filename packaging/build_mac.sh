@@ -50,6 +50,51 @@ if [ -n "$CACHE_DIR" ] && [ -d "$CACHE_DIR" ]; then
   echo "  bundled matplotlib font cache from $CACHE_DIR"
 fi
 
+# --- the modern icon --------------------------------------------------
+# Every neighbour (Chrome, VS Code, Notion) ships its icon as a
+# compiled asset catalog -- Assets.car plus CFBundleIconName -- and
+# macOS Tahoe renders THOSE consistently on every surface.  A legacy
+# icns is drawn as-is in the app switcher but inset inside the system
+# boundary in Finder, so the same art looked wrong somewhere no matter
+# its geometry.  The catalog is compiled from the same icns, so there
+# is still exactly one source of art.
+if xcrun actool --version >/dev/null 2>&1; then
+  ICONTMP=$(mktemp -d)
+  iconutil -c iconset assets/qrudo.icns -o "$ICONTMP/q.iconset"
+  SET="$ICONTMP/Assets.xcassets/AppIcon.appiconset"
+  mkdir -p "$SET"
+  cp "$ICONTMP/q.iconset/"*.png "$SET/"
+  cat > "$SET/Contents.json" <<'JSON'
+{
+  "images": [
+    {"idiom": "mac", "size": "16x16", "scale": "1x", "filename": "icon_16x16.png"},
+    {"idiom": "mac", "size": "16x16", "scale": "2x", "filename": "icon_16x16@2x.png"},
+    {"idiom": "mac", "size": "32x32", "scale": "1x", "filename": "icon_32x32.png"},
+    {"idiom": "mac", "size": "32x32", "scale": "2x", "filename": "icon_32x32@2x.png"},
+    {"idiom": "mac", "size": "128x128", "scale": "1x", "filename": "icon_128x128.png"},
+    {"idiom": "mac", "size": "128x128", "scale": "2x", "filename": "icon_128x128@2x.png"},
+    {"idiom": "mac", "size": "256x256", "scale": "1x", "filename": "icon_256x256.png"},
+    {"idiom": "mac", "size": "256x256", "scale": "2x", "filename": "icon_256x256@2x.png"},
+    {"idiom": "mac", "size": "512x512", "scale": "1x", "filename": "icon_512x512.png"},
+    {"idiom": "mac", "size": "512x512", "scale": "2x", "filename": "icon_512x512@2x.png"}
+  ],
+  "info": {"author": "xcode", "version": 1}
+}
+JSON
+  if xcrun actool "$ICONTMP/Assets.xcassets" \
+      --compile "$APP/Contents/Resources" \
+      --platform macosx --minimum-deployment-target 11.0 \
+      --app-icon AppIcon \
+      --output-partial-info-plist "$ICONTMP/partial.plist" \
+      >/dev/null 2>&1 \
+      && [ -f "$APP/Contents/Resources/Assets.car" ]; then
+    echo "  asset-catalog icon compiled -- rendered like the neighbours"
+  else
+    echo "  ! actool could not compile the icon catalog; icns only"
+  fi
+  rm -rf "$ICONTMP"
+fi
+
 # --- a signing identity that stays put --------------------------------
 # macOS pins every permission grant -- camera, Accessibility -- to the
 # app's code signature.  Ad-hoc signing mints a NEW signature on every

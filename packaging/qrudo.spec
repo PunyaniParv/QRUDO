@@ -76,6 +76,11 @@ if sys.platform == "darwin":
         icon=os.path.join(ROOT, "assets", "qrudo.icns"),
         bundle_identifier="com.qrudo.app",
         info_plist={
+            # The modern icon: build_mac.sh compiles Assets.car into
+            # Resources, and this name points macOS at it.  Surfaces on
+            # Tahoe render catalog icons consistently; the legacy icns
+            # below stays as the fallback for older systems.
+            "CFBundleIconName": "AppIcon",
             # This sentence is the camera permission dialog.
             "NSCameraUsageDescription":
                 "QRUDO watches your hand through the camera so your "
