@@ -174,6 +174,19 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
 
     hotkeys.watch_targets(engine)
 
+    # Voice is a second input to the same engine: same cooldown, same
+    # dry-run, same log, same overlay.  Best-effort on its own thread --
+    # a machine without the voice requirements, a microphone or a
+    # wake-word model prints why and runs camera-only, exactly as before.
+    # Tuning mode performs nothing, so it wants no voice either.
+    voice = None
+
+    if (getattr(args, "voice", False) or engine.config.voice_enabled) \
+            and not tuning:
+        from .voice import start as start_voice
+
+        voice = start_voice(engine)
+
     # Both are opened here, on this thread, in series.  Opening the
     # camera on a *second* background thread once looked like free
     # speed -- the model could load while it opened -- and it deadlocked
@@ -206,7 +219,7 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
             tracker.close()
             return 1
 
-    print(banner(engine, router, args, tuning), flush=True)
+    print(banner(engine, router, args, tuning, voice_on=voice is not None), flush=True)
     print(picture(camera), flush=True)
 
     show_window = not args.no_window
@@ -344,6 +357,10 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
     except KeyboardInterrupt:
         pass
     finally:
+        # The voice thread must stop submitting before the engine's own
+        # worker is closed, or a late command would restart it.
+        if voice is not None:
+            voice.stop()
         camera.release()
         tracker.close()
         engine.close()
@@ -533,12 +550,13 @@ def _commits_behind():
         return 0
 
 
-def banner(engine, router, args, tuning):
+def banner(engine, router, args, tuning, voice_on=False):
     lines = [
         "",
         f"  QRUDO  --  {engine.controller.name}"
         f"{'  [TUNING: gestures shown, NO commands run]' if tuning else ''}"
-        f"{'  [DRY RUN]' if engine.config.dry_run and not tuning else ''}",
+        f"{'  [DRY RUN]' if engine.config.dry_run and not tuning else ''}"
+        f"{'  [VOICE ON]' if voice_on else ''}",
         build_stamp(),
         "",
     ]

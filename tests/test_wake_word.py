@@ -300,9 +300,11 @@ class MicrophoneIntegrationCase(unittest.TestCase):
         with mock.patch.object(
             wake_word, "MicrophoneStream", return_value=_FakeStream(frames=None)
         ), redirect_stdout(io.StringIO()) as buf:
-            engine.wait_for_wake_word()
-        # Python-side patience: 3 consecutive frames >= threshold are needed.
-        self.assertEqual(engine._model.calls, 3)
+            engine.wait_for_wake_word(debug=True)
+        # Peak trigger: two 0.9 frames give peak_support (>= 2 frames >= 0.3)
+        # within the support window, so detection fires one frame earlier than
+        # the old 3-consecutive rule.
+        self.assertEqual(engine._model.calls, 2)
         self.assertIn("[wake-debug] WAKE DETECTED", buf.getvalue())
 
     def test_wake_stats_printed_on_detection(self):
@@ -310,15 +312,17 @@ class MicrophoneIntegrationCase(unittest.TestCase):
         with mock.patch.object(
             wake_word, "MicrophoneStream", return_value=_FakeStream(frames=None)
         ), redirect_stdout(io.StringIO()) as buf:
-            engine.wait_for_wake_word()
+            engine.wait_for_wake_word(debug=True)
         out = buf.getvalue()
         self.assertIn("[wake-stats]", out)
-        self.assertIn("frames=3", out)
-        self.assertIn("max_score=0.900", out)
-        self.assertIn("frames_above_threshold=3", out)
-        self.assertIn("longest_consecutive_high=3", out)
-        self.assertIn("patience_required=3", out)
-        self.assertIn("patience_fired=yes", out)
+        self.assertIn("frames=2", out)
+        self.assertIn("max_score=0.9", out)
+        self.assertIn("frames_above_threshold=2", out)
+        self.assertIn("longest_consecutive_high=2", out)
+        self.assertIn("window=4", out)
+        self.assertIn("window_min=2", out)
+        self.assertIn("peak_threshold=0.65", out)
+        self.assertIn("patience_fired=True", out)
 
     def test_wait_does_not_trigger_below_threshold(self):
         # A fake stream that returns one frame below the detection threshold.
@@ -379,57 +383,58 @@ class MicrophoneIntegrationCase(unittest.TestCase):
         with mock.patch.object(
             wake_word, "MicrophoneStream", return_value=_FakeStream(frames=None)
         ), redirect_stdout(io.StringIO()) as buf:
-            engine.wait_for_wake_word()
-        self.assertGreaterEqual(engine._model.calls, 3)
+            engine.wait_for_wake_word(debug=True)
+        self.assertGreaterEqual(engine._model.calls, 2)
         self.assertIn("[wake-debug] WAKE DETECTED", buf.getvalue())
 
-    def test_wait_requires_consecutive_high_frames(self):
-        # Interrupted highs (0.9, 0.9, 0.1, ...) must never fire: patience
-        # needs 3 CONSECUTIVE frames >= threshold. No 3-run exists here, so
-        # the stream drains and StopIteration surfaces instead of a detection.
+    def test_window_patience_fires_despite_a_mid_phrase_dip(self):
+        # (0.55, 0.55, 0.1, 0.55): a dip breaks a purely consecutive run, but 3
+        # of the last 4 frames are above the 0.5 threshold, so window patience
+        # fires -- this is exactly the phrase the old 3-consecutive rule missed.
+        # The peak trigger does not fire here (no frame reaches 0.65).
+        stream = _FakeStream(frames=[np.zeros((FRAME_SIZE, 1), dtype=np.int16)] * 4)
+        engine = _make_engine(score=0.9)
+        engine._model = _SequencedModel([0.55, 0.55, 0.1, 0.55])
+        with mock.patch.object(wake_word, "MicrophoneStream", return_value=stream), \
+                redirect_stdout(io.StringIO()):
+            engine.wait_for_wake_word()
+        self.assertEqual(engine._model.calls, 4)
+
+    def test_lone_peak_without_support_does_not_fire(self):
+        # A single 0.7 frame surrounded by quiet: the peak trigger needs at
+        # least two frames >= peak_support nearby; window patience needs 2 of
+        # the last 4 >= 0.5. Neither happens, so the engine never returns.
         stream = _FakeStream(frames=[np.zeros((FRAME_SIZE, 1), dtype=np.int16)] * 6)
         engine = _make_engine(score=0.9)
-        engine._model = _SequencedModel([0.9, 0.9, 0.1, 0.9, 0.9, 0.1])
+        engine._model = _SequencedModel([0.0, 0.0, 0.0, 0.0, 0.0, 0.7])
         with mock.patch.object(wake_word, "MicrophoneStream", return_value=stream):
             with self.assertRaises(StopIteration):
                 engine.wait_for_wake_word()
         self.assertEqual(engine._model.calls, 6)
 
-    def test_wait_detects_after_consecutive_high_frames(self):
+    def test_wait_detects_after_high_frames(self):
         stream = _FakeStream(frames=[np.zeros((FRAME_SIZE, 1), dtype=np.int16)] * 3)
         engine = _make_engine(score=0.9)
         engine._model = _SequencedModel([0.9, 0.9, 0.9])
         with mock.patch.object(wake_word, "MicrophoneStream", return_value=stream), \
                 redirect_stdout(io.StringIO()):
             engine.wait_for_wake_word()
-        self.assertEqual(engine._model.calls, 3)
+        self.assertEqual(engine._model.calls, 2)
 
     def test_detected_wake_word_prints_diagnostics(self):
-        # Verify that when the engine detects a wake word above threshold,
-        # the diagnostic messages appear in stdout. This tests the exact
-        # detection code path that main() uses (the if/print block at lines
-        # 396-398 of voice/wake_word.py).
-        engine = _make_engine(score=0.9)  # above 0.5 threshold
-        stream = _FakeStream(frames=[np.zeros((FRAME_SIZE, 1), dtype=np.int16)])
-        with mock.patch.object(wake_word, "MicrophoneStream", return_value=stream):
-            with redirect_stdout(io.StringIO()) as buf:
-                # Simulate one iteration of main()'s detection loop:
-                frame, _overflowed = stream.read(engine.frame_size)
-                samples = np.asarray(frame, dtype=np.int16).reshape(-1)
-                scores = engine._model.predict(
-                    samples, patience={name: 3 for name in engine._model_names},
-                    threshold={name: engine._threshold for name in engine._model_names},
-                )
-                for model_name, score in scores.items():
-                    if score >= engine._threshold:
-                        print(f"[wake-word] WAKE WORD DETECTED: {model_name}")
-                        print("[wake-word] Ready for command.")
-                # Consume the remaining read to cleanly exit the stream
-                try:
-                    stream.read(engine.frame_size)
-                except StopIteration:
-                    pass
-                output = buf.getvalue()
+        # The CLI listener must print the same detection lines the pipeline
+        # relies on, through the same WakeDetector criterion.
+        engine = _make_engine(score=0.9)
+        stream = _FakeStream(frames=[np.zeros((FRAME_SIZE, 1), dtype=np.int16)] * 4)
+        with mock.patch.object(wake_word, "MicrophoneStream", return_value=stream), \
+                mock.patch.object(wake_word, "_report_microphone", return_value=(14, "Test mic")), \
+                mock.patch.object(wake_word, "create_wake_word_engine", return_value=engine), \
+                redirect_stdout(io.StringIO()) as buf:
+            try:
+                wake_word.main([])
+            except StopIteration:
+                pass  # the finite fake stream drains after the detection
+            output = buf.getvalue()
         self.assertIn("[wake-word] WAKE WORD DETECTED: hey_jarvis", output)
         self.assertIn("[wake-word] Ready for command.", output)
 

@@ -493,6 +493,105 @@ class TestWalkToSettings(unittest.TestCase):
         self.assertEqual(self.opened, [])
 
 
+class TestVoiceIntegrationSurface(unittest.TestCase):
+    """The two surfaces the app uses to turn voice on must exist."""
+
+    def test_the_cli_accepts_voice(self):
+        import main as main_mod
+
+        args = main_mod.build_parser().parse_args(["--voice"])
+        self.assertTrue(args.voice)
+
+    def test_voice_is_off_when_not_asked(self):
+        import main as main_mod
+
+        args = main_mod.build_parser().parse_args([])
+        self.assertFalse(args.voice)
+
+    def test_banner_says_when_voice_is_on(self):
+        from unittest import mock
+
+        from integration import runner
+
+        engine = mock.Mock()
+        engine.controller.name = "null"
+        engine.config.dry_run = False
+        router = mock.Mock()
+        router.mapping.return_value = {}
+
+        with mock.patch.object(runner, "build_stamp", return_value="  build  : test"):
+            on = runner.banner(engine, router, mock.Mock(), False,
+                               voice_on=True)
+            off = runner.banner(engine, router, mock.Mock(), False,
+                                voice_on=False)
+
+        self.assertIn("[VOICE ON]", on)
+        self.assertNotIn("[VOICE ON]", off)
+
+
+class TestVoiceOnlyMode(unittest.TestCase):
+    """--voice without a camera surface is the whole app: a standalone
+    microphone assistant.  Any camera request keeps voice on the gesture
+    loop as a second input."""
+
+    @staticmethod
+    def parse(argv):
+        import main as main_mod
+
+        return main_mod.build_parser().parse_args(argv)
+
+    def test_voice_alone_is_a_standalone_assistant(self):
+        import main as main_mod
+
+        self.assertTrue(main_mod.voice_only_requested(self.parse(["--voice"])))
+
+    def test_plain_start_is_not_voice_only(self):
+        import main as main_mod
+
+        self.assertFalse(main_mod.voice_only_requested(self.parse([])))
+
+    def test_an_explicit_gesture_keeps_voice_on_the_camera_loop(self):
+        import main as main_mod
+
+        args = self.parse(["--voice", "--gesture"])
+        self.assertFalse(main_mod.voice_only_requested(args))
+
+    def test_gesture_alone_is_not_voice_only(self):
+        import main as main_mod
+
+        self.assertFalse(main_mod.voice_only_requested(self.parse(["--gesture"])))
+
+    def test_any_camera_mode_keeps_voice_on_the_gesture_loop(self):
+        import main as main_mod
+
+        for flag in ("--tune", "--calibrate", "--check", "--selftest",
+                     "--simulate", "--hotkeys", "--command", "--ui"):
+            with self.subTest(flag=flag):
+                argv = ["--voice", "--command", "VOLUME_UP"] \
+                    if flag == "--command" else ["--voice", flag]
+                args = self.parse(argv)
+                self.assertFalse(main_mod.voice_only_requested(args),
+                                 f"{flag} should imply the gesture loop")
+
+    def test_voice_only_routes_to_the_standalone_voice_runner(self):
+        from unittest import mock
+
+        import main as main_mod
+
+        engine = mock.Mock()
+
+        with mock.patch("main.ControlConfig.load",
+                        return_value=mock.Mock()), \
+                mock.patch("main.log"), \
+                mock.patch("main.ControlEngine", return_value=engine), \
+                mock.patch("integration.voice.run_voice_only",
+                           return_value=7) as run_voice_only:
+            code = main_mod.main(["--voice"])
+
+        self.assertEqual(code, 7)
+        run_voice_only.assert_called_once_with(engine)
+
+
 class TestTheOverlayIsWhole(unittest.TestCase):
     """Everything the app draws with has to be there.
 

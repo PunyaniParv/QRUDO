@@ -30,8 +30,10 @@ APPS = {
 #: The catalog: a job name -> how it resolves.  Each entry is either
 #:   {"kind": "keystroke", "keys": {app: combo, ...}}   -- per-app keys
 #:   {"kind": "builtin", "command": "VOLUME_UP"}         -- a QRUDO action
+#:   {"kind": "open_app", "app": "Google Chrome"}        -- launch an app
 #: A keystroke job lists the combo for each app that differs; "any" is
-#: the fallback when an app is not named.
+#: the fallback when an app is not named.  A builtin or open_app job is
+#: the same everywhere and needs no per-app keys.
 JOBS = {
     "Play / pause": {"kind": "builtin", "command": "PLAY_PAUSE"},
     "Volume up": {"kind": "builtin", "command": "VOLUME_UP"},
@@ -61,6 +63,8 @@ JOBS = {
     }},
     "New tab": {"kind": "keystroke", "keys": {"any": "cmd+t"}},
     "Close tab": {"kind": "keystroke", "keys": {"any": "cmd+w"}},
+
+    "Open Chrome": {"kind": "open_app", "app": "Google Chrome"},
 }
 
 
@@ -73,13 +77,14 @@ def job_names():
 def apps_for(job_name):
     """Which apps this job knows a key for, for the third box.
 
-    A built-in job needs no app (it is system-wide), so it returns just
-    "any".  A keystroke job returns the apps it has keys for.
+    A built-in or open-app job needs no app (one is system-wide, the
+    other always launches the same app), so it returns just "any".  A
+    keystroke job returns the apps it has keys for.
     """
 
     entry = JOBS.get(job_name)
 
-    if entry is None or entry["kind"] == "builtin":
+    if entry is None or entry["kind"] in ("builtin", "open_app"):
         return ["any"]
 
     return list(entry["keys"])
@@ -101,7 +106,9 @@ def resolve(job_name, app="any", lock_to_app=False):
     Returns a single action dict (the same shape control/actions uses),
     or None if the job is unknown.  A keystroke job with no key for the
     chosen app falls back to its "any" key, and if it has none, to None
-    -- the form then asks the person to type the shortcut instead.
+    -- the form then asks the person to type the shortcut instead.  A
+    builtin job maps to its QRUDO command; an open_app job names the app
+    to launch.
 
     ``lock_to_app`` is the "global trigger, land it in one app" wish: a
     keystroke is tagged with the app's real name so it is delivered
@@ -119,6 +126,10 @@ def resolve(job_name, app="any", lock_to_app=False):
         # Built-ins are system-wide already; the target is the config's
         # job, not this action's.
         return {"type": "builtin", "command": entry["command"]}
+
+    if entry["kind"] == "open_app":
+        # Launches one app, the same everywhere -- no per-app keys.
+        return {"type": "open_app", "app": entry["app"]}
 
     keys = entry["keys"]
     combo = keys.get(app) or keys.get("any")

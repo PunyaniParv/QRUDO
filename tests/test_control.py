@@ -285,5 +285,22 @@ class TestSeekConfig(unittest.TestCase):
         self.assertEqual(ControlConfig(seek_seconds=30, seek_step_seconds=5).seek_presses, 6)
 
 
+class TestVoiceConfig(unittest.TestCase):
+    """Voice is a second input, off until it is asked for."""
+
+    def test_voice_is_off_by_default(self):
+        self.assertFalse(ControlConfig().voice_enabled)
+
+    def test_voice_can_be_enabled_from_json(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        path = Path(tempfile.mkdtemp()) / "qrudo_config.json"
+        path.write_text(json.dumps({"voice_enabled": True}))
+
+        self.assertTrue(ControlConfig.load(path).voice_enabled)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

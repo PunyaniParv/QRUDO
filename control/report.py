@@ -18,9 +18,10 @@ first inflates, the second deflates, and neither depends on which app
 was playing -- so the number is comparable across days and devices,
 which is what a launch decision needs.
 
-Only commands that arrived by camera are judged.  A hotkey, the
-simulator, the selftest and --command are deliberate by construction,
-so they are read for the totals and skipped for the verdict.
+Only commands that arrived by camera are judged.  A hotkey, a spoken
+command, the simulator, the selftest and --command are deliberate by
+construction -- the camera's verdict is the camera's alone -- so they
+are read for the totals and skipped for the verdict.
 """
 
 from __future__ import annotations
@@ -47,9 +48,10 @@ REVERSAL_SECONDS = 3.0
 #: camera are not inflated by lunch.
 SESSION_GAP_SECONDS = 30 * 60
 
-#: Routes where a human pressed a key on purpose.  Their commands count
-#: in the totals but never toward the misfire verdict.
-DELIBERATE_SOURCES = {"hotkey", "simulator", "selftest", "cli"}
+#: Routes where a human pressed a key on purpose -- or spoke a command
+#: through the wake-word gate.  Their commands count in the totals but
+#: never toward the misfire verdict.
+DELIBERATE_SOURCES = {"hotkey", "simulator", "selftest", "cli", "voice"}
 
 
 def run(config, path: str | Path | None = None) -> int:
@@ -300,7 +302,7 @@ def render(events, path) -> str:
 
     if untagged:
         lines += [f"  {untagged} command(s) predate source tagging and were",
-                  "  judged as camera traffic.  Hotkey, simulator, selftest",
-                  "  and --command traffic is otherwise never judged.", ""]
+                  "  judged as camera traffic.  Hotkey, simulator, selftest,",
+                  "  voice and --command traffic is otherwise never judged.", ""]
 
     return "\n".join(lines)

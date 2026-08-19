@@ -41,6 +41,17 @@ class TestResolve(unittest.TestCase):
         action = catalog.resolve("Next track", "some_obscure_app")
         self.assertEqual(action["combo"], "shift+n")   # the "any" key
 
+    def test_open_app_job_resolves_to_an_open_app_action(self):
+        """A job that opens something is one action everywhere, not keys."""
+
+        self.assertEqual(catalog.resolve("Open Chrome", "any"),
+                         {"type": "open_app", "app": "Google Chrome"})
+
+    def test_open_app_job_needs_no_target_app_choice(self):
+        """The third box has nothing to vary -- it launches one app."""
+
+        self.assertEqual(catalog.apps_for("Open Chrome"), ["any"])
+
     def test_an_unknown_job_is_none(self):
         self.assertIsNone(catalog.resolve("Teleport", "any"))
 

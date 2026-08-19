@@ -2,38 +2,62 @@
 Ties wake word detection, audio capture, and STT together into a loop.
 
 Two entry points share the same building blocks (wake-word engine,
-:func:`~voice.audio_capture.record_until_silence`, :class:`~voice.stt.SpeechToText`,
-:class:`~voice.bridge.VoiceIntentRouter`, :class:`~control.ControlEngine`):
+:func:`~voice.audio_capture.capture_command`, :class:`~voice.stt.SpeechToText`,
+:class:`~voice.bridge.VoiceIntentRouter`, :class:`~control.ControlEngine`,
+:class:`~voice.stream.MicMonitor`):
 
 * :func:`run_voice_loop` -- the original raw-text loop: wake word -> record ->
-  transcribe -> ``on_text(transcript)``. Kept for compatibility and for
+  transcribe -> ``on_text(transcript)``.  Kept for compatibility and for
   programmatic callers that want the transcript and nothing else.
-* :func:`run_voice_command_loop` -- the deterministic *voice command* loop:
-  wake word -> spoken "Hey, how are you?" -> silence-gated command capture ->
-  STT -> VoiceIntentRouter -> existing ControlEngine command. Prints a clear
-  diagnostic line at every stage.
+* :func:`run_voice_command_loop` -- the deterministic *voice command* loop,
+  and the one ``main.py --voice`` runs.  It is an explicit, testable state
+  machine over one shared microphone owner::
 
-Neither talks to an LLM, does conversational AI, or routes anything outside
-the existing supported Command vocabulary. Everything here is local and
-offline.
+      WAKE_LISTENING -> WAKE_DETECTED -> COMMAND_CAPTURE -> TRANSCRIBING
+                     -> ROUTING -> EXECUTING -> WAKE_LISTENING
+
+  Failure paths (WAKE_FALSE_POSITIVE, EMPTY_COMMAND, UNSUPPORTED_COMMAND,
+  STT_FAILURE, AUDIO_FAILURE) all return to WAKE_LISTENING; SHUTDOWN closes
+  the mic, wake engine and engine.
+
+Audio architecture (see ``voice/stream.py`` and ``voice/audio_capture.py``):
+
+* A single :class:`~voice.stream.MicMonitor` owns the microphone for the whole
+  session.  Wake detection and command capture read the *same* live frames, so
+  no gap exists between the wake phrase and the command that follows it in the
+  same breath -- "hey jarvis increase the volume" works without repeating
+  anything.  A rolling pre-roll keeps the audio just before the wake point.
+* No conversational TTS in the command path: the default ``wake_response`` is
+  empty, so nothing blocks between wake detection and command capture, and the
+  assistant never records its own reply.  A caller that wants a short spoken
+  ack passes ``wake_response`` + ``tts_speak`` and accepts the (bounded)
+  two-stage flow.
+
+The transcript is routed through :class:`~voice.bridge.VoiceIntentRouter` into
+the existing ControlEngine command vocabulary (built-in commands and, through
+the catalog, CUSTOM action chains).  Everything is local and offline.
+
+Diagnostics (``[wake-debug]``, ``[wake-stats]``, ``[record-stats]``,
+``[whisper-stats]``, ``[voice-timing]``) print only when ``debug=True``; the
+normal mode prints the one-line lifecycle.
 """
 
+from __future__ import annotations
+
+import re
 import time
 from typing import Callable
 
 from control import ControlEngine
-from voice import tts
-from voice.audio_capture import record_until_silence
-from voice.bridge import VoiceIntentRouter
+from voice.audio_capture import capture_command, record_until_silence
+from voice.bridge import VoiceIntentRouter, normalize
 from voice.config import CONFIG
 from voice.stt import SpeechToText
+from voice.stream import MicMonitor
 from voice.wake_word import WakeWordError, create_wake_word_engine
 
 
 TextHandler = Callable[[str], None]
-
-#: Short reply spoken after the wake word, before command-listening begins.
-WAKE_RESPONSE = "Hey, how are you?"
 
 
 def run_voice_loop(on_text: TextHandler, on_listening: Callable[[], None] | None = None) -> None:
@@ -46,7 +70,7 @@ def run_voice_loop(on_text: TextHandler, on_listening: Callable[[], None] | None
 
     on_listening: optional callback fired right after wake word detection,
     e.g. to play a short beep or flash a UI indicator — useful feedback so
-    the user knows SARV is actually recording.
+    the user knows the assistant is actually recording.
     """
     print("[SARV] Loading speech-to-text model...")
     stt = SpeechToText()
@@ -96,61 +120,52 @@ def _wake_label(wake_engine) -> str:
     return str(getattr(wake_engine, "name", "wake-word"))
 
 
-def _capture_and_route(
-    router: VoiceIntentRouter,
-    control_engine: ControlEngine,
-    stt: SpeechToText,
-    on_transcript: Callable[[str], None] | None,
-) -> dict | None:
-    """One command utterance: record -> transcribe -> route -> execute.
+def _wake_phrases(label: str) -> list[str]:
+    """Candidate wake phrases to strip from a transcript, longest first.
 
-    Never raises on expected problems: a mic/STT hiccup prints an error and
-    returns (a bad utterance must not kill the voice session); an unrecognized
-    transcript prints and executes nothing.
-
-    Pure instrumentation (measurement only -- no behavior change):
-      * ``record_until_silence(report=True)`` prints a ``[record-stats]`` block.
-      * a ``[whisper-stats]`` block is printed for every transcription.
-      * returns ``{t3, t5, t6, t7, t8, t9}`` (monotonic timestamps) when a
-        command is executed, else ``None`` -- the caller prints the
-        ``[voice-timing]`` summary line.
+    ``"hey_jarvis_v0.1"`` -> ``["hey jarvis v0 1", "hey jarvis", "jarvis"]``
+    (the version suffix is dropped before deriving the spoken phrase).
     """
-    print("[voice] Listening for command...")
+    base = re.sub(r"_v?\d+(\.\d+)*$", "", label or "").replace("_", " ").strip()
+    candidates = [base] if base else []
+    for extra in ("jarvis", "hey jarvis"):
+        if extra not in candidates:
+            candidates.append(extra)
+    return candidates
+
+
+def strip_wake_phrase(text: str, wake_label: str) -> str:
+    """Remove a leading wake phrase from a transcript; return the rest.
+
+    ``"hey jarvis increase the volume"`` -> ``"increase the volume"``,
+    ``"hey jarvis"`` -> ``""``.  Commas/punctuation are already normalised
+    away by the router's ``normalize``.  A transcript that does not start
+    with a wake phrase is returned normalized unchanged, so a two-stage
+    interaction (wake, pause, then the command alone) routes as before.
+    """
+    norm = normalize(text)
+    for phrase in _wake_phrases(wake_label):
+        phrase = normalize(phrase)
+        if not phrase:
+            continue
+        if norm == phrase:
+            return ""
+        if norm.startswith(phrase + " "):
+            return norm[len(phrase) + 1:].strip()
+    return norm
+
+
+def _speak_ack(tts_speak: Callable[[str], None], text: str) -> None:
+    """Speak an opt-in acknowledgement, then drain the mic echo.
+
+    Only called when a caller explicitly passes both ``wake_response`` and
+    ``tts_speak`` (a two-stage interaction).  The default command path has no
+    acknowledgement at all, so it never blocks and never records a reply.
+    """
     try:
-        t3 = time.monotonic()
-        audio = record_until_silence(report=True)
-        t5 = time.monotonic()
-        t6 = time.monotonic()
-        transcript = stt.transcribe(audio)
-        t7 = time.monotonic()
-    except Exception as exc:
-        print(f"[voice] ERROR: command capture failed: {exc}")
-        return None
-
-    model_name = getattr(stt, "model_name", CONFIG.whisper_model_size)
-    print("[whisper-stats]")
-    print(f"model={model_name}")
-    print(f"duration={t7 - t6:.2f}s")
-    print(f'text="{transcript}"')
-    print(f"empty={'yes' if not transcript else 'no'}")
-
-    if not transcript:
-        print("[voice] No speech detected after the wake word. Back to wake-word listening.")
-        return None
-    print(f'[voice] Transcription: "{transcript}"')
-    if on_transcript:
-        on_transcript(transcript)
-
-    t8 = time.monotonic()
-    command = router.classify(transcript)
-    if command is None:
-        print("[voice] No supported command matched. Nothing executed.")
-        return None
-    print(f"[voice] Intent: {command.name}")
-    print(f"[voice] Executing: {command.name}")
-    t9 = time.monotonic()
-    control_engine.submit(command)
-    return {"t3": t3, "t5": t5, "t6": t6, "t7": t7, "t8": t8, "t9": t9}
+        tts_speak(text)
+    except Exception:
+        pass
 
 
 def run_voice_command_loop(
@@ -159,102 +174,207 @@ def run_voice_command_loop(
     control_engine: ControlEngine | None = None,
     stt: SpeechToText | None = None,
     wake_engine=None,
-    tts_speak: Callable[[str], None] = tts.speak,
-    wake_response: str = WAKE_RESPONSE,
+    tts_speak: Callable[[str], None] | None = None,
+    wake_response: str | None = None,
     on_listening: Callable[[], None] | None = None,
     on_transcript: Callable[[str], None] | None = None,
+    source: str = "",
+    should_stop: Callable[[], bool] | None = None,
     max_cycles: int | None = None,
+    debug: bool | None = None,
+    monitor: MicMonitor | None = None,
 ) -> None:
     """
     Blocks forever (or for ``max_cycles`` wake->command cycles) running the
     deterministic voice command loop::
 
-        mic -> wake word -> spoken response -> silence-gated command capture
+        mic -> wake word -> (optional short ack) -> same-utterance command
              -> faster-whisper STT -> VoiceIntentRouter -> ControlEngine
 
-    Every dependency is injectable so unit tests run with zero hardware
-    (pass fakes for ``wake_engine``, ``stt``, ``router``, ``control_engine``
-    and ``tts_speak``); anything omitted is built from the existing
-    implementations. An engine/router/STT built here is owned and closed here;
-    a caller-supplied ``control_engine`` is left for the caller to close.
+    Every dependency is injectable so unit tests run with zero hardware (pass
+    fakes for ``wake_engine``, ``stt``, ``router``, ``control_engine``,
+    ``tts_speak`` and ``monitor``); anything omitted is built from the existing
+    implementations.  An engine/router/STT/monitor built here is owned and
+    closed here; a caller-supplied ``control_engine`` is left for the caller
+    to close.
 
-    Measurement-only instrumentation (no behavior change): each executed
-    command prints one ``[voice-timing]`` block (monotonic wake-to-tts,
-    tts-duration, tts-to-record, record-duration, stt-duration, routing,
-    execution, total-command); ``record_until_silence(report=True)`` prints
-    ``[record-stats]``; every transcription prints ``[whisper-stats]``; the
-    wake listener prints ``[wake-stats]`` per detection.
+    ``wake_response`` defaults to ``""``: no spoken acknowledgement, so the
+    command starts being captured immediately after the wake phrase and the
+    assistant never records its own reply.  Pass a short phrase and a
+    ``tts_speak`` to opt into a spoken two-stage ack (bounded: the ack is
+    spoken, then the microphone's echo is drained before capture).
 
-    Anti-duplicate / settle design (no blind sleeps):
-      * ``wait_for_wake_word()`` fires at most once per cycle and the engine's
-        ``reset()`` clears openWakeWord's internal prediction buffer right
-        after detection, so the next listening session cannot re-trigger on
-        the wake phrase's stale high-score frames.
-      * The spoken reply is synchronous (``tts_speak`` blocks), so the command
-        mic stream opens only after the reply has fully played -- QRUDO can
-        never record its own response as the user's command. A short,
-        configurable ``CONFIG.post_tts_settle_s`` pause follows so any TTS
-        echo on a (Bluetooth) headset mic decays before the RMS gate opens.
-      * Command recording ends on its own via silence detection or
-        ``CONFIG.max_recording_s``; an empty transcript prints a message and
-        the loop returns to wake-word listening.
+    ``should_stop``, when given, is asked at every state boundary; answering
+    true ends the loop cleanly (the current blocking audio read is bounded by
+    a timeout, so shutdown is prompt).  ``debug=True`` (defaults to
+    ``CONFIG.debug``) prints the per-frame/wake/record/whisper/timing
+    diagnostics; the normal mode prints the one-line lifecycle.
+
+    ``monitor``, when given, is used (and not closed) as the single mic owner
+    -- tests inject a fake; when omitted a real :class:`MicMonitor` is opened
+    here and closed here.
     """
     router = router if router is not None else VoiceIntentRouter()
     if stt is None:
         print("[voice] Loading speech-to-text model...")
         stt = SpeechToText()
     wake = wake_engine if wake_engine is not None else create_wake_word_engine()
+    debug = CONFIG.debug if debug is None else debug
+    response = ("" if wake_response is None else wake_response)
 
     owns_engine = control_engine is None
     if owns_engine:
         control_engine = ControlEngine()
+
+    owns_monitor = monitor is None
+    if owns_monitor:
+        monitor = MicMonitor()
 
     try:
         wake.initialize()
     except WakeWordError as exc:
         print(f"[wake-word] Wake-word unavailable: {exc}")
         print("[voice] Voice control will not start. No commands executed.")
+        if owns_monitor:
+            monitor.close()
         if owns_engine:
             control_engine.close()
+        wake.close()
         return
 
     label = _wake_label(wake)
-    settle_s = float(getattr(CONFIG, "post_tts_settle_s", 0.5))
+
+    try:
+        monitor.open()
+    except Exception as exc:
+        print(f"[voice] ERROR: no microphone available: {exc}")
+        print("[voice] Voice control will not start.")
+        if owns_engine:
+            control_engine.close()
+        wake.close()
+        return
+
     print("[voice] Ready. Say the wake phrase.")
 
     cycles = 0
     try:
         while max_cycles is None or cycles < max_cycles:
+            if should_stop is not None and should_stop():
+                break
             cycles += 1
-            wake.wait_for_wake_word()
-            t0 = time.monotonic()
+
+            # --- WAKE_LISTENING -> WAKE_DETECTED -------------------------
+            try:
+                heard = wake.wait_for_wake_word(
+                    frame_source=monitor.next_frame,
+                    stop=should_stop,
+                    debug=debug,
+                )
+            except WakeWordError as exc:
+                # AUDIO_FAILURE: the mic died mid-session.
+                print(f"[voice] ERROR: wake-word listening failed: {exc}")
+                break
+            if not heard:
+                break  # shutdown requested
             print(f"[wake-word] WAKE WORD DETECTED: {label}")
-            if on_listening:
-                on_listening()
-            # Clear stale detection state before the reply/command phase.
+
+            # Clear the wake model's buffers so the phrase tail and the
+            # command audio cannot re-trigger it.
             _reset = getattr(wake, "reset", None)
             if callable(_reset):
                 _reset()
-            print(f"[qrudo] {wake_response}")
-            t1 = time.monotonic()
-            tts_speak(wake_response)
-            t2 = time.monotonic()
-            time.sleep(settle_s)
-            timings = _capture_and_route(router, control_engine, stt, on_transcript)
-            if timings is not None:
-                # One compact measurement line per executed command.
+
+            if on_listening:
+                on_listening()
+
+            if tts_speak is not None and response:
+                # Opt-in two-stage ack: speak it (bounded, then drain the
+                # speaker echo from the mic before the command is captured).
+                _speak_ack(tts_speak, response)
+                monitor.drain()
+
+            # --- COMMAND_CAPTURE -----------------------------------------
+            t_capture = time.monotonic()
+            try:
+                captured = capture_command(monitor, stop=should_stop, stats=debug)
+            except Exception as exc:
+                # AUDIO_FAILURE: recover and keep listening.
+                print(f"[voice] ERROR: command capture failed: {exc}")
+                continue
+            t_stt = time.monotonic()
+            if captured is None:
+                # EMPTY_COMMAND: nothing said after the wake phrase.
+                print("[voice] No speech after the wake phrase; "
+                      "back to wake-word listening.")
+                continue
+            audio, record_stats = captured if debug else (captured, None)
+
+            # --- TRANSCRIBING --------------------------------------------
+            t_stt_done = time.monotonic()
+            try:
+                transcript = stt.transcribe(audio)
+            except Exception as exc:
+                # STT_FAILURE: recover and keep listening.
+                print(f"[voice] ERROR: speech-to-text failed: {exc}")
+                continue
+            if debug:
+                print("[whisper-stats]")
+                print(f"model={getattr(stt, 'model_name', CONFIG.whisper_model_size)}")
+                print(f"duration={t_stt_done - t_stt:.2f}s")
+                print(f'text="{transcript}"')
+                empty = "yes" if not transcript else "no"
+                print(f"empty={empty}")
+
+            # Wake+command in one utterance: strip the wake phrase so the
+            # remainder routes as a plain command.
+            command_text = strip_wake_phrase(transcript, label)
+            if not command_text:
+                # EMPTY_COMMAND (wake word only, or a hallucination).
+                print("[voice] No speech detected after the wake word. "
+                      "Back to wake-word listening.")
+                continue
+            print(f'[voice] Transcription: "{command_text}"')
+            if on_transcript:
+                on_transcript(command_text)
+
+            # --- ROUTING ---------------------------------------------------
+            t_route = time.monotonic()
+            route = router.route(command_text)
+            if route is None:
+                # UNSUPPORTED_COMMAND: malformed or unsupported speech --
+                # nothing is executed, ever.
+                print("[voice] No supported command matched. Nothing executed.")
+                continue
+            command = route.command
+            payload = route.payload
+            print(f"[voice] Intent: {command.name}")
+            if payload:
+                print(f"[voice] Executing: {command.name} (payload={payload})")
+            else:
+                print(f"[voice] Executing: {command.name}")
+
+            # --- EXECUTING ------------------------------------------------
+            t_exec = time.monotonic()
+            control_engine.submit(command, source=source, payload=payload)
+
+            if debug:
+                if record_stats is not None:
+                    print("[record-stats]")
+                    print(f"first_speech_after={record_stats['first_speech_after']:.2f}s")
+                    print(f"duration={record_stats['duration']:.2f}s")
+                    print(f"final_silence={record_stats['final_silence']:.2f}s")
+                    print(f"samples={record_stats['samples']}")
                 print("[voice-timing]")
-                print(f"wake_to_tts={t1 - t0:.2f}s")
-                print(f"tts_duration={t2 - t1:.2f}s")
-                print(f"tts_to_record={timings['t3'] - t2:.2f}s")
-                print(f"record_duration={timings['t5'] - timings['t3']:.2f}s")
-                print(f"stt_duration={timings['t7'] - timings['t6']:.2f}s")
-                print(f"routing={timings['t8'] - timings['t7']:.2f}s")
-                print(f"execution={timings['t9'] - timings['t8']:.2f}s")
-                print(f"total_command={timings['t9'] - t0:.2f}s")
+                print(f"capture_duration={t_stt - t_capture:.2f}s")
+                print(f"stt_duration={t_stt_done - t_stt:.2f}s")
+                print(f"routing={t_route - t_stt_done:.2f}s")
+                print(f"execution={t_exec - t_route:.2f}s")
+                print(f"total_command={t_exec - t_capture:.2f}s")
     except KeyboardInterrupt:
         print("\n[voice] Stopped by user.")
     finally:
+        if owns_monitor:
+            monitor.close()
         wake.close()
         if owns_engine:
             control_engine.close()

@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -23,6 +24,8 @@ from control import log
 log.setup(tempfile.mkdtemp(), console=False)
 
 from control import Command, ControlConfig, ControlEngine
+from control import catalog
+from control.actions import parse
 from control.backends.null import NullController
 from voice.bridge import VoiceIntentRouter
 from voice.bridge import _SUPPORTED  # noqa: E402
@@ -148,8 +151,12 @@ class VoiceIntentRouterCase(unittest.TestCase):
 
     # -- 7. unsupported capabilities return None ----------------------------
     def test_unsupported_capabilities_return_none(self):
+        # Capabilities QRUDO still has no route for -- and never a route
+        # through the built-in vocabulary.  (Phrases that now name a catalog
+        # job -- "open Chrome", "mute", "next song" -- resolve through
+        # route() into a CUSTOM payload and are tested there; classify()
+        # still answers None for them, as it always did.)
         self.assert_none(
-            "open Chrome",
             "close Chrome",
             "close this tab",
             "open YouTube",
@@ -157,9 +164,6 @@ class VoiceIntentRouterCase(unittest.TestCase):
             "click here",
             "move the mouse",
             "take a screenshot",
-            "mute",
-            "next song",
-            "previous song",
             "shutdown the computer",
             "turn off",
             "sleep",
@@ -194,6 +198,100 @@ class VoiceIntentRouterCase(unittest.TestCase):
         self.assertIs(self.router.classify("pause"), Command.PLAY_PAUSE)
         self.assertIs(self.router.classify("brightness up"),
                       Command.BRIGHTNESS_UP)
+
+
+class CatalogVoiceRoutingCase(unittest.TestCase):
+    """Phrases that name a catalog job resolve to the existing CUSTOM payload.
+
+    The router never re-defines what a job does: it maps a phrase to the
+    catalog's job *name*, and control/catalog turns that into the exact
+    action chain a taught gesture would carry.  Unknown or broken jobs are
+    unhandled, never an error.
+    """
+
+    def setUp(self):
+        self.router = VoiceIntentRouter()
+
+    def _custom_payload(self, text):
+        """Assert ``text`` routes to a CUSTOM command; return its payload."""
+        route = self.router.route(text)
+        self.assertIsNotNone(route)
+        self.assertEqual(route.command, Command.CUSTOM)
+        return route.payload
+
+    # -- the task's two examples ------------------------------------------
+    def test_next_track_resolves_to_the_catalog_keystroke(self):
+        payload = self._custom_payload("next track")
+        self.assertEqual(parse(payload),
+                         [{"type": "keystroke", "combo": "shift+n"}])
+
+    def test_next_song_means_next_track(self):
+        payload = self._custom_payload("next song")
+        self.assertEqual(parse(payload),
+                         [{"type": "keystroke", "combo": "shift+n"}])
+
+    def test_open_chrome_resolves_to_the_catalog_open_app(self):
+        payload = self._custom_payload("open Chrome")
+        self.assertEqual(parse(payload),
+                         [{"type": "open_app", "app": "Google Chrome"}])
+
+    def test_launch_chrome_means_open_chrome(self):
+        payload = self._custom_payload("launch chrome")
+        self.assertEqual(parse(payload)[0]["app"], "Google Chrome")
+
+    # -- the payload is the existing serialised action chain ---------------
+    def test_custom_payload_is_exactly_the_serialized_chain(self):
+        from control.actions import serialize
+
+        payload = self._custom_payload("next track")
+        self.assertEqual(
+            payload, serialize({"type": "keystroke", "combo": "shift+n"}))
+
+    def test_every_catalog_job_is_reachable_by_its_own_name(self):
+        """A job added to the catalog is speakable without editing the
+        router -- the exact-name fallback resolves it the same way."""
+        for job in catalog.job_names():
+            with self.subTest(job=job):
+                self.assertIsNotNone(self.router.route(job.lower()))
+
+    def test_builtin_catalog_jobs_stay_plain_commands(self):
+        """"Play / pause" exists in the catalog as a builtin, but a phrase
+        the built-in vocabulary owns must keep its plain Command -- never
+        wrap itself in a CUSTOM payload."""
+        route = self.router.route("play pause")
+        self.assertIs(route.command, Command.PLAY_PAUSE)
+        self.assertEqual(route.payload, "")
+
+    # -- unknown / malformed stay unhandled --------------------------------
+    def test_unknown_phrases_stay_unhandled(self):
+        self.assertIsNone(self.router.route("open Televator"))
+        self.assertIsNone(self.router.route("xyzzy"))
+        self.assertIsNone(self.router.route("next: nothing"))
+
+    def test_an_unavailable_catalog_job_is_unhandled(self):
+        with mock.patch.object(catalog, "resolve", return_value=None):
+            self.assertIsNone(self.router.route("next track"))
+
+    def test_a_malformed_catalog_action_is_unhandled(self):
+        # A keystroke action with no "combo" cannot serialise; the router
+        # must treat it as unknown rather than raise.
+        with mock.patch.object(catalog, "resolve",
+                               return_value={"type": "keystroke"}):
+            self.assertIsNone(self.router.route("next track"))
+
+    # -- the classify() view keeps its contract ----------------------------
+    def test_classify_keeps_its_plain_command_contract(self):
+        # A catalog route carries a payload, so the payload-free classify()
+        # view answers None -- exactly as it did before the catalog existed.
+        self.assertIsNone(self.router.classify("next track"))
+        self.assertIsNone(self.router.classify("open chrome"))
+        self.assertIs(self.router.classify("volume up"), Command.VOLUME_UP)
+
+    # -- built-in phrases are untouched by the catalog ---------------------
+    def test_route_matches_the_built_in_vocabulary(self):
+        route = self.router.route("turn the volume up")
+        self.assertIs(route.command, Command.VOLUME_UP)
+        self.assertEqual(route.payload, "")
 
 
 class VoiceToControlRoutingCase(unittest.TestCase):

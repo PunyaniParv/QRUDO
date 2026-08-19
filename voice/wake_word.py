@@ -79,11 +79,10 @@ import os
 import tempfile
 import time
 import wave
-from collections import deque
-
 import numpy as np
 
 from voice.config import CONFIG
+from voice.detect import WakeDetector
 from voice.device import MicrophoneStream
 from voice import tts
 
@@ -92,14 +91,6 @@ logger = logging.getLogger("sarv.voice.wake_word")
 # openWakeWord expects 16 kHz int16 mono audio in 80 ms frames.
 SAMPLE_RATE = 16000
 FRAME_SIZE = 1280  # 80 ms at 16 kHz
-
-# Consecutive frames (80 ms each) at/above the threshold required to detect
-# the wake word. Mirrors the patience the diagnostic loop uses.
-_PATIENCE = 3
-
-# Temporary diagnostic cadence for wait_for_wake_word (seconds between the
-# per-second [wake-debug] lines). REMOVE once live verification is done.
-_DEBUG_REPORT_INTERVAL_S = 1.0
 
 # Spoken back when the wake word is detected under --speak-on-detect.
 _RESPONSE = "Hey, how are you?"
@@ -482,12 +473,34 @@ class LocalWakeWordEngine(WakeWordEngine):
                 "openWakeWord feature models."
             ) from exc
 
-    def wait_for_wake_word(self) -> None:
-        """Block until the wake word is heard (raw predict + Python patience).
+    def wait_for_wake_word(
+        self,
+        frame_source=None,
+        stop=None,
+        debug: bool = False,
+    ) -> bool:
+        """Block until the wake word is heard; return True on detection.
 
-        Detection needs ``_PATIENCE`` consecutive frames whose *raw* model
-        score is at/above the threshold, so a single loud burst cannot fire it
-        and a single utterance produces exactly one detection.
+        The detection criterion lives in :class:`~voice.detect.WakeDetector`
+        (peak trigger + sliding-window patience + cooldown) -- measured on
+        real audio, the old 3-consecutive-frames rule missed genuine phrases
+        whose raw peak lasted a single 80 ms frame.
+
+        Two ways to be fed audio:
+
+        * ``frame_source`` (callable) -- the caller owns the microphone and
+          hands frames over one at a time (signature
+          ``frame_source(timeout, stop)``, returning an int16 1-D frame or
+          None on timeout/stop).  The voice pipeline passes its shared
+          ``MicMonitor.next_frame`` so wake detection and command capture see
+          the same uninterrupted stream.
+        * ``frame_source=None`` -- the engine opens its own microphone stream
+          (standalone use: ``run_voice_loop``, the CLI diagnostics).
+
+        Returns False when ``stop()`` turns true or shutdown ends the frame
+        source, so callers can distinguish "heard nothing, stopping" from
+        "wake word heard".  ``debug=True`` prints per-second ``[wake-debug]``
+        lines and a ``[wake-stats]`` block on detection.
 
         Why raw predict instead of openWakeWord's model-side ``patience``?
         openWakeWord 0.6.0's ``predict(..., patience=..., threshold=...)``
@@ -495,24 +508,73 @@ class LocalWakeWordEngine(WakeWordEngine):
         its internal buffer were all above the threshold. That buffer is
         seeded with zeros by the model's 5-frame warmup and by the filter's
         own zeroing, so the condition can never become true -- it returns 0.0
-        forever on audio that raw ``predict()`` scores above 0.5. This was
-        confirmed empirically (same clip: raw max 0.683 and detected, patience
-        max 0.000 and never detected). Patience is therefore applied here in
-        Python, exactly like the live diagnostic loop that is verified to work.
-
-        Temporary ``[wake-debug]`` lines print once per second with the EXACT
-        frame being scored (no second microphone stream), plus a
-        ``[wake-debug] WAKE DETECTED`` line and a ``[wake-stats]`` block
-        (frames, max raw score, frames at/above threshold, longest consecutive
-        run, patience) when detection fires.
+        forever on audio that raw ``predict()`` scores above 0.5. Patience is
+        therefore applied here in Python, over raw scores.
         """
         if self._model is None:
             self.initialize()
 
-        threshold = self._threshold
-        recent = {name: deque(maxlen=_PATIENCE) for name in self._model_names}
+        cfg = self.config
+        detector = WakeDetector(
+            threshold=self._threshold,
+            window=int(getattr(cfg, "wake_window", 4)),
+            window_min=int(getattr(cfg, "wake_window_min", 2)),
+            peak_threshold=float(getattr(cfg, "wake_peak_threshold", 0.65)),
+            peak_support=float(getattr(cfg, "wake_peak_support", 0.3)),
+            support_window=int(getattr(cfg, "wake_support_window", 6)),
+            cooldown_s=float(getattr(cfg, "wake_cooldown_s", 1.0)),
+            debug=debug,
+        )
 
-        # Only the stream-open is wrapped so real detection errors surface.
+        last_report = time.monotonic()
+
+        def _score(samples: np.ndarray) -> bool:
+            nonlocal last_report
+            scores = self._model.predict(samples)
+            name = self._model_names[0] if self._model_names else "?"
+            value = float(scores.get(name, 0.0))
+            now = time.monotonic()
+            if debug and now - last_report >= 1.0:
+                print(
+                    "[wake-debug] frame={} RMS={:.1f} raw_score={:.3f} "
+                    "threshold={:.2f} max_score={:.3f}".format(
+                        detector.frames,
+                        _rms_int16(samples),
+                        value,
+                        self._threshold,
+                        detector.max_score,
+                    )
+                )
+                last_report = now
+            if detector.update(value):
+                if debug:
+                    print("[wake-stats]")
+                    for key, val in detector.stats().items():
+                        print(f"{key}={val}")
+                    print("[wake-debug] WAKE DETECTED")
+                return True
+            return False
+
+        if frame_source is not None:
+            empty_polls = 0
+            while True:
+                if stop is not None and stop():
+                    return False
+                frame = frame_source(timeout=0.25, stop=stop)
+                if frame is None:
+                    if stop is not None and stop():
+                        return False
+                    empty_polls += 1
+                    if empty_polls >= 3:
+                        raise WakeWordError("microphone stream ended")
+                    continue
+                empty_polls = 0
+                samples = np.asarray(frame, dtype=np.int16).reshape(-1)
+                if samples.shape[0] != self.frame_size:
+                    samples = self._pad_or_trim(samples)
+                if _score(samples):
+                    return True
+
         try:
             stream = MicrophoneStream(
                 samplerate=self.sample_rate,
@@ -525,68 +587,13 @@ class LocalWakeWordEngine(WakeWordEngine):
             raise WakeWordError(f"No usable microphone found: {exc}") from exc
 
         try:
-            frame_counter = 0
-            max_seen = {name: 0.0 for name in self._model_names}
-            frames_above = {name: 0 for name in self._model_names}
-            current_run = {name: 0 for name in self._model_names}
-            longest_run = {name: 0 for name in self._model_names}
-            last_report_time = time.monotonic()
             while True:
                 frame, _overflowed = stream.read(self.frame_size)
                 samples = np.asarray(frame, dtype=np.int16).reshape(-1)
                 if samples.shape[0] != self.frame_size:
                     samples = self._pad_or_trim(samples)
-                # Raw scores -- NO patience/threshold forwarded to the model.
-                scores = self._model.predict(samples)
-                for name, score in scores.items():
-                    value = float(score)
-                    max_seen[name] = max(max_seen[name], value)
-                    recent[name].append(value)
-                    if value >= threshold:
-                        frames_above[name] += 1
-                        current_run[name] += 1
-                        longest_run[name] = max(longest_run[name], current_run[name])
-                    else:
-                        current_run[name] = 0
-
-                now = time.monotonic()
-                if now - last_report_time >= _DEBUG_REPORT_INTERVAL_S:
-                    rms = _rms_int16(samples)
-                    name = self._model_names[0] if self._model_names else "?"
-                    raw = float(scores.get(name, 0.0))
-                    print(
-                        "[wake-debug] frame={} RMS={:.1f} raw_score={:.3f} "
-                        "threshold={:.2f} max_score={:.3f}".format(
-                            frame_counter, rms, raw, threshold, max_seen[name]
-                        )
-                    )
-                    last_report_time = now
-
-                for name, score in scores.items():
-                    window = list(recent[name])
-                    if (
-                        len(window) == _PATIENCE
-                        and all(s >= threshold for s in window)
-                    ):
-                        name = self._model_names[0] if self._model_names else "?"
-                        print(
-                            "[wake-stats]\n"
-                            "frames={}\n"
-                            "max_score={:.3f}\n"
-                            "frames_above_threshold={}\n"
-                            "longest_consecutive_high={}\n"
-                            "patience_required={}\n"
-                            "patience_fired=yes".format(
-                                frame_counter + 1,
-                                max_seen.get(name, 0.0),
-                                frames_above.get(name, 0),
-                                longest_run.get(name, 0),
-                                _PATIENCE,
-                            )
-                        )
-                        print("[wake-debug] WAKE DETECTED")
-                        return
-                frame_counter += 1
+                if _score(samples):
+                    return True
         finally:
             stream.__exit__(None, None, None)
 
@@ -749,16 +756,28 @@ def main(argv=None) -> int:
         print(f"[wake-word] ERROR: {exc}")
         return 1
 
-    patience = {name: 3 for name in engine._model_names}
-    threshold = {name: engine._threshold for name in engine._model_names}
+    # One detection state machine per loaded model (the same criterion
+    # wait_for_wake_word uses), so the CLI reports what the engine decides.
+    cfg = CONFIG
+    detectors = {
+        name: WakeDetector(
+            threshold=engine._threshold,
+            window=int(getattr(cfg, "wake_window", 4)),
+            window_min=int(getattr(cfg, "wake_window_min", 2)),
+            peak_threshold=float(getattr(cfg, "wake_peak_threshold", 0.65)),
+            peak_support=float(getattr(cfg, "wake_peak_support", 0.3)),
+            support_window=int(getattr(cfg, "wake_support_window", 6)),
+            cooldown_s=float(getattr(cfg, "wake_cooldown_s", 1.0)),
+        )
+        for name in engine._model_names
+    }
 
     # Diagnostic state.
     max_seen = {name: 0.0 for name in engine._model_names}
-    recent = {name: deque(maxlen=patience.get(name, 3)) for name in engine._model_names}
-    detected = {name: False for name in engine._model_names}
     last_report_time = time.monotonic()
     report_interval = 1.0  # seconds
     frame_counter = 0
+    fired_names = set()
 
     try:
         try:
@@ -783,9 +802,8 @@ def main(argv=None) -> int:
                 peak = _peak_abs_int16(samples)
 
                 # ONE model call per frame, with no patience/threshold filtering,
-                # so the raw model score is visible. (The live engine path
-                # wait_for_wake_word() still applies model-side patience, exactly
-                # as before.)
+                # so the raw model score is visible. The same raw scores feed
+                # the WakeDetector that wait_for_wake_word uses.
                 scores = engine._model.predict(samples)
                 for model_name, score in scores.items():
                     max_seen[model_name] = max(
@@ -822,21 +840,13 @@ def main(argv=None) -> int:
                         )
                     last_report_time = now
 
-                # Python-side patience: N consecutive frames >= threshold, which
-                # mirrors openWakeWord's model-side patience while keeping the raw
-                # score visible in the report above.
                 for model_name, score in scores.items():
-                    recent[model_name].append(float(score))
-                    window = list(recent[model_name])
-                    hit = (
-                        len(window) == recent[model_name].maxlen
-                        and all(s >= threshold[model_name] for s in window)
-                    )
-                    if hit and not detected[model_name]:
+                    hit = detectors[model_name].update(float(score))
+                    if hit and model_name not in fired_names:
+                        fired_names.add(model_name)
                         print(f"[wake-word] WAKE WORD DETECTED: {model_name}")
                         print("[wake-word] Ready for command.")
                         _respond_if_wanted(args.speak_on_detect)
-                    detected[model_name] = hit
 
                 frame_counter += 1
         finally:

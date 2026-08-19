@@ -8,6 +8,9 @@
     python main.py --simulate            # keyboard instead of camera
     python main.py --hotkeys             # ctrl+alt+U/D/P/L/R/B/N from any app
     python main.py --command VOLUME_UP   # fire one command and exit
+    python main.py --voice               # the voice assistant alone -- no camera
+    python main.py --gesture             # the camera gesture loop
+    python main.py --voice --gesture     # both: camera gestures and voice
 
 Add --dry-run to any of them to watch without touching the machine.
 """
@@ -50,6 +53,14 @@ def build_parser():
                       help="the application window: two pages, buttons, "
                            "the camera in a corner")
 
+    parser.add_argument("--voice", action="store_true",
+                        help="listen for voice commands -- alone it is a "
+                             "microphone assistant (needs "
+                             "requirements-voice.txt)")
+    parser.add_argument("--gesture", action="store_true",
+                        help="the camera gesture loop (implicit when a "
+                             "camera mode or --ui is asked for)")
+
     parser.add_argument("--dry-run", action="store_true",
                         help="log commands without performing them")
     parser.add_argument("--no-window", action="store_true",
@@ -72,6 +83,21 @@ def build_parser():
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="debug logging")
     return parser
+
+
+def voice_only_requested(args) -> bool:
+    """Whether ``--voice`` is the whole request: a voice assistant alone.
+
+    Any camera/gesture surface -- the application window, an explicit
+    ``--gesture``, or one of the camera mode flags -- means the gesture
+    loop runs, and voice rides it as a second input.  With none of those,
+    ``--voice`` is the entire program: no camera is opened, so a machine
+    with a microphone but no camera still gets its commands.
+    """
+
+    camera_mode = (args.tune, args.calibrate, args.check, args.selftest,
+                   args.simulate, args.hotkeys, args.command, args.ui)
+    return bool(args.voice) and not args.gesture and not any(camera_mode)
 
 
 def main(argv=None):
@@ -105,6 +131,16 @@ def main(argv=None):
     # only unless asked.
     log.setup(config.log_dir, console=args.verbose,
               level=10 if args.verbose else 20)
+
+    # Voice alone is the whole app: a microphone assistant that never
+    # imports vision and never opens a camera, so a machine with a
+    # microphone but no camera still gets its commands.  Any camera
+    # surface below (--ui, --gesture, a camera mode) runs the gesture
+    # loop instead, with voice riding it as a second input.
+    if voice_only_requested(args):
+        from integration.voice import run_voice_only
+
+        return run_voice_only(ControlEngine(config=config))
 
     # Thresholds measured from this machine's camera, if there are any.
     import vision
@@ -225,6 +261,17 @@ def show_capabilities(engine, config):
           f"brightness {config.brightness_step}%, "
           f"seek {config.seek_seconds}s ({config.seek_presses} key press(es)), "
           f"cooldown {config.cooldown_seconds}s")
+
+    # The voice stack is optional, so the check only asks whether it is
+    # installed -- asking for a microphone here would be rude.
+    from integration import voice as voice_mod
+
+    if voice_mod.available():
+        print("voice  : requirements-voice.txt installed "
+              "(faster-whisper, openwakeword, sounddevice)")
+    else:
+        print("voice  : requirements-voice.txt not installed -- "
+              "say a command and nothing happens")
 
     warnings = engine.preflight()
 

@@ -89,13 +89,15 @@ class TestWhatIsJudged(unittest.TestCase):
         self.assertEqual(report.performed(events), [])
 
     def test_deliberate_sources_are_never_judged(self):
-        """A hotkey correction is a person at a keyboard, not the camera."""
+        """A hotkey correction, or a spoken command, is a person acting on
+        purpose -- the camera's verdict is the camera's alone."""
 
         events = [event("VOLUME_UP", 0, source="hotkey"),
                   event("VOLUME_DOWN", 1.0, source="hotkey"),
                   event("VOLUME_UP", 2.0, source="selftest"),
                   event("VOLUME_UP", 3.0, source="simulator"),
-                  event("VOLUME_UP", 4.0, source="cli")]
+                  event("VOLUME_UP", 4.0, source="cli"),
+                  event("VOLUME_DOWN", 5.0, source="voice")]
         self.assertEqual(report.from_camera(events), [])
 
     def test_untagged_lines_are_judged_as_camera(self):

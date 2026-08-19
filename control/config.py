@@ -170,6 +170,16 @@ class ControlConfig:
     """Log what would happen but never touch the OS.  Useful for demos and for
     the Vision Engine's own testing."""
 
+    voice_enabled: bool = False
+    """Whether the app also listens for voice commands, beside the camera.
+
+    Needs the voice requirements (requirements-voice.txt): faster-whisper,
+    openwakeword and sounddevice.  Voice is a second input to the same
+    engine -- cooldown, dry-run, logging and the reliability report apply
+    to it exactly as they do to a gesture -- and it is best-effort: a
+    machine without the requirements, a microphone or a wake-word model
+    prints why and runs camera-only, exactly as before."""
+
     show_preview: bool = True
     """Whether the application window shows the camera's view.  The gestures
     never needed it -- the engine reads frames whether or not anyone watches
