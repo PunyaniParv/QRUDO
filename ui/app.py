@@ -895,6 +895,11 @@ class Recorder:
     def _draw_preview(self):
         latest = self.app.latest
         if latest is None:
+            # No frame yet -- say so, rather than a silent black box, so
+            # a stalled camera is visible instead of looking like "no
+            # hand".
+            self.view.configure(text="waiting for the camera...", fg=DIM,
+                                width=40, height=12)
             return
         frame = latest[0]
         try:
@@ -904,10 +909,10 @@ class Recorder:
             small = cv2.resize(frame, (400, 300))
             image = Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
             self._preview_photo = ImageTk.PhotoImage(image)
-            self.view.configure(image=self._preview_photo, width=400,
-                                height=300)
-        except Exception:
-            pass
+            self.view.configure(image=self._preview_photo, text="",
+                                width=400, height=300)
+        except Exception as exc:
+            self.view.configure(text=f"preview error: {exc}", fg="#e06c75")
 
     def _finish_recording(self):
         if len(self.samples) < MIN_GOOD_FRAMES:
