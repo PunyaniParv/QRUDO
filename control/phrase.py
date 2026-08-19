@@ -26,6 +26,38 @@ _OPENERS = {
     "open": None,   # ambiguous: decided by what follows
 }
 
+#: The folders every Mac and Windows account has under home, by the
+#: name a person says.  "open downloads" means this folder, not an app
+#: called downloads -- which was the mis-guess.  Matched case- and
+#: "folder"-word-insensitively.
+_HOME_FOLDERS = {
+    "downloads": "~/Downloads",
+    "documents": "~/Documents",
+    "desktop": "~/Desktop",
+    "pictures": "~/Pictures",
+    "music": "~/Music",
+    "movies": "~/Movies",
+    "home": "~",
+    "applications": "/Applications",
+    "trash": "~/.Trash",
+}
+
+
+def _home_folder(text: str):
+    """A known home folder for a plain name like "downloads" or
+    "downloads folder", or None."""
+
+    name = text.strip().lower()
+
+    for suffix in (" folder", " directory"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)].strip()
+
+    if name.startswith("my "):
+        name = name[3:].strip()
+
+    return _HOME_FOLDERS.get(name)
+
 
 def looks_like_url(text: str) -> bool:
     """A bare domain or a full URL, not a folder or an app."""
@@ -69,10 +101,18 @@ def parse(phrase: str):
             if not rest:
                 return None
 
+            if kind == "open_path":
+                # "open folder downloads" -> the known folder, else the
+                # literal path typed.
+                return _build("open_path", _home_folder(rest) or rest)
+
             if kind is not None:
                 return _build(kind, rest)
 
-            # Bare "open X": decide by what X looks like.
+            # Bare "open X": decide by what X is.
+            folder = _home_folder(rest)
+            if folder:
+                return _build("open_path", folder)
             if looks_like_url(rest):
                 return _build("open_url", rest)
             if looks_like_path(rest):
@@ -80,7 +120,11 @@ def parse(phrase: str):
             # A plain name after "open" is most often an app.
             return _build("open_app", rest)
 
-    # No opener word, but the whole phrase is clearly a site or a path.
+    # No opener word, but the whole phrase is clearly a folder, a site,
+    # or a path.
+    folder = _home_folder(text)
+    if folder:
+        return _build("open_path", folder)
     if looks_like_url(text):
         return _build("open_url", text)
     if looks_like_path(text):

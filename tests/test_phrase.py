@@ -51,6 +51,22 @@ class TestParse(unittest.TestCase):
         self.assertEqual(phrase.parse("open /Applications")["type"],
                          "open_path")
 
+    def test_a_known_folder_name_is_a_folder_not_an_app(self):
+        """The reported bug: 'open downloads' launched an app called
+        downloads instead of opening the Downloads folder."""
+
+        for text in ("open downloads", "downloads", "open Downloads",
+                     "open my downloads folder"):
+            with self.subTest(phrase=text):
+                action = phrase.parse(text)
+                self.assertEqual(action["type"], "open_path")
+                self.assertEqual(action["path"], "~/Downloads")
+
+    def test_common_folders(self):
+        self.assertEqual(phrase.parse("open documents")["path"],
+                         "~/Documents")
+        self.assertEqual(phrase.parse("open desktop")["path"], "~/Desktop")
+
     def test_something_unclear_is_none(self):
         for unclear in ("do the thing", "make me a sandwich", "next track",
                         ""):

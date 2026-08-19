@@ -209,7 +209,12 @@ class ActionRunner:
         kind = action["type"]
 
         if kind == "open_path":
-            self._open(["open", action["path"]])
+            # Expand ~ ourselves: the OS "open" gets a literal path, not
+            # a shell that would expand it, so ~/Downloads must become
+            # the real home path or it opens nothing.
+            import os
+            path = os.path.expanduser(action["path"])
+            self._open(["open", path])
             return f"opened {action['path']}"
 
         if kind == "open_app":
