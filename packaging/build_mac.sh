@@ -32,6 +32,24 @@ $PYTHON -m PyInstaller --noconfirm --clean packaging/qrudo.spec
 
 APP="dist/QRUDO.app"
 
+# Ship matplotlib's font cache pre-built.  mediapipe imports matplotlib
+# during hand-tracker setup, and matplotlib builds a font cache the
+# first time it is imported on a machine that has none -- which, for a
+# packaged app, is the first launch after every build, on the main
+# thread, for tens of seconds, before the camera ever opens.  That was
+# "the camera did not switch on" / "I have to open it twice".  Building
+# the cache here and copying it inside the bundle means every launch
+# finds it ready.
+CACHE_DIR="$($PYTHON -c 'import matplotlib as m; print(m.get_cachedir())' 2>/dev/null || true)"
+if [ -n "$CACHE_DIR" ] && [ -d "$CACHE_DIR" ]; then
+  # Ensure the cache actually exists (build it if this venv never has).
+  $PYTHON -c "import matplotlib.font_manager" >/dev/null 2>&1 || true
+  MPL_IN_APP="$APP/Contents/Resources/matplotlib"
+  mkdir -p "$MPL_IN_APP"
+  cp -f "$CACHE_DIR"/fontlist-*.json "$MPL_IN_APP/" 2>/dev/null || true
+  echo "  bundled matplotlib font cache from $CACHE_DIR"
+fi
+
 if [ -n "${QRUDO_SIGN_IDENTITY:-}" ]; then
   codesign --force --deep --options runtime --timestamp \
     --entitlements packaging/entitlements.plist \

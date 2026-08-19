@@ -100,8 +100,40 @@ def voice_only_requested(args) -> bool:
     return bool(args.voice) and not args.gesture and not any(camera_mode)
 
 
+def _warm_font_cache():
+    """Point matplotlib's cache at a stable dir and build it once.
+
+    Done before anything opens the camera.  It is cheap when the cache
+    already exists (a stat and return) and slow exactly once -- the
+    first launch on a device -- which is far better than that slowness
+    landing on the main thread mid-startup with the camera waiting.
+    Any failure here is swallowed: a missing font cache must never stop
+    QRUDO starting.
+    """
+
+    import os
+
+    try:
+        from paths import data_dir
+        os.environ.setdefault("MPLCONFIGDIR", str(data_dir() / "mpl-cache"))
+        import matplotlib.font_manager  # noqa: F401  (builds the cache)
+    except Exception:
+        pass
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    # Keep matplotlib's font cache in a persistent, writable place, and
+    # build it once now rather than on the first frame.  mediapipe
+    # imports matplotlib while the hand tracker starts, and matplotlib
+    # builds its font cache the first time it is imported without one --
+    # for a packaged app that is the first launch after every build, on
+    # the main thread, for tens of seconds, before the camera opens.
+    # That was "the camera did not switch on" and "I have to open it
+    # twice".  A stable cache dir means it is built once ever; warming
+    # it here means it never blocks the camera.
+    _warm_font_cache()
 
     # The report reads a log file with the standard library alone, so it
     # must never trigger the first-run install below.
