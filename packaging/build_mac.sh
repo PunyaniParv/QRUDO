@@ -131,7 +131,11 @@ echo "  built: $APP"
 # /Applications, every build refreshes it.  Deleting a running app is
 # safe on macOS -- the running one keeps its files until it quits.
 if [ -d "/Applications/QRUDO.app" ]; then
-  PREV_STABLE=$(codesign -dv /Applications/QRUDO.app 2>&1 \
+  # -dvv, not -dv: only the double-verbose form prints the Authority
+  # lines this check reads, and without them every rebuild looked like
+  # an identity change and reset the grants -- the exact treadmill the
+  # stable identity exists to end.
+  PREV_STABLE=$(codesign -dvv /Applications/QRUDO.app 2>&1 \
     | grep -c "Authority=${QRUDO_DEV_IDENTITY:-QRUDO Dev}" || true)
 
   rm -rf /Applications/QRUDO.app
