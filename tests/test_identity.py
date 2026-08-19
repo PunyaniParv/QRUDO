@@ -27,15 +27,15 @@ sys.path.insert(0, str(ROOT))
 #: intentionally the same image -- one face, several carriers.
 IDENTITY = {
     "assets/logo.png":
-        "c686eb053841fb8de28ce0da008f96bf124c13d2f21663612048ba1310d5ce50",
+        "ed378fa4fd3630a3f4afec3d94a621852bd7a5fe2d80f2ab9d0ef869bd2e9593",
     "assets/qrudo.icns":
-        "38423ed805bb1267102ea5f772e0473df82b35aa19ed2933cdcef1da68d1844d",
+        "f51f498f9ecd9243aa45306533b68104fc0fcc40890fdd14dddda1ac5cacbdc4",
     "assets/qrudo.ico":
-        "3a40ba274a1500c8796b4e980ddac06fe628108f13d9aca3a35b0a02787fdc4d",
+        "680ee2818b0123c49c0683bba8258a14f1874f64c8d71aec5f432c36629ca7c4",
     "packaging/AppIcon.icon/icon.json":
         "14b83a989a38025d7c5ac8f46a5a96643d4f5e770b6e17f2a5ba9eed5fbf2564",
     "packaging/AppIcon.icon/Assets/mark.png":
-        "c686eb053841fb8de28ce0da008f96bf124c13d2f21663612048ba1310d5ce50",
+        "ed378fa4fd3630a3f4afec3d94a621852bd7a5fe2d80f2ab9d0ef869bd2e9593",
 }
 
 
