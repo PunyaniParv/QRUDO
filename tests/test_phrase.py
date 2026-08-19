@@ -83,6 +83,32 @@ class TestParse(unittest.TestCase):
         self.assertEqual(phrase.parse("go to gmail.com")["type"], "open_url")
         self.assertEqual(phrase.parse("open youtube.com")["type"], "open_url")
 
+    def test_a_real_folder_on_disk_is_found(self):
+        """The reported bug: 'open qfo' launched a phantom app instead of
+        opening the real ~/qfo folder.  Now it checks disk."""
+
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "myproject").mkdir()
+
+        with mock.patch("os.path.expanduser",
+                        side_effect=lambda p: p.replace("~", str(tmp))):
+            action = phrase.parse("open myproject")
+
+        self.assertEqual(action["type"], "open_path")
+        self.assertTrue(action["path"].endswith("myproject"))
+
+    def test_an_unknown_name_still_tries_as_an_app(self):
+        """'open Spotify' before Spotify exists on disk should still try
+        to launch it, not fail."""
+
+        action = phrase.parse("open SomeAppNobodyHas")
+        self.assertEqual(action, {"type": "open_app",
+                                  "app": "SomeAppNobodyHas"})
+
     def test_something_unclear_is_none(self):
         for unclear in ("do the thing", "make me a sandwich", "next track",
                         ""):

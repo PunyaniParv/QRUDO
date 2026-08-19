@@ -43,20 +43,89 @@ _HOME_FOLDERS = {
 }
 
 
-def _home_folder(text: str):
-    """A known home folder for a plain name like "downloads" or
-    "downloads folder", or None."""
+def _strip_words(name: str):
+    """Drop the wrapping words a person adds -- 'the', 'my', 'folder'."""
 
-    name = text.strip().lower()
+    name = name.strip()
+    lowered = name.lower()
 
     for suffix in (" folder", " directory"):
-        if name.endswith(suffix):
+        if lowered.endswith(suffix):
             name = name[: -len(suffix)].strip()
+            lowered = name.lower()
 
-    if name.startswith("my "):
-        name = name[3:].strip()
+    for prefix in ("the ", "my "):
+        if lowered.startswith(prefix):
+            name = name[len(prefix):].strip()
+            lowered = name.lower()
 
-    return _HOME_FOLDERS.get(name)
+    return name
+
+
+def _home_folder(text: str):
+    """A known home folder for a plain name like "downloads", or None."""
+
+    return _HOME_FOLDERS.get(_strip_words(text).lower())
+
+
+def _found_on_disk(name: str):
+    """A real folder or file matching this name in the usual places, or
+    None -- so 'open qfo' finds ~/qfo without it being hardcoded.
+
+    Checks, in order: an absolute/~ path as given, then the name under
+    home and under each common folder.  The first that exists wins.
+    Case-insensitive on the leaf so 'downloads' finds 'Downloads'.
+    """
+
+    import os
+
+    bare = _strip_words(name)
+
+    # An explicit path, expanded.
+    if bare.startswith(("/", "~", "./")):
+        full = os.path.expanduser(bare)
+        return bare if os.path.exists(full) else None
+
+    home = os.path.expanduser("~")
+    roots = [home] + [os.path.expanduser(p) for p in _HOME_FOLDERS.values()]
+
+    for root in roots:
+        try:
+            entries = os.listdir(root)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.lower() == bare.lower():
+                found = os.path.join(root, entry)
+                # Return a ~-relative path when under home, for a tidy,
+                # portable stored action.
+                if found.startswith(home):
+                    return "~" + found[len(home):]
+                return found
+
+    return None
+
+
+def _app_exists(name: str):
+    """Whether an application by this name is installed, so a real app
+    beats a same-named file and a typo does not silently 'launch' air."""
+
+    import os
+
+    bare = _strip_words(name)
+
+    for apps in ("/Applications", os.path.expanduser("~/Applications"),
+                 "/System/Applications"):
+        try:
+            entries = os.listdir(apps)
+        except OSError:
+            continue
+        for entry in entries:
+            stem = entry[:-4] if entry.endswith(".app") else entry
+            if stem.lower() == bare.lower():
+                return True
+
+    return False
 
 
 #: Endings that mean a file, not a website -- so "report.pdf" opens a
@@ -133,34 +202,61 @@ def parse(phrase: str):
             if not rest:
                 return None
 
+            # An explicit "folder"/"file" opener forces a path: the
+            # known home folder, a real thing found on disk, or the
+            # literal path typed.
             if kind == "open_path":
-                # "open folder downloads" -> the known folder, else the
-                # literal path typed.
-                return _build("open_path", _home_folder(rest) or rest)
+                return _build("open_path",
+                              _home_folder(rest) or _found_on_disk(rest)
+                              or _strip_words(rest))
+
+            if kind == "open_app":
+                return _build("open_app", _strip_words(rest))
 
             if kind is not None:
                 return _build(kind, rest)
 
-            # Bare "open X": decide by what X is.
-            folder = _home_folder(rest)
-            if folder:
-                return _build("open_path", folder)
-            if looks_like_url(rest):
-                return _build("open_url", rest)
-            if looks_like_path(rest):
-                return _build("open_path", rest)
-            # A plain name after "open" is most often an app.
-            return _build("open_app", rest)
+            # Bare "open X": look at reality.  With the word "open"
+            # present, an unresolved plain name is taken as an app to
+            # try -- the person clearly meant to open something.
+            return _resolve_open(rest, guess_app=True)
 
-    # No opener word, but the whole phrase is clearly a folder, a site,
-    # or a path.
-    folder = _home_folder(text)
+    # No opener word at all: only resolve what is unambiguous on its own
+    # -- a known folder, a real path on disk, a website, a file.  A bare
+    # phrase like "do the thing" or a catalog job like "next track" is
+    # not a path, so it returns None and the caller (catalog, or the
+    # form) decides -- rather than blindly "launching an app" named it.
+    return _resolve_open(text, guess_app=False)
+
+
+def _resolve_open(target: str, guess_app: bool):
+    """Decide what a target means by what it actually is.
+
+    Order so the likeliest right answer wins: a known home folder, then
+    a real folder or file on disk (this is what makes 'open qfo' find
+    ~/qfo), then a genuine website, then a path or file by shape.  With
+    ``guess_app`` -- set only when the word "open" was present -- a plain
+    name that matched nothing is taken as an app to try.  Without it, an
+    unmatched phrase returns None: the caller then knows this was not a
+    path, and lets the catalog or the person decide.
+    """
+
+    folder = _home_folder(target)
     if folder:
         return _build("open_path", folder)
-    if looks_like_url(text):
-        return _build("open_url", text)
-    if looks_like_path(text):
-        return _build("open_path", text)
+
+    on_disk = _found_on_disk(target)
+    if on_disk:
+        return _build("open_path", on_disk)
+
+    if looks_like_url(target):
+        return _build("open_url", target)
+
+    if looks_like_path(target) or looks_like_file(target):
+        return _build("open_path", target)
+
+    if guess_app:
+        return _build("open_app", _strip_words(target))
 
     return None
 
