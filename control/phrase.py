@@ -59,24 +59,56 @@ def _home_folder(text: str):
     return _HOME_FOLDERS.get(name)
 
 
+#: Endings that mean a file, not a website -- so "report.pdf" opens a
+#: document rather than being mistaken for a domain.  Broad on purpose:
+#: a person opening a thing by name almost always means a real file.
+_FILE_EXTENSIONS = {
+    "pdf", "doc", "docx", "txt", "md", "rtf", "pages",
+    "xls", "xlsx", "csv", "numbers", "ppt", "pptx", "key",
+    "png", "jpg", "jpeg", "gif", "heic", "webp", "svg", "bmp",
+    "mp3", "wav", "m4a", "aac", "flac",
+    "mp4", "mov", "avi", "mkv", "webm",
+    "zip", "dmg", "app", "pkg",
+    "py", "js", "html", "css", "json", "sh",
+}
+
+
+def _extension(text: str) -> str:
+    text = text.strip().rstrip("/")
+    if "." in text:
+        return text.rsplit(".", 1)[-1].lower()
+    return ""
+
+
+def looks_like_file(text: str) -> bool:
+    """A bare filename with a known file extension: report.pdf, a.png."""
+
+    return _extension(text) in _FILE_EXTENSIONS and "/" not in text.strip()
+
+
 def looks_like_url(text: str) -> bool:
-    """A bare domain or a full URL, not a folder or an app."""
+    """A bare domain or a full URL, not a folder, a file, or an app."""
 
     text = text.strip()
 
     if text.startswith(("http://", "https://")):
         return True
 
+    # A filename with a document/media extension is a file, never a URL.
+    if looks_like_file(text):
+        return False
+
     # something.tld with no spaces -- gmail.com, music.youtube.com
     return bool(re.fullmatch(r"[\w.-]+\.[a-z]{2,}(/\S*)?", text, re.I))
 
 
 def looks_like_path(text: str) -> bool:
-    """An absolute path or a ~ path, not an app or a site."""
+    """An absolute path, a ~ path, or a bare filename with an extension."""
 
     text = text.strip()
 
-    return text.startswith(("/", "~", "./"))
+    return (text.startswith(("/", "~", "./"))
+            or looks_like_file(text))
 
 
 def parse(phrase: str):

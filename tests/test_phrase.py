@@ -67,6 +67,22 @@ class TestParse(unittest.TestCase):
                          "~/Documents")
         self.assertEqual(phrase.parse("open desktop")["path"], "~/Desktop")
 
+    def test_a_file_is_a_file_not_a_website(self):
+        """'report.pdf' was mistaken for a domain (https://report.pdf)."""
+
+        for text in ("open report.pdf", "open my_photo.png",
+                     "open notes.txt"):
+            with self.subTest(phrase=text):
+                self.assertEqual(phrase.parse(text)["type"], "open_path")
+
+    def test_a_full_file_path(self):
+        self.assertEqual(phrase.parse("open ~/Desktop/notes.txt")["path"],
+                         "~/Desktop/notes.txt")
+
+    def test_a_real_website_still_wins(self):
+        self.assertEqual(phrase.parse("go to gmail.com")["type"], "open_url")
+        self.assertEqual(phrase.parse("open youtube.com")["type"], "open_url")
+
     def test_something_unclear_is_none(self):
         for unclear in ("do the thing", "make me a sandwich", "next track",
                         ""):

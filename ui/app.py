@@ -519,7 +519,12 @@ class App:
             gesture = CustomGesture(
                 name=self._recorded_name,
                 signature=self._recorded_signature,
-                tolerance=0.15,
+                # Generous enough for a real hand's natural variation
+                # frame to frame -- a tighter radius made a genuine
+                # repeat miss, which felt like slow, unreliable
+                # recognition.  Still far inside the distance to any
+                # built-in, so it never false-matches.
+                tolerance=0.25,
                 kind="move" if self._recorded_direction else "pose",
                 direction=self._recorded_direction,
                 actions=[action],

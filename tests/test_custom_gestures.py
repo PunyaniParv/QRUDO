@@ -221,6 +221,53 @@ class TestRuntimeMatching(unittest.TestCase):
 
         self.assertEqual(settled, "FIST")
 
+    def test_a_custom_gesture_settles_as_fast_as_a_built_in(self):
+        """It must not feel slower than the shipped gestures.
+
+        Both go through the one stabiliser (5 frames, 4 agree), so a
+        recorded shape held steadily settles in the same 5 frames -- the
+        thing the user needs to stay true forever.
+        """
+
+        self.register_three()
+
+        settled_at = None
+        for i in range(1, 8):
+            got = gestures.detect_gesture(make_hand(*self.THREE), HAND)
+            if got == "THREE":
+                settled_at = i
+                break
+
+        self.assertEqual(settled_at, 5, "custom settled later than a built-in")
+
+    def test_a_recorded_gesture_matches_despite_natural_variation(self):
+        """The reported slowness: a real hand never repeats a shape to
+        the pixel, so the accept radius must forgive normal drift -- a
+        finger a little looser, a pinky a little higher -- while still
+        never reaching a built-in.  This is why the default tolerance is
+        generous, and it must stay that way for the feature to feel like
+        the built-in gestures."""
+
+        import vision.hand_state as hs
+        from vision.custom import CustomGesture
+
+        # Record a clean THREE.
+        recorded = hs.finger_span(make_hand(*self.THREE))
+        custom._active = [CustomGesture(
+            name="THREE", signature=recorded, tolerance=0.25,
+            command="VOLUME_UP")]
+
+        # Use it with ordinary variation: the ring and pinky a touch
+        # different than the recording, as a real hand is.
+        varied = make_hand(EXTENDED, EXTENDED, EXTENDED, CURLED)
+        vision.reset_state()
+        got = None
+        for _ in range(6):
+            got = gestures.detect_gesture(varied, HAND)
+
+        self.assertEqual(got, "THREE",
+                         "a natural repeat of the shape must still match")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
