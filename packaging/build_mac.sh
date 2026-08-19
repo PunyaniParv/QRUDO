@@ -84,4 +84,13 @@ if [ -d "/Applications/QRUDO.app" ]; then
   rm -rf /Applications/QRUDO.app
   ditto "$APP" /Applications/QRUDO.app
   echo "  refreshed: /Applications/QRUDO.app"
+
+  # An ad-hoc rebuild changes the code signature, and macOS pins the
+  # camera grant to it: a stale entry silently DENIES the new build --
+  # empty frames, the camera light off after two seconds, no prompt.
+  # Resetting the entry turns that into a visible permission dialog on
+  # the next launch, which a person can actually answer.  A Developer
+  # ID signature will make grants survive rebuilds; until then, this.
+  tccutil reset Camera com.qrudo.app >/dev/null 2>&1 \
+    && echo "  camera permission reset -- next launch will ask once"
 fi
