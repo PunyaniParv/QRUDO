@@ -123,19 +123,24 @@ class App:
         self.root = tk.Tk()
         self.root.title("QRUDO")
 
-        # The eclipse Q on the window itself.  The packaged app's Dock
-        # and taskbar icons are baked into the bundle at build time;
-        # this covers the window's own title bar and the development
-        # checkout, where there is no bundle to carry one.  Failing to
-        # find the file must never stop the window.
-        try:
-            base = getattr(sys, "_MEIPASS", None)
-            logo = (Path(base) / "assets" / "logo.png") if base else \
-                Path(__file__).resolve().parent.parent / "assets" / "logo.png"
-            self._window_icon = tk.PhotoImage(file=str(logo))
-            self.root.iconphoto(True, self._window_icon)
-        except Exception:
-            pass
+        # The eclipse Q on the window itself -- but NOT on packaged
+        # macOS.  There, iconphoto does more than decorate the window:
+        # macOS adopts it as the running app's Dock and switcher tile,
+        # OVERRIDING the bundle's composed icon -- which is how every
+        # icon fix of 2026-08-19 looked right in Finder and wrong in
+        # the switcher: the switcher was showing this very image.  The
+        # bundle's layered icon is the identity; the window must not
+        # shout over it.  Windows and the dev checkout have no bundle
+        # icon, so there this is still how the window gets its face.
+        if not (getattr(sys, "frozen", False) and sys.platform == "darwin"):
+            try:
+                base = getattr(sys, "_MEIPASS", None)
+                logo = (Path(base) / "assets" / "logo.png") if base else \
+                    Path(__file__).resolve().parent.parent / "assets" / "logo.png"
+                self._window_icon = tk.PhotoImage(file=str(logo))
+                self.root.iconphoto(True, self._window_icon)
+            except Exception:
+                pass
         self.root.geometry("880x560")
         self.root.minsize(700, 480)
         self.root.configure(bg=BACKGROUND)
