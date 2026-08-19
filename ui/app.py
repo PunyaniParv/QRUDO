@@ -744,19 +744,41 @@ class App:
             self.beat += 1
 
             if self.engine.config.show_preview:
+                # A minimised window's picture costs real CPU that no
+                # one can see.  Only the drawing rests -- the camera,
+                # detection and gestures run exactly as before, which
+                # is the whole point of controlling music from a
+                # window in the background.
+                minimised = False
                 try:
-                    import cv2
-                    from PIL import Image, ImageTk
-
-                    small = cv2.resize(frame, PREVIEW_SIZE)
-                    image = Image.fromarray(
-                        cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
-                    self.preview_photo = ImageTk.PhotoImage(image)
-                    self.preview.configure(image=self.preview_photo,
-                                           width=PREVIEW_SIZE[0],
-                                           height=PREVIEW_SIZE[1])
+                    minimised = self.root.state() == "iconic"
                 except Exception:
                     pass
+
+                if not minimised:
+                    try:
+                        import cv2
+                        from PIL import Image, ImageTk
+
+                        small = cv2.resize(frame, PREVIEW_SIZE)
+                        image = Image.fromarray(
+                            cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+
+                        # One PhotoImage for the window's life, redrawn
+                        # in place.  A fresh one per frame was
+                        # twenty-five allocations a second through Tk's
+                        # image machinery -- churn with no pixel of
+                        # visible difference.
+                        photo = getattr(self, "preview_photo", None)
+                        if photo is None:
+                            self.preview_photo = ImageTk.PhotoImage(image)
+                        else:
+                            photo.paste(image)
+                        self.preview.configure(image=self.preview_photo,
+                                               width=PREVIEW_SIZE[0],
+                                               height=PREVIEW_SIZE[1])
+                    except Exception:
+                        pass
             else:
                 # The heartbeat: this line only runs when a frame
                 # actually arrived, so a beating dot IS the camera

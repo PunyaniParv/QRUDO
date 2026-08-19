@@ -34,6 +34,59 @@ NOTHING_SEEN_FOR = 6.0
 UNKNOWN_SAID_AFTER = 1.0
 
 
+class IdlePace:
+    """Rest the detector while the room has been empty a while.
+
+    The neural network is where the energy goes: it runs on every
+    frame, thirty times a second, whether or not there is anything to
+    find -- an empty room cost the same battery as an hour of active
+    use, and macOS rightly called that Significant Energy.
+
+    So: after ``after`` seconds with no hand at all, the detector runs
+    on every ``every``-th frame instead of every one.  The camera keeps
+    reading at full rate (the picture stays live) and one detection --
+    any hand, anywhere -- restores full rate instantly.
+
+    What this deliberately never touches: a hand IN FRAME is detected
+    on every frame, exactly as before -- gestures, swipes, dwell times
+    and the whole detection floor are unaffected.  The entire cost is
+    that the FIRST frame of a hand arriving after ten empty seconds
+    can land on a resting beat and be read one frame later -- ~33ms,
+    once, after long idle, against roughly half the idle energy bill.
+    tests/test_idle_pace.py pins both sides of that promise.
+    """
+
+    #: Seconds of empty frames before the detector starts resting.
+    AFTER = 10.0
+    #: While resting, every Nth frame still looks.  2 halves the idle
+    #: inference bill and bounds the arrival cost at one frame.
+    EVERY = 2
+
+    def __init__(self, after=AFTER, every=EVERY):
+        self.after = after
+        self.every = every
+        self._last_seen = None
+        self._beat = 0
+
+    def seen(self, now):
+        """A hand is in frame: full rate, immediately and until idle."""
+
+        self._last_seen = now
+
+    def skip(self, now):
+        """True when this frame's detection can be skipped."""
+
+        if self._last_seen is None:
+            self._last_seen = now   # launch counts as activity
+
+        if now - self._last_seen <= self.after:
+            self._beat = 0
+            return False
+
+        self._beat += 1
+        return self._beat % self.every != 0
+
+
 def run(engine, args, tuning=False, on_frame=None, should_stop=None,
         camera=None):
     """Run QRUDO until q is pressed or the camera goes away.
@@ -103,6 +156,7 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
     refused = ""
     spans_logged_at = 0.0
     vision_log = control_log.get_logger("vision")
+    pace = IdlePace()
 
     def remember(result):
         nonlocal last_result, last_result_at
@@ -237,7 +291,19 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                 break
 
             frame_times.append(time.time())
-            hand = tracker.track(frame)
+
+            # An empty room does not pay for thirty inferences a
+            # second: after a while with no hand, the detector rests on
+            # alternate frames.  A hand in frame is NEVER skipped --
+            # pace.seen() below keeps the rate full the whole time one
+            # is visible.
+            if pace.skip(time.time()):
+                hand = None
+            else:
+                hand = tracker.track(frame)
+
+            if hand is not None:
+                pace.seen(time.time())
 
             # Someone walking past at the back of the room is not
             # gesturing at us.
