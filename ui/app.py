@@ -101,6 +101,8 @@ class App:
         self.args = args
         self.latest = None          # (frame, gesture, result, hint)
         self.last_spans = None      # this frame's finger spans, for recording
+        self._frame_seq = 0         # bumped per frame; latest is not nulled
+        self._drawn_seq = -1        # so the recorder can read latest too
         self.stop = threading.Event()
         self.worker = None
         self.preview_photo = None   # kept, or Tk garbage-collects it
@@ -629,6 +631,7 @@ class App:
         # The finger spans of this frame, for the gesture recorder to
         # measure a shape from the same reading the detector used.
         self.last_spans = spans
+        self._frame_seq += 1
 
     def attach_recorded(self, name, signature, direction, thumb_gap=None):
         """The recorder hands a finished shape back here; remember it so
@@ -648,9 +651,13 @@ class App:
     def tick(self):
         latest = self.latest
 
-        if latest is not None:
+        # Only redraw when the frame is new -- but do NOT null latest,
+        # or the gesture recorder (which reads latest and last_spans on
+        # its own poll) is starved and never sees a hand.  A counter
+        # tells a new frame from the one already drawn.
+        if latest is not None and self._frame_seq != self._drawn_seq:
+            self._drawn_seq = self._frame_seq
             frame, gesture, result, hint = latest
-            self.latest = None
 
             # The first frame is the camera coming alive: clear the
             # "starting" line the moment there is a picture to show.
