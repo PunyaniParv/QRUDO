@@ -239,6 +239,19 @@ class HandTracker:
         left, top = int(x0 * width), int(y0 * height)
         view = frame[top:top + max(1, int(h * height)),
                      left:left + max(1, int(w * width))]
+        crop_h, crop_w = view.shape[:2]   # the region's true size, for remap
+
+        # Every view is resized to the one fixed shape before MediaPipe
+        # sees it.  Video mode keeps internal state sized to the frames
+        # it has been fed; alternating crop sizes frame-to-frame walked
+        # that state off the end of a smaller buffer and SEGFAULTED deep
+        # in warpPerspective -- the whole app gone, two seconds after
+        # launch, worst exactly when no hand is in view (the sweep
+        # churns shapes fastest then).  A constant shape removes the
+        # churn, and scaling a crop up is the digital zoom the scanner
+        # wanted anyway: the far hand lands on the detector even larger.
+        if view.shape[:2] != (height, width):
+            view = cv2.resize(view, (width, height))
 
         image = self._mp.Image(
             image_format=self._mp.ImageFormat.SRGB,
@@ -258,8 +271,11 @@ class HandTracker:
             return None
 
         # What the crop saw, restated for the frame everyone else sees.
+        # The box is the crop's true region -- landmarks are normalised
+        # within the view, and that normalisation is the same whether or
+        # not the view was resized on its way to the model.
         box = (left / width, top / height,
-               view.shape[1] / width, view.shape[0] / height)
+               crop_w / width, crop_h / height)
         landmarks = unwrap(found.hand_landmarks[0], box)
 
         centre = landmarks[hand_state.MIDDLE_MCP]
