@@ -250,11 +250,28 @@ def detect_gesture(hand, handedness=None):
     ``handedness`` is needed to tell a palm from the back of a hand: the
     two are mirror images, so which hand it is decides which is which.
     It is read from the hand itself when there is one.
+
+    A user's taught gestures are consulted here, and only here, and only
+    once the built-in classifier has already returned UNKNOWN.  That
+    ordering is the whole of their isolation: if a built-in recognises
+    the shape, the custom matcher never runs this frame, so no taught
+    gesture can change what a shipped one decides -- and the settled
+    answer, custom or built-in, still passes through the one stabiliser.
     """
 
     observe(hand)
 
-    return _stabiliser.update(classify(hand, handedness))
+    raw = classify(hand, handedness)
+
+    if raw == "UNKNOWN":
+        from . import custom
+
+        matched = custom.match(hand_state.finger_span(hand))
+
+        if matched is not None:
+            raw = matched
+
+    return _stabiliser.update(raw)
 
 
 def _two_up(fingers, spans):

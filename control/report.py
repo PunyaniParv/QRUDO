@@ -146,6 +146,39 @@ def find_reversals(commands, window: float = REVERSAL_SECONDS):
     return suspected
 
 
+def looks_like_testing(pair, commands, span=6.0):
+    """Whether a reversal is one beat of a rhythmic back-and-forth.
+
+    A real misfire is isolated: a command nobody meant, undone once.
+    Deliberate testing -- "does up work? does down?" -- is rhythmic:
+    up-down-up-down at a steady tempo, three or more swaps in a few
+    seconds.  Both look like reversals to find_reversals, but only the
+    first is a reliability problem.  Counting the second inflates the
+    misfire rate with the very act of evaluating it, which then argues
+    for tightening gestures that were recognised perfectly -- the exact
+    detection-floor mistake to avoid.
+
+    A pair is testing when its two commands sit inside a run of at
+    least four alternating events on the same axis within ``span``
+    seconds.
+    """
+    fired, _undone = pair
+    axis = {fired["command"], OPPOSITES.get(fired["command"], "")}
+
+    around = [e for e in commands
+              if abs(e["t"] - fired["t"]) <= span
+              and e["command"] in axis]
+
+    if len(around) < 4:
+        return False
+
+    around.sort(key=lambda e: e["t"])
+    swaps = sum(1 for a, b in zip(around, around[1:])
+                if a["command"] != b["command"])
+
+    return swaps >= 3
+
+
 def sessions(events, gap: float = SESSION_GAP_SECONDS):
     """(first, last) timestamps of each stretch of continuous use."""
     spans = []
@@ -186,29 +219,44 @@ def render(events, path) -> str:
 
     lines = ["", f"  QRUDO reliability -- {path}", ""]
 
+    # Reversals split two ways: a rhythmic back-and-forth is someone
+    # testing the gesture, not a misfire, and counting it would argue
+    # for tightening a gesture that worked -- the detection-floor
+    # mistake.  Only the isolated reversals are the honest number.
+    testing = [p for p in misfires if looks_like_testing(p, camera)]
+    real = [p for p in misfires if p not in testing]
+
     # The verdict, first.  Everything below it is supporting detail.
     if not camera:
         lines += ["  no camera-driven commands in the log yet, so there is",
                   "  no misfire rate to report.", ""]
-    elif not misfires:
-        lines += [f"  0 of {len(camera)} camera commands were taken back "
-                  f"within {REVERSAL_SECONDS:g} s.",
+    elif not real:
+        lines += [f"  0 of {len(camera)} camera commands look like misfires "
+                  f"(within {REVERSAL_SECONDS:g} s, and not part of a"]
+        lines += ["  rhythmic back-and-forth that reads as testing).",
                   "  No misfires suspected.", ""]
+        if testing:
+            lines += [f"  ({len(testing)} reversal(s) set aside as testing.)",
+                      ""]
     else:
-        share = 100 * len(misfires) / len(camera)
-        lines += [f"  {len(misfires)} of {len(camera)} camera commands "
-                  f"({share:.0f}%) were taken back within "
-                  f"{REVERSAL_SECONDS:g} s -- suspected misfires."]
+        share = 100 * len(real) / len(camera)
+        lines += [f"  {len(real)} of {len(camera)} camera commands "
+                  f"({share:.0f}%) look like misfires -- taken back within "
+                  f"{REVERSAL_SECONDS:g} s and not part of a rhythmic"]
+        lines += ["  back-and-forth."]
+        if testing:
+            lines += [f"  ({len(testing)} more reversal(s) set aside as "
+                      f"testing, not counted.)"]
         # A rate needs time behind it; on a minutes-long log the share
         # above is the only honest number.
         if active_hours * 60 >= 10:
-            minutes = (active_hours * 60) / len(misfires)
+            minutes = (active_hours * 60) / len(real)
             lines += [f"  That is one misfire every {minutes:.0f} minute(s) "
                       f"in front of the camera."]
         lines += [""]
 
         by_command: dict[str, int] = {}
-        for fired, _undone_by in misfires:
+        for fired, _undone_by in real:
             by_command[fired["command"]] = by_command.get(fired["command"], 0) + 1
         for name, count in sorted(by_command.items(), key=lambda kv: -kv[1]):
             lines += [f"    {name:<16} {count:>4} taken back"]
@@ -236,7 +284,7 @@ def render(events, path) -> str:
         lines += [f"    {name:<16} {ok:>5} {throttled:>10} {failed:>7}"]
     lines += [""]
 
-    days = by_day(camera, misfires)
+    days = by_day(camera, real)
     if len(days) >= 2:
         lines += [f"    {'day':<12} {'commands':>9} {'misfires':>9}"]
         for day, (count, taken_back) in days:

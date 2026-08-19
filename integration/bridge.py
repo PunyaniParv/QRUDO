@@ -113,13 +113,23 @@ class GestureRouter:
     """
 
     def __init__(self, poses=None, swipes=None, repeat=POSE_REPEAT,
-                 cooldown=GLOBAL_COOLDOWN, dwell=None, entry_grace=ENTRY_GRACE):
+                 cooldown=GLOBAL_COOLDOWN, dwell=None, entry_grace=ENTRY_GRACE,
+                 resolve_custom=None):
         self.poses = POSE_COMMANDS if poses is None else poses
         self.swipes = SWIPE_COMMANDS if swipes is None else swipes
         self.repeat = repeat
         self.cooldown = cooldown
         self.dwell = POSE_DWELL if dwell is None else dwell
         self.entry_grace = entry_grace
+        #: Given a matched custom gesture name, return (Command, payload)
+        #: or None.  Left unset for a router with no custom gestures --
+        #: every router that existed before them.  It is a hook rather
+        #: than a table so the live registry can change under the router
+        #: without rebuilding it.
+        self.resolve_custom = resolve_custom
+        #: The keystroke to carry with the last CUSTOM command, read by
+        #: the caller straight after update() returns it.
+        self.last_payload = ""
         self._held = None
         self._held_since = 0.0
         self._fired_this_hold = False
@@ -182,7 +192,16 @@ class GestureRouter:
             self._held_since = now
             self._fired_this_hold = False
 
+        # A built-in pose first; then, if none, a taught gesture the
+        # isolated matcher named.  A custom gesture may carry a keystroke
+        # payload, kept for the caller to read.
         command = self.poses.get(gesture)
+        self.last_payload = ""
+
+        if command is None and self.resolve_custom is not None:
+            resolved = self.resolve_custom(gesture)
+            if resolved is not None:
+                command, self.last_payload = resolved
 
         if command is None or self._fired_this_hold:
             return None

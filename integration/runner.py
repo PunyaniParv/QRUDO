@@ -63,7 +63,33 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
     import vision
     from ui import overlay
 
-    router = GestureRouter(cooldown=engine.config.gesture_cooldown_seconds)
+    from control.commands import Command
+    from vision import custom
+
+    def resolve_custom(name):
+        """A matched custom gesture -> (Command, payload), or None.
+
+        Read from the live registry each time, so a gesture taught while
+        the app runs works without rebuilding the router.  Its action
+        chain rides as the CUSTOM payload -- serialised once here, run by
+        the ActionRunner in the executor.  A single built-in action is
+        the common case and still goes through the same path.
+        """
+
+        from control import actions as action_mod
+
+        gesture = custom.by_name(name)
+
+        if gesture is None or not gesture.actions:
+            return None
+
+        try:
+            return Command.CUSTOM, action_mod.serialize(gesture.actions)
+        except action_mod.ActionError:
+            return None
+
+    router = GestureRouter(cooldown=engine.config.gesture_cooldown_seconds,
+                           resolve_custom=resolve_custom)
     presence = Presence()
     hand_present = False
     installing = None
@@ -252,8 +278,10 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                     if command is not None:
                         # submit, not execute: a brightness change can take
                         # over a second on Windows, and the camera must not
-                        # wait for it.
-                        engine.submit(command, source="gesture")
+                        # wait for it.  A custom gesture carries its
+                        # keystroke as the payload.
+                        engine.submit(command, source="gesture",
+                                      payload=router.last_payload)
 
                 if swipe:
                     last_swipe = swipe
