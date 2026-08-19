@@ -221,6 +221,8 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
 
     print(banner(engine, router, args, tuning, voice_on=voice is not None), flush=True)
     print(picture(camera), flush=True)
+    control_log.get_logger("camera").info(
+        "camera open, loop starting: %s", camera.shape)
 
     show_window = not args.no_window
 
@@ -363,8 +365,18 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                 break
 
     except CameraError as exc:
+        # Into the log as well as the terminal: a windowed app has no
+        # terminal, and a camera that dies mid-session with its reason
+        # printed to nowhere is undiagnosable -- which it was.
+        control_log.get_logger("camera").error("camera died: %s", exc)
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except Exception as exc:
+        # Any other crash in the loop must leave a trace too, not just
+        # kill the thread silently and release the camera.
+        control_log.get_logger("camera").exception(
+            "vision loop crashed: %s", exc)
+        raise
     except KeyboardInterrupt:
         pass
     finally:

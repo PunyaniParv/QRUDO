@@ -754,12 +754,17 @@ class App:
         from integration import runner
         from vision import Camera, CameraError
 
+        from control import log as _log
+        ui_log = _log.get_logger("ui")
+
         camera = None
         try:
             camera = Camera(self.args.camera,
                             width=1600 if self._far else 640,
                             height=1200 if self._far else 480).open()
-        except CameraError:
+            ui_log.info("ui: camera opened")
+        except CameraError as exc:
+            ui_log.error("ui: camera open failed: %s", exc)
             self.result_label.configure(
                 text="Camera busy -- another app or a closing copy of "
                      "QRUDO may have it.", fg="#e06c75")
@@ -796,6 +801,11 @@ class App:
         the button and the privacy hint, so a genuinely blocked camera
         is a clear message rather than a silent light going off.
         """
+
+        from control import log as _log
+        _log.get_logger("ui").error(
+            "ui: vision loop died unasked; auto_retried=%s",
+            self._auto_retried)
 
         self.result_label.configure(
             text="The camera stopped -- another app may have taken it, "
