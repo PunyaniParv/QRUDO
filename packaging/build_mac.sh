@@ -58,9 +58,15 @@ fi
 # boundary in Finder, so the same art looked wrong somewhere no matter
 # its geometry.  The catalog is compiled from the same icns, so there
 # is still exactly one source of art.
+# Two arts on purpose: the catalog carries the BARE mark, because the
+# system composes its own tile behind catalog icons on every modern
+# surface -- tiled art there doubles the tile.  The legacy icns keeps
+# the TILED art, because the third-party apps that read it raw (notch
+# bars, launchers) compose nothing, and the bare mark floats frameless
+# there.  Each consumer gets the art its rendering expects.
 if xcrun actool --version >/dev/null 2>&1; then
   ICONTMP=$(mktemp -d)
-  iconutil -c iconset assets/qrudo.icns -o "$ICONTMP/q.iconset"
+  iconutil -c iconset assets/qrudo-glyph.icns -o "$ICONTMP/q.iconset"
   SET="$ICONTMP/Assets.xcassets/AppIcon.appiconset"
   mkdir -p "$SET"
   cp "$ICONTMP/q.iconset/"*.png "$SET/"
