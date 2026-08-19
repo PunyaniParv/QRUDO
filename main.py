@@ -132,7 +132,85 @@ def _warm_font_cache():
         pass
 
 
+def should_supervise(frozen, argv, env):
+    """Whether this launch is the watcher rather than the app.
+
+    Only the packaged app, launched plainly (a double-click -- the way
+    a user launches a product), gets a supervisor.  CLI runs keep their
+    exit codes and their debuggability, and the child is marked by the
+    environment so it never supervises itself.
+    """
+
+    return bool(frozen) and not argv and "QRUDO_SUPERVISED" not in env
+
+
+def died_by_signal(code):
+    """Whether an exit code means a crash rather than a decision.
+
+    POSIX reports a signal death as a negative code; Windows reports
+    fatal exceptions as NTSTATUS values from 0xC0000000 up.  A small
+    positive code is the app MEANING to exit -- a config error, a
+    refused singleton -- and relaunching those would loop forever.
+    """
+
+    return code < 0 or code >= 0xC0000000
+
+
+def supervise():
+    """Run the real QRUDO as a child, and bring it back if it crashes.
+
+    MediaPipe is native code, and native code dies natively: a segfault
+    deep inside it takes the whole process -- window, camera, log and
+    all -- and no Python except can catch it.  It happened twice today,
+    each a different rare condition inside the same library.  The
+    permanent answer is a part that CANNOT crash that way: this loop
+    holds no camera, no UI and no native libraries.  It starts the real
+    app and watches how it ends.  A clean exit is the user quitting; a
+    death by signal is relaunched within a second, so the worst a rare
+    native crash can ever do to a user is blink the window.
+
+    Three deaths inside two minutes is not a rare crash, it is a broken
+    install or a hostile environment -- the loop stops rather than
+    flicker forever, and the log says so.
+    """
+
+    import os
+    import subprocess
+
+    from control import log as control_log
+
+    logger = control_log.get_logger("supervisor")
+    births = []
+
+    while True:
+        births = [b for b in births if time.time() - b < 120.0]
+        births.append(time.time())
+
+        code = subprocess.call(
+            [sys.executable],
+            env=dict(os.environ, QRUDO_SUPERVISED="1"))
+
+        if not died_by_signal(code):
+            return code
+
+        logger.error("QRUDO died (exit %s); bringing it back", code)
+
+        if len(births) >= 3:
+            logger.error(
+                "three deaths inside two minutes -- not relaunching; "
+                "the crash reports in ~/Library/Logs/DiagnosticReports "
+                "have the story")
+            return 1
+
+
 def main(argv=None):
+    import os
+
+    if should_supervise(getattr(sys, "frozen", False),
+                        sys.argv[1:] if argv is None else argv,
+                        os.environ):
+        return supervise()
+
     args = build_parser().parse_args(argv)
 
     # Keep matplotlib's font cache in a persistent, writable place, and
