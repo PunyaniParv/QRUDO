@@ -1019,18 +1019,17 @@ class Recorder:
 
             spans = self.app.last_spans
 
+            # No border around the preview: Tk paints a highlight ring
+            # unevenly around an image label -- two loose lines rather
+            # than a frame -- so the words below carry the state alone.
             if spans:
                 self.samples.append(spans)
                 self._held_frames += 1
-                self.view.configure(highlightthickness=3,
-                                    highlightbackground=ACCENT)
                 self.body.configure(
                     text=f"Reading your shape... hold still  "
                          f"({self._held_frames}/{MIN_GOOD_FRAMES})",
                     fg=ACCENT)
             else:
-                self.view.configure(highlightthickness=3,
-                                    highlightbackground="#e06c75")
                 self.body.configure(text="No hand seen -- hold your hand "
                                          "up to the camera", fg="#e06c75")
 
