@@ -84,6 +84,12 @@ class CustomGesture:
     #: tells a closed hole (thumb touching, ~0) from an open C (the same
     #: fingers, apart) -- finger extension alone cannot.
     thumb_gap: float | None = None
+    #: The OTHER hand's shape, for a gesture made with two hands at
+    #: once -- None for the ordinary one-hand gesture.  A two-hand
+    #: gesture only matches when both live hands sit within tolerance
+    #: of the pair, in either left/right assignment.
+    partner_signature: dict | None = None
+    partner_thumb_gap: float | None = None
     #: What firing does: an ordered list of actions (the source of truth).
     #: A gesture saved before chains existed carries the legacy binding
     #: fields instead, and the normaliser below turns those into a
@@ -126,6 +132,22 @@ class CustomGesture:
         # load_all drops just this entry.
         if self.thumb_gap is not None:
             self.thumb_gap = float(self.thumb_gap)
+
+        # The second hand gets exactly the scrutiny of the first: known
+        # fingers only, as floats, gap coerced -- a corrupt entry fails
+        # HERE, where load_all drops just this gesture.
+        if self.partner_signature is not None:
+            missing = [f for f in FINGERS
+                       if f not in self.partner_signature]
+            if missing:
+                raise CustomError(
+                    f"partner signature is missing {', '.join(missing)}")
+
+            self.partner_signature = {
+                f: float(self.partner_signature[f]) for f in FINGERS}
+
+        if self.partner_thumb_gap is not None:
+            self.partner_thumb_gap = float(self.partner_thumb_gap)
 
         if self.kind not in ("pose", "move"):
             raise CustomError(f"unknown kind {self.kind!r}")
@@ -179,13 +201,37 @@ class CustomGesture:
         hand nearer than ``tolerance`` is a match.
         """
 
-        total = sum((spans.get(f, 0.0) - self.signature[f]) ** 2
+        return self._one(self.signature, self.thumb_gap, spans, live_gap)
+
+    @staticmethod
+    def _one(signature, thumb_gap, spans, live_gap):
+        total = sum((spans.get(f, 0.0) - signature[f]) ** 2
                     for f in FINGERS)
 
-        if self.thumb_gap is not None and live_gap is not None:
-            total += (live_gap - self.thumb_gap) ** 2
+        if thumb_gap is not None and live_gap is not None:
+            total += (live_gap - thumb_gap) ** 2
 
         return total ** 0.5
+
+    def pair_distance(self, spans, live_gap, partner_spans, partner_gap):
+        """How far a live PAIR of hands sits from this two-hand shape.
+
+        Both hands must fit -- the worse of the two distances counts --
+        and nobody promises which physical hand recorded which half, so
+        both assignments are tried and the better one is the answer.
+        """
+
+        straight = max(
+            self._one(self.signature, self.thumb_gap, spans, live_gap),
+            self._one(self.partner_signature, self.partner_thumb_gap,
+                      partner_spans, partner_gap))
+        swapped = max(
+            self._one(self.signature, self.thumb_gap,
+                      partner_spans, partner_gap),
+            self._one(self.partner_signature, self.partner_thumb_gap,
+                      spans, live_gap))
+
+        return min(straight, swapped)
 
 
 def _known_fields():
@@ -292,32 +338,22 @@ def active() -> list[CustomGesture]:
     return list(_active)
 
 
-def match(spans: dict, thumb_gap: float | None = None) -> str | None:
-    """The custom gesture this hand matches, or None.
+def _nearest(scored) -> str | None:
+    """Nearest within its tolerance wins; a dead tie rejects.
 
-    Reached only after the built-in classifier has returned UNKNOWN --
-    that ordering is the isolation, and it lives at the one call site in
-    gestures.py, not here.  Here the rule is only: nearest signature
-    within its tolerance wins, and a tie between two rejects rather than
-    guessing.  ``thumb_gap`` -- the live thumb-to-index distance -- joins
-    the distance for gestures that recorded one, so a closed hole and an
-    open C are told apart.
+    A tie -- two shapes equally, genuinely close -- is ambiguous, and a
+    gesture-control app must not guess which action a person meant.
     """
 
-    if not _active:
+    if not scored:
         return None
 
-    scored = sorted(
-        ((g.distance(spans, thumb_gap), g) for g in _active),
-        key=lambda pair: pair[0])
-
+    scored = sorted(scored, key=lambda pair: pair[0])
     best_distance, best = scored[0]
 
     if best_distance > best.tolerance:
         return None
 
-    # A tie -- two shapes equally, genuinely close -- is ambiguous, and a
-    # gesture-control app must not guess which action a person meant.
     if len(scored) > 1:
         second_distance = scored[1][0]
         if second_distance <= best.tolerance and \
@@ -325,6 +361,40 @@ def match(spans: dict, thumb_gap: float | None = None) -> str | None:
             return None
 
     return best.name
+
+
+def match(spans: dict, thumb_gap: float | None = None,
+          partner_spans: dict | None = None,
+          partner_gap: float | None = None) -> str | None:
+    """The custom gesture this hand -- or pair of hands -- matches.
+
+    Reached only after the built-in classifier has returned UNKNOWN --
+    that ordering is the isolation, and it lives at the one call site in
+    gestures.py, not here.  ``thumb_gap`` -- the live thumb-to-index
+    distance -- joins the distance for gestures that recorded one, so a
+    closed hole and an open C are told apart.
+
+    With a second hand live, the two-hand gestures are asked first and
+    a fit among them wins outright: a pair is the more specific claim,
+    and a person holding up two deliberate shapes did not mean the
+    one-hand gesture that half of it resembles.
+    """
+
+    if not _active:
+        return None
+
+    if partner_spans is not None:
+        paired = _nearest([
+            (g.pair_distance(spans, thumb_gap, partner_spans, partner_gap),
+             g)
+            for g in _active if g.partner_signature is not None])
+
+        if paired is not None:
+            return paired
+
+    return _nearest([
+        (g.distance(spans, thumb_gap), g)
+        for g in _active if g.partner_signature is None])
 
 
 def by_name(name: str) -> CustomGesture | None:

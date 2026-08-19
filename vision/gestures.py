@@ -319,8 +319,17 @@ def detect_gesture(hand, handedness=None):
     if raw == "UNKNOWN":
         from . import custom
 
-        matched = custom.match(hand_state.finger_span(hand),
-                               hand_state.thumb_gap(hand))
+        # A second hand rides along for the two-hand gestures; a
+        # background hand too small to mean it stays out of it.
+        other = getattr(hand, "partner", None)
+        if other is not None and not hand_state.is_prominent(other):
+            other = None
+
+        matched = custom.match(
+            hand_state.finger_span(hand),
+            hand_state.thumb_gap(hand),
+            hand_state.finger_span(other) if other is not None else None,
+            hand_state.thumb_gap(other) if other is not None else None)
 
         if matched is not None:
             raw = matched

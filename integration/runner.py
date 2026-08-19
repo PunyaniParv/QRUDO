@@ -409,8 +409,14 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                 if hand is not None:
                     spans = hand_state.finger_span(hand)
                     # The thumb gap rides alongside the spans so the
-                    # recorder can capture a closed-hole vs open-C shape.
+                    # recorder can capture a closed-hole vs open-C shape
+                    # -- and the second hand rides too, so a two-hand
+                    # shape can be recorded as the pair it is.
                     spans = dict(spans, _thumb_gap=hand_state.thumb_gap(hand))
+                    if partner is not None:
+                        spans["_partner"] = hand_state.finger_span(partner)
+                        spans["_partner_gap"] = \
+                            hand_state.thumb_gap(partner)
                 else:
                     spans = None
                 try:

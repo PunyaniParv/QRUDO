@@ -116,6 +116,8 @@ class App:
         self._recorded_signature = None
         self._recorded_direction = ""
         self._recorded_thumb_gap = None
+        self._recorded_partner = None        # the second hand's shape
+        self._recorded_partner_gap = None
         self.first_frame_seen = False
 
         from version import VERSION
@@ -554,6 +556,8 @@ class App:
                 kind="move" if self._recorded_direction else "pose",
                 direction=self._recorded_direction,
                 thumb_gap=self._recorded_thumb_gap,
+                partner_signature=self._recorded_partner,
+                partner_thumb_gap=self._recorded_partner_gap,
                 actions=[action],
                 command="", binding_type="action")
             custom.add(gesture)
@@ -659,7 +663,8 @@ class App:
         # death gets its free auto-recovery back.
         self._auto_retried = False
 
-    def attach_recorded(self, name, signature, direction, thumb_gap=None):
+    def attach_recorded(self, name, signature, direction, thumb_gap=None,
+                        partner=None, partner_gap=None):
         """The recorder hands a finished shape back here; remember it so
         the form's Save ties it to the chosen action."""
 
@@ -667,8 +672,11 @@ class App:
         self._recorded_signature = signature
         self._recorded_direction = direction
         self._recorded_thumb_gap = thumb_gap
+        self._recorded_partner = partner
+        self._recorded_partner_gap = partner_gap
         self.gesture_status.configure(
             text=f"recorded: {name}"
+                 + (" (two hands)" if partner else "")
                  + (f" ({direction} swipe)" if direction else " (still)"),
             fg=ACCENT)
         self.add_note.configure(
@@ -957,6 +965,8 @@ class Recorder:
         self.samples = []          # per-frame finger spans while holding
         self.signature = None      # the settled shape, once recorded
         self.thumb_gap = None      # the thumb-to-index gap of that shape
+        self.partner_signature = None   # the second hand, for a pair
+        self.partner_gap = None
         self.direction = ""        # a motion direction, if chosen
         self._polling = False
         self._preview_photo = None
@@ -995,6 +1005,8 @@ class Recorder:
         self.body.configure(text="Hold your hand up to the camera...")
         self._buttons([("Cancel", self.cancel)])
         self.samples = []
+        self.partner_signature = None
+        self.partner_gap = None
         self._polling = True
         self._held_frames = 0
         self._poll()
@@ -1093,26 +1105,86 @@ class Recorder:
         gaps = sorted(s["_thumb_gap"] for s in steady if "_thumb_gap" in s)
         self.thumb_gap = gaps[len(gaps) // 2] if gaps else None
 
+        # A second hand held through most of the recording makes this a
+        # TWO-hand gesture: the pair is the shape, measured the same
+        # way, and it will only ever fire when both hands are shown.
+        pframes = [s["_partner"] for s in steady if "_partner" in s]
+        self.partner_signature = None
+        self.partner_gap = None
+
+        if len(pframes) >= (len(steady) * 3) // 5:
+            self.partner_signature = {}
+            for finger in FINGERS:
+                values = sorted(p.get(finger, 0.0) for p in pframes)
+                self.partner_signature[finger] = values[len(values) // 2]
+
+            pgaps = sorted(s["_partner_gap"] for s in steady
+                           if s.get("_partner_gap") is not None)
+            self.partner_gap = pgaps[len(pgaps) // 2] if pgaps else None
+
         # A shape too close to a built-in gesture can never fire -- the
         # built-in wins first (the isolation), so the custom one is
         # shadowed.  Better to say so now than save a gesture that
-        # silently does nothing.
-        clash = self._collides_with_builtin()
-        if clash:
-            self.title.configure(text=f"That looks like {clash}")
-            self.body.configure(
-                text=f"QRUDO already recognises this as {clash}, so a "
-                     f"custom gesture here could never fire. Try a more "
-                     f"distinct shape.")
-            self._buttons([("Try again", self.begin),
-                           ("Cancel", self.cancel)])
-            self.signature = None
-            return
+        # silently does nothing.  For a pair, EITHER hand reading as a
+        # built-in is the problem: whichever hand the tracker calls
+        # primary decides, so such a pair would fire only sometimes,
+        # and sometimes is worse than never.
+        if self.partner_signature is not None:
+            one = self._collides_with_builtin(self.signature)
+            two = self._collides_with_builtin(self.partner_signature)
 
-        self.title.configure(text="Got the shape")
-        self.body.configure(
-            text="Now: does this gesture move in a direction (a swipe), "
-                 "or is it a still shape held in place?")
+            if one == two == "an open palm":
+                self.title.configure(text="Both hands are open palms")
+                self.body.configure(
+                    text="That is already the built-in 2 OPEN PALM -- "
+                         "usable as it is.  To record a custom pair, "
+                         "give both hands shapes QRUDO does not "
+                         "already know.")
+            elif one == two == "a fist":
+                self.title.configure(text="Both hands are fists")
+                self.body.configure(
+                    text="That is already the built-in 2 FIST -- usable "
+                         "as it is.  To record a custom pair, give both "
+                         "hands shapes QRUDO does not already know.")
+            elif one or two:
+                self.title.configure(
+                    text=f"One hand reads as {one or two}")
+                self.body.configure(
+                    text=f"A built-in wins over a custom gesture, so "
+                         f"this pair would misfire.  Curl or spread "
+                         f"that hand differently so neither hand alone "
+                         f"is {one or two}.")
+
+            if one or two:
+                self._buttons([("Try again", self.begin),
+                               ("Cancel", self.cancel)])
+                self.signature = None
+                self.partner_signature = None
+                return
+        else:
+            clash = self._collides_with_builtin(self.signature)
+            if clash:
+                self.title.configure(text=f"That looks like {clash}")
+                self.body.configure(
+                    text=f"QRUDO already recognises this as {clash}, so "
+                         f"a custom gesture here could never fire. Try "
+                         f"a more distinct shape.")
+                self._buttons([("Try again", self.begin),
+                               ("Cancel", self.cancel)])
+                self.signature = None
+                return
+
+        if self.partner_signature is not None:
+            self.title.configure(text="Got the pair")
+            self.body.configure(
+                text="Both hands together are the gesture -- it fires "
+                     "only when both are shown.  Does it move in a "
+                     "direction, or is it held still?")
+        else:
+            self.title.configure(text="Got the shape")
+            self.body.configure(
+                text="Now: does this gesture move in a direction (a "
+                     "swipe), or is it a still shape held in place?")
         self._buttons([("Choose motion", self.choose_motion),
                        ("Skip motion", self.skip_motion)])
 
@@ -1127,7 +1199,7 @@ class Recorder:
                         "pinky": 0.4},
     }
 
-    def _collides_with_builtin(self):
+    def _collides_with_builtin(self, signature):
         """The built-in gesture this shape is too close to, or None.
 
         A shape within a small distance of a built-in pose would be
@@ -1138,7 +1210,7 @@ class Recorder:
         from vision.custom import FINGERS
 
         for name, shape in self._BUILTIN_SHAPES.items():
-            distance = sum((self.signature.get(f, 0.0) - shape[f]) ** 2
+            distance = sum((signature.get(f, 0.0) - shape[f]) ** 2
                            for f in FINGERS) ** 0.5
             if distance < 0.35:
                 return name
@@ -1185,7 +1257,9 @@ class Recorder:
         # Hand the recorded shape back to the form; the form's Save
         # button then ties it to the chosen action and writes it.
         self.app.attach_recorded(name, self.signature, self.direction,
-                                 self.thumb_gap)
+                                 self.thumb_gap,
+                                 partner=self.partner_signature,
+                                 partner_gap=self.partner_gap)
         self.close()
 
     # -- chrome --------------------------------------------------------

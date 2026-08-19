@@ -196,6 +196,29 @@ class TestStore(unittest.TestCase):
 
         self.assertEqual(custom.load_all(self.path), [])
 
+    def test_a_two_hand_gesture_round_trips(self):
+        gesture = a_gesture("PAIR")
+        gesture.partner_signature = {"index": 0.4, "middle": 0.4,
+                                     "ring": 0.4, "pinky": 0.4}
+        gesture.partner_thumb_gap = 0.2
+        custom.save_all([gesture], self.path)
+
+        back = custom.load_all(self.path)
+
+        self.assertEqual(back[0].partner_signature["index"], 0.4)
+        self.assertEqual(back[0].partner_thumb_gap, 0.2)
+
+    def test_a_partner_signature_missing_a_finger_is_refused(self):
+        from vision.custom import CustomGesture
+
+        with self.assertRaises(CustomError):
+            CustomGesture(name="BAD",
+                          signature={"index": 0.9, "middle": 0.9,
+                                     "ring": 0.9, "pinky": 0.9},
+                          tolerance=0.1,
+                          partner_signature={"index": 0.9},
+                          command="VOLUME_UP")
+
     def test_a_numeric_string_thumb_gap_loads_as_a_number(self):
         gesture = a_gesture()
         gesture.thumb_gap = 0.15
@@ -315,6 +338,58 @@ class TestRuntimeMatching(unittest.TestCase):
 
         self.assertEqual(got, "THREE",
                          "a natural repeat of the shape must still match")
+
+
+class TestPairMatching(unittest.TestCase):
+    """A two-hand gesture is the pair, and only ever the pair."""
+
+    A = {"index": 0.95, "middle": 0.95, "ring": 0.95, "pinky": 0.40}
+    B = {"index": 0.40, "middle": 0.40, "ring": 0.40, "pinky": 0.40}
+
+    def setUp(self):
+        custom._active = []
+
+    def tearDown(self):
+        custom._active = []
+
+    def pair(self):
+        from vision.custom import CustomGesture
+
+        return CustomGesture(name="MIXED PAIR", signature=dict(self.A),
+                             tolerance=0.2,
+                             partner_signature=dict(self.B),
+                             command="VOLUME_UP")
+
+    def test_the_pair_matches_with_both_hands_shown(self):
+        custom._active = [self.pair()]
+
+        self.assertEqual(custom.match(self.A, None, self.B, None),
+                         "MIXED PAIR")
+
+    def test_hands_may_swap_sides(self):
+        """Nobody promises which hand recorded which half."""
+
+        custom._active = [self.pair()]
+
+        self.assertEqual(custom.match(self.B, None, self.A, None),
+                         "MIXED PAIR")
+
+    def test_one_hand_alone_is_not_the_pair(self):
+        custom._active = [self.pair()]
+
+        self.assertIsNone(custom.match(self.A, None))
+        self.assertIsNone(custom.match(self.B, None))
+
+    def test_a_fitting_pair_beats_a_fitting_single(self):
+        """Two deliberate shapes are the more specific claim: the
+        person did not mean the one-hand gesture half of it resembles."""
+
+        single = a_gesture("JUST THREE")   # same primary shape as A
+        custom._active = [single, self.pair()]
+
+        self.assertEqual(custom.match(self.A, None, self.B, None),
+                         "MIXED PAIR")
+        self.assertEqual(custom.match(self.A, None), "JUST THREE")
 
 
 if __name__ == "__main__":
