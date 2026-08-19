@@ -49,13 +49,54 @@ def _resolve(configured) -> tuple:
 
 
 def _default_input() -> tuple:
-    """The OS default input device as ``(index_or_None, name)``."""
+    """The current OS/sounddevice default input device as ``(index, name)``.
+
+    ``microphone_device = None`` means exactly this: the live default input
+    device that PortAudio reports via ``sd.default.device[0]``. No index or
+    name is hard-coded, nothing is persisted, and no previously used
+    microphone is preferred -- the default is re-resolved from the OS on
+    every call, so a changed OS default (built-in vs. USB vs. Bluetooth)
+    takes effect immediately.
+    """
     try:
-        info = sd.query_devices(kind="input")
+        index = sd.default.device[0]
+        if not isinstance(index, int) or index < 0:
+            raise ValueError(f"no default input device reported ({index!r})")
+        info = sd.query_devices(index, kind="input")
         return info["index"], info["name"]
     except Exception as exc:
         logger.warning("no default input device available: %s", exc)
         return None, "OS default (none available)"
+
+
+def _device_info(spec):
+    """Live sounddevice info for ``spec``, or ``None`` if it cannot be queried."""
+    try:
+        return sd.query_devices(spec)
+    except Exception as exc:
+        logger.warning("could not query device %r: %s", spec, exc)
+        return None
+
+
+def _log_device(info, reason, channels=None, samplerate=None) -> None:
+    """Log the exact selected device index, name, host API, channels and rate."""
+    if not info:
+        return
+    hostapi_name = ""
+    try:
+        hostapis = sd.query_hostapis()
+        hostapi_name = hostapis[info.get("hostapi", 0)]["name"]
+    except Exception:
+        pass
+    logger.info(
+        "audio input %s: index=%s name=%r hostapi=%s channels=%s samplerate=%s",
+        reason,
+        info.get("index"),
+        info.get("name"),
+        hostapi_name,
+        channels if channels is not None else info.get("max_input_channels"),
+        samplerate if samplerate is not None else info.get("default_samplerate"),
+    )
 
 
 class MicrophoneStream:
@@ -96,6 +137,12 @@ class MicrophoneStream:
             spec, name = _default_input()
             self._open(spec)
         self.device_spec, self.device_name = spec, name
+        _log_device(
+            _device_info(spec),
+            reason="selected",
+            channels=self._kwargs.get("channels"),
+            samplerate=self._kwargs.get("samplerate"),
+        )
         logger.info("input device in use: %r (%s)", spec, name)
         return self
 

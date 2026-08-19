@@ -78,6 +78,14 @@ class VoiceConfig:
     max_recording_s: float = 12.0          # hard cap so a stuck mic can't hang forever
     min_recording_s: float = 0.3           # ignore accidental blips shorter than this
 
+    # --- Voice response (wake word -> spoken reply) ---
+    # Pause (seconds) after the spoken "Hey, how are you?" reply and before the
+    # command mic stream opens. TTS is synchronous so QRUDO can never record its
+    # own reply, but on a Bluetooth headset the reply's speaker audio can echo
+    # into the mic for a few hundred ms; this lets that echo decay below the
+    # silence RMS gate before command listening starts. Kept minimal on purpose.
+    post_tts_settle_s: float = 0.5
+
     # --- Speech-to-text (faster-whisper) ---
     whisper_model_size: str = "base"       # tiny/base/small/medium — base is the sweet spot on CPU
     whisper_device: str = "cpu"
