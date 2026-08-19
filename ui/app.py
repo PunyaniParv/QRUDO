@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+from pathlib import Path
 
 BACKGROUND = "#101418"
 PANEL = "#1a2027"
@@ -121,6 +122,20 @@ class App:
 
         self.root = tk.Tk()
         self.root.title("QRUDO")
+
+        # The eclipse Q on the window itself.  The packaged app's Dock
+        # and taskbar icons are baked into the bundle at build time;
+        # this covers the window's own title bar and the development
+        # checkout, where there is no bundle to carry one.  Failing to
+        # find the file must never stop the window.
+        try:
+            base = getattr(sys, "_MEIPASS", None)
+            logo = (Path(base) / "assets" / "logo.png") if base else \
+                Path(__file__).resolve().parent.parent / "assets" / "logo.png"
+            self._window_icon = tk.PhotoImage(file=str(logo))
+            self.root.iconphoto(True, self._window_icon)
+        except Exception:
+            pass
         self.root.geometry("880x560")
         self.root.minsize(700, 480)
         self.root.configure(bg=BACKGROUND)

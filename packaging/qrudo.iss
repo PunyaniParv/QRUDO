@@ -16,6 +16,8 @@ OutputBaseFilename=QRUDO-Setup
 PrivilegesRequired=lowest
 Compression=lzma2
 SolidCompression=yes
+; The eclipse Q, on the installer itself as well as the app.
+SetupIconFile=..\assets\qrudo.ico
 
 [Files]
 Source: "..\dist\QRUDO\*"; DestDir: "{app}"; Flags: recursesubdirs

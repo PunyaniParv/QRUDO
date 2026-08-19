@@ -24,7 +24,10 @@ sys.path.insert(0, ROOT)
 from version import VERSION
 
 # The hand model, where hand_tracker expects it: models/ beside the code.
-datas = [(os.path.join(ROOT, "models", "hand_landmarker.task"), "models")]
+datas = [(os.path.join(ROOT, "models", "hand_landmarker.task"), "models"),
+         # The logo rides along for the window's own icon; the app and
+         # exe icons below are baked in at build time.
+         (os.path.join(ROOT, "assets", "logo.png"), "assets")]
 binaries = []
 hidden = []
 
@@ -57,6 +60,11 @@ exe = EXE(
     # Windows a windowed build is silent, so --report and --simulate
     # belong to the repository way of running there.
     console=False,
+    # The eclipse Q.  Windows reads the .ico off the exe; macOS takes
+    # the .icns on the BUNDLE below.
+    icon=os.path.join(ROOT, "assets",
+                      "qrudo.ico" if sys.platform == "win32"
+                      else "qrudo.icns"),
 )
 
 coll = COLLECT(exe, a.binaries, a.datas, name="QRUDO")
@@ -65,6 +73,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="QRUDO.app",
+        icon=os.path.join(ROOT, "assets", "qrudo.icns"),
         bundle_identifier="com.qrudo.app",
         info_plist={
             # This sentence is the camera permission dialog.
