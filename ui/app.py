@@ -715,16 +715,42 @@ class App:
         # comes.  This was the two-minute freeze.  A failure to open
         # leaves the window standing with a plain reason on it, rather
         # than an empty crash.
-        camera = None
-        far = getattr(self.args, "far", False)
+        self._far = getattr(self.args, "far", False)
+        self._retry_button = None
+        self._start_vision()
 
+        self.root.after(40, self.tick)
+        self.root.mainloop()
+
+    def _start_vision(self):
+        """Open the camera on the main thread and start the vision worker.
+
+        If the camera cannot be had -- another app, or a copy of QRUDO
+        still shutting down -- the window says so and shows a Retry
+        button, so the fix is one click rather than quit-and-reopen.
+        That was the 'open it twice' annoyance: the first launch failed
+        and just sat there, and only a second launch, once the first had
+        let go, worked.
+        """
+
+        from integration import runner
+        from vision import Camera, CameraError
+
+        camera = None
         try:
             camera = Camera(self.args.camera,
-                            width=1600 if far else 640,
-                            height=1200 if far else 480).open()
-        except CameraError as exc:
-            self.result_label.configure(text=f"no camera: {exc}",
-                                        fg="#e06c75")
+                            width=1600 if self._far else 640,
+                            height=1200 if self._far else 480).open()
+        except CameraError:
+            self.result_label.configure(
+                text="Camera busy -- another app or a closing copy of "
+                     "QRUDO may have it.", fg="#e06c75")
+            self._show_retry()
+            return
+
+        # Success: clear any retry chrome from a previous failed attempt.
+        self._hide_retry()
+        self.result_label.configure(text="show a hand", fg=ACCENT)
 
         def vision():
             runner.run(self.engine, self.args,
@@ -732,12 +758,23 @@ class App:
                        should_stop=self.stop.is_set,
                        camera=camera)
 
-        if camera is not None:
-            self.worker = threading.Thread(target=vision, daemon=True)
-            self.worker.start()
+        self.worker = threading.Thread(target=vision, daemon=True)
+        self.worker.start()
 
-        self.root.after(40, self.tick)
-        self.root.mainloop()
+    def _show_retry(self):
+        if self._retry_button is not None:
+            return
+        self._retry_button = tk.Label(
+            self.home, text="↻  Try camera again", bg=ACCENT, fg=BACKGROUND,
+            font=("Helvetica", 15, "bold"), padx=20, pady=10,
+            cursor="pointinghand" if sys.platform == "darwin" else "hand2")
+        self._retry_button.place(relx=0.36, rely=0.62, anchor="center")
+        self._retry_button.bind("<Button-1>", lambda _e: self._start_vision())
+
+    def _hide_retry(self):
+        if self._retry_button is not None:
+            self._retry_button.destroy()
+            self._retry_button = None
 
         self.stop.set()
 

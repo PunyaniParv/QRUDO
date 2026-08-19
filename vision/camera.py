@@ -38,8 +38,14 @@ class Camera:
     #: that moment.  "could not open camera 0" was almost always this,
     #: and a second try a breath later found it free.  So the open waits
     #: rather than giving up on the first no.
-    OPEN_ATTEMPTS = 5
-    OPEN_BACKOFF = 0.4
+    #:
+    #: Generous on purpose: a previous QRUDO releasing the camera on
+    #: quit can take a second or two, and a cold first launch is exactly
+    #: when this bites.  Ten tries over rising backoff is about six
+    #: seconds of patience -- long enough to outlast a closing app,
+    #: short enough that a truly absent camera still fails promptly.
+    OPEN_ATTEMPTS = 10
+    OPEN_BACKOFF = 0.6
 
     def open(self):
         import cv2

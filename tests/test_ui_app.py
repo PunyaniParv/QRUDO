@@ -95,22 +95,29 @@ class TestTheShellRidesTheRunner(unittest.TestCase):
         self.assertIn("camera", inspect.signature(runner.run).parameters)
 
     def test_the_window_opens_the_camera_before_the_worker(self):
-        """It must open on the main thread, which run() is, not inside
-        the vision() thread it spawns -- so the source names Camera in
-        run() ahead of the worker start."""
+        """It must open on the main thread -- in _start_vision, which
+        run() calls directly (not inside the vision() thread it spawns)
+        -- so the source names Camera ahead of the worker start."""
 
         import inspect as _inspect
 
         from ui.app import App
 
-        source = _inspect.getsource(App.run)
+        source = _inspect.getsource(App._start_vision)
         camera_at = source.find("Camera(")
         worker_at = source.find("Thread(target=vision")
 
-        self.assertNotEqual(camera_at, -1, "run() must open the camera")
-        self.assertNotEqual(worker_at, -1, "run() must start the worker")
+        self.assertNotEqual(camera_at, -1,
+                            "_start_vision must open the camera")
+        self.assertNotEqual(worker_at, -1,
+                            "_start_vision must start the worker")
         self.assertLess(camera_at, worker_at,
                         "the camera must open before the worker starts")
+
+        # And run() must call _start_vision on the main thread, not in a
+        # worker -- the whole point of the AVFoundation fix.
+        run_source = _inspect.getsource(App.run)
+        self.assertIn("_start_vision", run_source)
 
 
 if __name__ == "__main__":
