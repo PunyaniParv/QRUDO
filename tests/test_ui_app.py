@@ -119,6 +119,45 @@ class TestTheShellRidesTheRunner(unittest.TestCase):
         run_source = _inspect.getsource(App.run)
         self.assertIn("_start_vision", run_source)
 
+    def test_starting_the_camera_never_asks_it_to_stop(self):
+        """The two-second death, pinned.
+
+        A bad edit once left quit()'s shutdown lines on the tail of
+        _hide_retry -- which _start_vision calls on every successful
+        camera open.  Every launch then set the stop event before its
+        own vision loop drew breath: the camera ran two seconds, the
+        loop saw a requested stop and ended cleanly, and nothing was
+        logged, because clean stops are not errors.  Days of 'the
+        camera turns off by itself' traced back to these lines.
+
+        So: nothing on the path that STARTS vision may touch the stop
+        event or join the worker.  Only quit(), and run() after its
+        mainloop has already ended, may.
+        """
+
+        import inspect as _inspect
+
+        from ui.app import App
+
+        for starter in (App._start_vision, App._hide_retry,
+                        App._show_retry, App._camera_died,
+                        App.take_frame):
+            source = _inspect.getsource(starter)
+
+            self.assertNotIn("stop.set", source,
+                             f"{starter.__name__} must never set the "
+                             f"stop event -- that was the silent "
+                             f"two-second camera death")
+            self.assertNotIn("worker.join", source,
+                             f"{starter.__name__} must not join the "
+                             f"vision worker")
+
+        # And the epilogue belongs to run(), after mainloop: the worker
+        # must not outlive the window.
+        run_source = _inspect.getsource(App.run)
+        self.assertIn("mainloop", run_source)
+        self.assertIn("stop.set", run_source)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

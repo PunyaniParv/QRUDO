@@ -740,6 +740,15 @@ class App:
         self.root.after(40, self.tick)
         self.root.mainloop()
 
+        # The window is gone; stop the vision loop and wait for it to
+        # let the camera go.  quit() already does this on the normal
+        # close path (idempotent here) -- this covers mainloop ending
+        # any other way, so the worker never outlives the window.
+        self.stop.set()
+
+        if self.worker is not None:
+            self.worker.join(timeout=3.0)
+
     def _start_vision(self):
         """Open the camera on the main thread and start the vision worker.
 
@@ -829,14 +838,17 @@ class App:
         self._retry_button.bind("<Button-1>", lambda _e: self._start_vision())
 
     def _hide_retry(self):
+        # Clearing the retry chrome must do exactly that and nothing
+        # more.  A bad edit once left quit()'s shutdown lines pasted on
+        # this method's tail -- and since _start_vision calls this on
+        # every successful camera open, every launch asked its own
+        # brand-new vision loop to stop.  The camera ran two seconds,
+        # the loop obeyed what looked like a requested stop, and not
+        # one line was logged, because clean stops are not errors.
+        # tests/test_ui_app.py now pins this method harmless.
         if self._retry_button is not None:
             self._retry_button.destroy()
             self._retry_button = None
-
-        self.stop.set()
-
-        if self.worker is not None:
-            self.worker.join(timeout=3.0)
 
         return 0
 
