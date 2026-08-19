@@ -317,8 +317,9 @@ class App:
 
         # Box 1 -- a text box for any work.  Type what you want done:
         # a known job like "next track", or "open Downloads", "launch
-        # Spotify", "go to gmail.com".  The save step turns the words
-        # into an action by the catalog and the plain-rule parser.
+        # Spotify", "go to gmail.com".  What Box 3 then asks depends on
+        # what this is -- a media job asks which app, an open-thing job
+        # already named its target here, so Box 3 only asks the scope.
         label(0, "1.  What should it do?")
         hint(1, 'type anything — "next track", "open Downloads", '
                 '"launch Spotify", "go to gmail.com"')
@@ -328,6 +329,8 @@ class App:
         self.job_entry.insert(0, "next track")
         self.job_entry.grid(row=2, column=0, columnspan=2, padx=4, pady=4,
                             sticky="w", ipady=5)
+        # Recompute Box 3's question as the person types.
+        self.job_entry.bind("<KeyRelease>", lambda _e: self._refresh_box3())
 
         # Box 2 -- record the gesture (working: hold your shape).
         label(3, "2.  Which gesture?")
@@ -339,13 +342,16 @@ class App:
         self.gesture_status.bind("<Button-1>",
                                  lambda _e: self.record_gesture())
 
-        # Box 3 -- which app, and whether locked
-        label(5, "3.  Which app?")
-        self.app_choice = ttk.Combobox(
-            form, values=["YouTube Music", "Spotify", "Front app (auto)"],
-            state="readonly", width=26)
-        self.app_choice.set("YouTube Music")
-        self.app_choice.grid(row=6, column=0, padx=4, pady=4, sticky="w")
+        # Box 3 -- the follow-up question, which depends on Box 1.  Its
+        # label and control are rebuilt by _refresh_box3; the frame is a
+        # fixed slot so the layout does not jump.
+        self.box3_label = tk.Label(form, text="", bg=BACKGROUND, fg=INK,
+                                   font=("Helvetica", 14), anchor="w")
+        self.box3_label.grid(row=5, column=0, columnspan=2, padx=4,
+                             pady=(14, 2), sticky="w")
+        self.box3_slot = tk.Frame(form, bg=BACKGROUND)
+        self.box3_slot.grid(row=6, column=0, padx=4, pady=4, sticky="w")
+        self.app_choice = None      # built by _refresh_box3 when needed
 
         # Scope -- where the gesture applies
         label(7, "Where does it work?")
@@ -369,6 +375,78 @@ class App:
 
         #: Filled once a shape is recorded.
         self._recorded_signature = None
+
+        self._refresh_box3()
+
+    def _classify_job(self, text):
+        """What kind of thing is typed in box 1: 'media' (needs an app),
+        'open' (already named its target), or 'unknown'."""
+
+        from control import catalog, phrase
+
+        if catalog.resolve(text.strip()) is not None:
+            entry = catalog.resolve(text.strip())
+            # A built-in media action is system-wide; a keystroke job
+            # (next track etc.) is the one that wants an app.
+            return "media" if entry.get("type") == "keystroke" else "builtin"
+
+        if phrase.parse(text) is not None:
+            return "open"
+
+        return "unknown"
+
+    def _refresh_box3(self):
+        """Rebuild box 3's question from what box 1 says.
+
+        A media job (next track) asks which app to land in.  An
+        open-a-thing job already named its file/site/app in box 1, so
+        box 3 does not ask again -- it just confirms what will open.  A
+        built-in (volume) needs nothing.  This is the 'different
+        questions ask different sub-questions' the user asked for.
+        """
+
+        from control import actions as action_mod
+        from control import phrase
+
+        kind = self._classify_job(self.job_entry.get())
+
+        for child in self.box3_slot.winfo_children():
+            child.destroy()
+
+        if kind == "media":
+            self.box3_label.configure(text="3.  Which app should it control?")
+            from tkinter import ttk
+            self.app_choice = ttk.Combobox(
+                self.box3_slot,
+                values=["YouTube Music", "Spotify", "Front app (auto)"],
+                state="readonly", width=26)
+            self.app_choice.set("YouTube Music")
+            self.app_choice.pack(anchor="w")
+
+        elif kind == "open":
+            self.app_choice = None
+            action = phrase.parse(self.job_entry.get())
+            self.box3_label.configure(text="3.  This will:")
+            tk.Label(self.box3_slot,
+                     text="✓ " + action_mod.describe([action]),
+                     bg=BACKGROUND, fg=ACCENT,
+                     font=("Helvetica", 14)).pack(anchor="w")
+
+        elif kind == "builtin":
+            self.app_choice = None
+            self.box3_label.configure(text="3.  Works system-wide")
+            tk.Label(self.box3_slot,
+                     text="✓ no app needed",
+                     bg=BACKGROUND, fg=ACCENT,
+                     font=("Helvetica", 14)).pack(anchor="w")
+
+        else:
+            self.app_choice = None
+            self.box3_label.configure(text="3.  ...")
+            tk.Label(self.box3_slot,
+                     text="type a task above that QRUDO recognises",
+                     bg=BACKGROUND, fg=DIM,
+                     font=("Helvetica", 13)).pack(anchor="w")
 
     # -- what the corners do -------------------------------------------
 
@@ -398,16 +476,19 @@ class App:
         from control import catalog, phrase
 
         job = self.job_entry.get().strip()
-        app_label = self.app_choice.get()
-        locked = app_label != "Front app (auto)"
+
+        # Box 3 only holds an app when box 1 was a media job; otherwise
+        # the target was named in box 1 itself.
+        app_label = self.app_choice.get() if self.app_choice else ""
+        locked = bool(app_label) and app_label != "Front app (auto)"
 
         app_key = {"YouTube Music": "youtube_music",
                    "Spotify": "spotify"}.get(app_label, "any")
 
-        # A menu job first (it knows the per-app shortcut); then, if the
-        # person typed something else, the plain-rule parser turns it
-        # into an action; if neither places it, say so rather than save
-        # a gesture that does nothing.
+        # A catalog job first (it knows the per-app shortcut); then, if
+        # the person typed an open-a-thing phrase, the plain-rule parser
+        # turns it into an action; if neither places it, say so rather
+        # than save a gesture that does nothing.
         action = catalog.resolve(job, app_key, lock_to_app=locked)
 
         if action is None:
@@ -680,66 +761,100 @@ class Recorder:
         self.signature = None      # the settled shape, once recorded
         self.direction = ""        # a motion direction, if chosen
         self._polling = False
+        self._preview_photo = None
 
         self.panel = tk.Frame(app.add_gesture, bg=PANEL,
-                              highlightthickness=1,
+                              highlightthickness=2,
                               highlightbackground=ACCENT)
         self.panel.place(relx=0.5, rely=0.5, anchor="center",
-                         relwidth=0.7, relheight=0.6)
+                         relwidth=0.82, relheight=0.86)
 
         self.title = tk.Label(self.panel, text="", bg=PANEL, fg=INK,
                               font=("Helvetica", 18, "bold"))
-        self.title.place(relx=0.5, rely=0.15, anchor="center")
+        self.title.place(relx=0.5, rely=0.06, anchor="center")
+
+        # The live camera, so recording feels like calibration: you see
+        # yourself, you know where to hold your hand, and a green frame
+        # says when a hand is actually being read.
+        self.view = tk.Label(self.panel, bg=BACKGROUND, fg=DIM,
+                             font=("Helvetica", 13))
+        self.view.place(relx=0.5, rely=0.42, anchor="center")
 
         self.body = tk.Label(self.panel, text="", bg=PANEL, fg=DIM,
-                             font=("Helvetica", 14), wraplength=420,
+                             font=("Helvetica", 14), wraplength=460,
                              justify="center")
-        self.body.place(relx=0.5, rely=0.42, anchor="center")
+        self.body.place(relx=0.5, rely=0.78, anchor="center")
 
         self.row = tk.Frame(self.panel, bg=PANEL)
-        self.row.place(relx=0.5, rely=0.72, anchor="center")
+        self.row.place(relx=0.5, rely=0.9, anchor="center")
 
         self.name_entry = None
 
     # -- steps ---------------------------------------------------------
 
     def begin(self):
-        self.title.configure(text="Hold your hand shape to the camera")
-        self.body.configure(
-            text="Make the shape you want and hold it still.\n"
-                 "Recording starts now — keep holding.")
+        self.title.configure(text="Make your gesture and hold still")
+        self.body.configure(text="Hold your hand up to the camera...")
         self._buttons([("Cancel", self.cancel)])
         self.samples = []
         self._polling = True
-        self._deadline = None
+        self._held_frames = 0
         self._poll()
 
     def _poll(self):
-        """Collect a finger reading each tick while holding the shape."""
+        """Show the camera, and record only while a hand is actually seen.
+
+        The count climbs on real hand readings, not on wall-clock, so a
+        hand out of frame never fills the recording with nothing -- and
+        the person sees, live, whether they are being read.
+        """
 
         if not self._polling:
             return
 
-        import time as _t
-
-        if self._deadline is None:
-            self._deadline = _t.time() + RECORD_SECONDS
+        self._draw_preview()
 
         spans = self.app.last_spans
+
         if spans:
             self.samples.append(spans)
+            self._held_frames += 1
+            self.view.configure(highlightthickness=3,
+                                highlightbackground=ACCENT)
+            self.body.configure(
+                text=f"Reading your shape... hold still  "
+                     f"({self._held_frames}/{MIN_GOOD_FRAMES})", fg=ACCENT)
+        else:
+            self.view.configure(highlightthickness=3,
+                                highlightbackground="#e06c75")
+            self.body.configure(text="No hand seen -- hold your hand up to "
+                                     "the camera", fg="#e06c75")
 
-        remaining = self._deadline - _t.time()
-        self.body.configure(
-            text=f"Hold it still... {max(0, remaining):.0f}s\n"
-                 f"({len(self.samples)} readings)")
-
-        if remaining <= 0:
+        # Done once enough steady readings are in -- measured in hand
+        # frames, not seconds, so a slow start just waits.
+        if self._held_frames >= MIN_GOOD_FRAMES:
             self._polling = False
             self._finish_recording()
             return
 
         self.app.root.after(80, self._poll)
+
+    def _draw_preview(self):
+        latest = self.app.latest
+        if latest is None:
+            return
+        frame = latest[0]
+        try:
+            import cv2
+            from PIL import Image, ImageTk
+
+            small = cv2.resize(frame, (400, 300))
+            image = Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+            self._preview_photo = ImageTk.PhotoImage(image)
+            self.view.configure(image=self._preview_photo, width=400,
+                                height=300)
+        except Exception:
+            pass
 
     def _finish_recording(self):
         if len(self.samples) < MIN_GOOD_FRAMES:
