@@ -117,7 +117,14 @@ def resolve(job_name, app="any", lock_to_app=False):
     stays on the front window because it has no app of its own.
     """
 
+    # Case- and space-insensitive, so a typed "next track" finds "Next
+    # track" without the person matching the menu's exact casing.
     entry = JOBS.get(job_name)
+
+    if entry is None:
+        folded = job_name.strip().lower()
+        entry = next((v for k, v in JOBS.items()
+                      if k.lower() == folded), None)
 
     if entry is None:
         return None

@@ -288,8 +288,6 @@ class App:
 
         from tkinter import ttk
 
-        from control import catalog
-
         self._corner(self.add_gesture, "Back", self.show_settings,
                      relx=0, rely=0, anchor="nw")
         self._corner(self.add_gesture, "Save gesture", self.save_gesture,
@@ -297,67 +295,77 @@ class App:
 
         tk.Label(self.add_gesture, text="Teach QRUDO a new gesture",
                  bg=BACKGROUND, fg=INK, font=("Helvetica", 20, "bold")).place(
-            relx=0.5, rely=0.1, anchor="center")
+            relx=0.5, rely=0.09, anchor="center")
 
+        # Left-anchored, not centred: a centred grid with a wide hint
+        # column overflowed off the left edge and cut the labels.  A
+        # fixed left margin keeps every label whole at any window size.
         form = tk.Frame(self.add_gesture, bg=BACKGROUND)
-        form.place(relx=0.5, rely=0.48, anchor="center")
+        form.place(relx=0.08, rely=0.2, anchor="nw")
 
-        def row(r, label):
-            tk.Label(form, text=label, bg=BACKGROUND, fg=INK,
-                     font=("Helvetica", 14), anchor="e", width=22).grid(
-                row=r, column=0, padx=8, pady=10, sticky="e")
+        def label(r, text):
+            tk.Label(form, text=text, bg=BACKGROUND, fg=INK,
+                     font=("Helvetica", 14), anchor="w").grid(
+                row=r, column=0, columnspan=2, padx=4, pady=(14, 2),
+                sticky="w")
 
-        # Box 1 -- what is the work.  Editable, not a locked list: the
-        # menu offers the jobs QRUDO already knows the shortcut for, and
-        # a person can type anything else -- "open my email", "launch
-        # Blender" -- which the save step turns into an action.
-        row(0, "1.  What should it do?")
-        self.job_choice = ttk.Combobox(form, values=catalog.job_names(),
-                                       width=24)   # editable (no readonly)
-        self.job_choice.set("Next track")
-        self.job_choice.grid(row=0, column=1, padx=8, pady=10, sticky="w")
-        tk.Label(form,
-                 text="pick one, or type your own — e.g. \"open Downloads\", "
-                      "\"launch Spotify\", \"go to gmail.com\"",
-                 bg=BACKGROUND, fg=DIM, font=("Helvetica", 11)).grid(
-            row=0, column=2, padx=8, sticky="w")
+        def hint(r, text):
+            tk.Label(form, text=text, bg=BACKGROUND, fg=DIM,
+                     font=("Helvetica", 11), anchor="w").grid(
+                row=r, column=0, columnspan=2, padx=4, pady=(0, 2),
+                sticky="w")
 
-        # Box 2 -- which gesture (recording wired in the next phase)
-        row(1, "2.  Which gesture?")
+        # Box 1 -- a text box for any work.  Type what you want done:
+        # a known job like "next track", or "open Downloads", "launch
+        # Spotify", "go to gmail.com".  The save step turns the words
+        # into an action by the catalog and the plain-rule parser.
+        label(0, "1.  What should it do?")
+        hint(1, 'type anything — "next track", "open Downloads", '
+                '"launch Spotify", "go to gmail.com"')
+        self.job_entry = tk.Entry(form, bg=PANEL, fg=INK,
+                                  insertbackground=INK, relief="flat",
+                                  font=("Helvetica", 15), width=38)
+        self.job_entry.insert(0, "next track")
+        self.job_entry.grid(row=2, column=0, columnspan=2, padx=4, pady=4,
+                            sticky="w", ipady=5)
+
+        # Box 2 -- record the gesture (working: hold your shape).
+        label(3, "2.  Which gesture?")
         self.gesture_status = tk.Label(
-            form, text="record it  (coming: hold your shape to the camera)",
-            bg=PANEL, fg=DIM, font=("Helvetica", 13), padx=12, pady=8,
+            form, text="＋  Record a gesture", bg=ACCENT, fg=BACKGROUND,
+            font=("Helvetica", 14, "bold"), padx=16, pady=8,
             cursor="pointinghand" if sys.platform == "darwin" else "hand2")
-        self.gesture_status.grid(row=1, column=1, padx=8, pady=10, sticky="w")
+        self.gesture_status.grid(row=4, column=0, padx=4, pady=4, sticky="w")
         self.gesture_status.bind("<Button-1>",
                                  lambda _e: self.record_gesture())
 
         # Box 3 -- which app, and whether locked
-        row(2, "3.  Which app?")
+        label(5, "3.  Which app?")
         self.app_choice = ttk.Combobox(
             form, values=["YouTube Music", "Spotify", "Front app (auto)"],
-            state="readonly", width=24)
+            state="readonly", width=26)
         self.app_choice.set("YouTube Music")
-        self.app_choice.grid(row=2, column=1, padx=8, pady=10, sticky="w")
+        self.app_choice.grid(row=6, column=0, padx=4, pady=4, sticky="w")
 
         # Scope -- where the gesture applies
-        row(3, "Where it works:")
+        label(7, "Where does it work?")
         self.scope_choice = ttk.Combobox(
             form, values=["Global (anywhere)",
                           "Only when that app is in front"],
-            state="readonly", width=24)
+            state="readonly", width=26)
         self.scope_choice.set("Global (anywhere)")
-        self.scope_choice.grid(row=3, column=1, padx=8, pady=10, sticky="w")
+        self.scope_choice.grid(row=8, column=0, padx=4, pady=4, sticky="w")
 
         tk.Label(self.add_gesture,
                  text="Tip: Ctrl+Shift+←/→ switches the target app "
                       "live, any time.",
                  bg=BACKGROUND, fg=DIM, font=("Helvetica", 12)).place(
-            relx=0.5, rely=0.82, anchor="center")
+            relx=0.08, rely=0.9, anchor="w")
 
         self.add_note = tk.Label(self.add_gesture, text="", bg=BACKGROUND,
-                                 fg=ACCENT, font=("Helvetica", 13))
-        self.add_note.place(relx=0.5, rely=0.9, anchor="center")
+                                 fg=ACCENT, font=("Helvetica", 13),
+                                 wraplength=600, justify="left")
+        self.add_note.place(relx=0.08, rely=0.95, anchor="w")
 
         #: Filled once a shape is recorded.
         self._recorded_signature = None
@@ -389,7 +397,7 @@ class App:
 
         from control import catalog, phrase
 
-        job = self.job_choice.get().strip()
+        job = self.job_entry.get().strip()
         app_label = self.app_choice.get()
         locked = app_label != "Front app (auto)"
 
