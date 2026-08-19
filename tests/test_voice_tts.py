@@ -41,6 +41,9 @@ class BackendAvailabilityCase(unittest.TestCase):
         self.assertIn("powershell", str(ctx.exception))
 
 
+@unittest.skipUnless(sys.platform == "win32",
+                     "PowerShell TTS is Windows-only; speak() refuses "
+                     "elsewhere by design, so there is nothing to invoke")
 class PowerShellInvocationCase(unittest.TestCase):
     def _fake_run(self):
         run = mock.patch.object(tts.subprocess, "run").start()

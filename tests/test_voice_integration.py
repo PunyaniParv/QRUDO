@@ -25,6 +25,16 @@ sys.path.insert(0, str(ROOT))
 
 from integration import voice as voice_mod
 
+# The pipeline pulls in faster_whisper at import; a machine without the
+# voice extras (requirements-voice.txt) must SKIP those tests, loudly,
+# not error -- the suite has to run green on both machines and both CI
+# platforms, or nobody trusts a red suite enough to read it.
+import importlib.util
+
+_HAVE_WHISPER = importlib.util.find_spec("faster_whisper") is not None
+_NEEDS_VOICE_EXTRAS = unittest.skipUnless(
+    _HAVE_WHISPER, "voice extras not installed (requirements-voice.txt)")
+
 
 class TestAvailable(unittest.TestCase):
     def test_true_when_every_dependency_is_present(self):
@@ -113,6 +123,7 @@ class TestStart(unittest.TestCase):
         self.assertFalse(handle.running)
 
 
+@_NEEDS_VOICE_EXTRAS
 class TestRunIsBestEffort(unittest.TestCase):
     """The voice thread can never take the camera loop down with it."""
 
@@ -257,6 +268,7 @@ class TestRunVoiceOnly(unittest.TestCase):
         self.assertIn("DRY RUN", buf.getvalue())
 
 
+@_NEEDS_VOICE_EXTRAS
 class TestVoiceNeverTouchesCamera(unittest.TestCase):
     """The voice-only mode must never initialize the camera stack."""
 

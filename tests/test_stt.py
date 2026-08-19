@@ -19,7 +19,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 from voice.config import CONFIG
-from voice.stt import SpeechToText
+
+# The wrapper imports faster_whisper at module load; without the voice
+# extras (requirements-voice.txt) this whole module is a skip, not an
+# error -- the suite must run green on both machines and both CI
+# platforms.
+try:
+    from voice.stt import SpeechToText
+except ModuleNotFoundError as exc:
+    raise unittest.SkipTest(f"voice extras not installed: {exc}")
 
 
 class _Segment:

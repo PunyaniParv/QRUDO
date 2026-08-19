@@ -24,7 +24,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 from control import Command
-from voice import pipeline
+
+# The pipeline imports faster_whisper at module load; without the voice
+# extras (requirements-voice.txt) this whole module is a skip, not an
+# error -- the suite must run green on both machines and both CI
+# platforms.
+try:
+    from voice import pipeline
+except ModuleNotFoundError as exc:
+    raise unittest.SkipTest(f"voice extras not installed: {exc}")
+
 from voice.bridge import Route as _Route
 from voice.bridge import VoiceIntentRouter
 from voice.config import CONFIG

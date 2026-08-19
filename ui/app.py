@@ -810,11 +810,22 @@ class App:
                        on_frame=self.take_frame,
                        should_stop=self.stop.is_set,
                        camera=camera)
-            # The loop ended.  If nobody asked it to stop, the camera
-            # died under us -- reads coming back empty (another app took
-            # it, or macOS blocked it).  Flag it for the main-thread
-            # tick, which explains and recovers; a worker thread must
-            # not touch Tk itself.
+            # The loop ended.  Say so UNCONDITIONALLY -- requested or
+            # not.  The two-second death hid for a day because a stray
+            # arming of the stop switch made every death look
+            # requested, and requested stops logged nothing: the one
+            # exit with no voice was the one that happened every
+            # launch.  Every end of this loop is now one log line, so
+            # a future silent killer is a grep away instead of a
+            # thread-sampling hunt.
+            ui_log.info("ui: vision loop ended (stop requested=%s)",
+                        self.stop.is_set())
+
+            # If nobody asked it to stop, the camera died under us --
+            # reads coming back empty (another app took it, or macOS
+            # blocked it).  Flag it for the main-thread tick, which
+            # explains and recovers; a worker thread must not touch Tk
+            # itself.
             if not self.stop.is_set():
                 self._vision_died = True
 

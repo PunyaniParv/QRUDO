@@ -1,27 +1,45 @@
-# Every push runs the full suite on a real Mac and a real Windows
-# machine.  The gesture code is platform-neutral, which means a change
-# made on one platform IS a change to the other -- this is what catches
-# it on the other one the minute it is made, instead of on demo day.
+# The suite, on every push, on both operating systems QRUDO ships to.
+#
+# Two machines develop this project -- a Mac and a Windows box -- and
+# each has pushed code the other had no way to try.  The two-second
+# camera death taught the deeper lesson: a bug can pass every local
+# test and still only be caught by discipline that runs without being
+# asked.  So the whole suite -- the detection floor, the stop-switch
+# pins, the store-loader contract -- runs here on real macOS and real
+# Windows for every push from either machine.  A red X on a commit is
+# the promise breaking loudly, which is the only acceptable way for it
+# to break.
+
 name: tests
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
   suite:
     strategy:
+      # One platform failing must not cancel the other: when a change
+      # breaks only Windows, that fact IS the finding.
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
+
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install dependencies
+          cache: pip
+
+      - name: Install the vision engine
         run: python -m pip install -r requirements.txt
+
+      # Voice extras are deliberately NOT installed: the suite must
+      # stay green on a machine without them (their tests skip with a
+      # stated reason), and CI proves that instead of assuming it.
       - name: Run the suite
-        run: python -m unittest discover tests
+        run: python -m unittest discover tests -v
