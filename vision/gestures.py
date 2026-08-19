@@ -24,10 +24,11 @@ _fingers = FingerMemory()
 _folded = FingerMemory()
 
 #: The poses that exist in a two-hand form.  Both hands making one of
-#: these at once is its own gesture -- "2_FIST", "2_OPEN_PALM" -- and
-#: deliberately NOT the single-hand one: raising both palms must not
-#: fire what one palm means.
-TWO_HANDED = ("FIST", "OPEN_PALM")
+#: these at once is its own gesture -- "2_FIST", "2_OPEN_PALM",
+#: "2_POINT", "2_TWO_FINGER" -- and deliberately NOT the single-hand
+#: one: raising both palms must not fire what one palm means, and two
+#: pointing hands are not a request to switch targets.
+TWO_HANDED = ("FIST", "OPEN_PALM", "POINT", "TWO_FINGER")
 
 #: The second hand's verdict must repeat this many frames before the
 #: pairing believes it, so a one-frame misread of the other hand does
@@ -360,6 +361,25 @@ def classify_still(hand, handedness=None):
             return "UNKNOWN"
 
         return "FIST"
+
+    # The finger poses, from this frame's raw spans -- the same lines
+    # the memories steady, asked without the memory.
+    spans = hand_state.finger_span(hand)
+
+    def folded_line(finger):
+        lines = hand_state.FOLDED_RATIOS
+        return lines[finger] if lines else hand_state.FOLDED_RATIO
+
+    out = {f: spans.get(f, 0.0) >= hand_state.EXTENDED_RATIO
+           for f in ("index", "middle", "ring", "pinky")}
+
+    if (out["index"]
+            and all(spans.get(f, 1.0) <= folded_line(f)
+                    for f in ("middle", "ring", "pinky"))):
+        return "POINT"
+
+    if _two_up(out, spans):
+        return "TWO_FINGER"
 
     if hand_state.is_open(hand_state.shape_of(hand)):
         if not hand_state.is_facing_palm(screen, handedness):

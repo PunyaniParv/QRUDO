@@ -2110,6 +2110,16 @@ class TestTwoHandsAreTheirOwnVocabulary(GestureTestCase):
         self.assertEqual(self.paired(self.fist(0.35), self.fist(0.65)),
                          "2_FIST")
 
+    def test_both_points_read_as_the_two_hand_point(self):
+        point = lambda cx: make_hand(EXTENDED, CURLED, CURLED, CURLED,
+                                     cx=cx)
+
+        self.assertEqual(self.paired(point(0.35), point(0.65)), "2_POINT")
+
+    def test_both_peace_signs_read_as_the_two_hand_two_finger(self):
+        self.assertEqual(self.paired(peace_sign(0.35), peace_sign(0.65)),
+                         "2_TWO_FINGER")
+
     def test_two_different_poses_fire_nothing(self):
         self.assertEqual(self.paired(self.palm(0.35), self.fist(0.65)),
                          "UNKNOWN")
