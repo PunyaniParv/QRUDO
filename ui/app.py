@@ -714,6 +714,15 @@ class App:
                 # Paused is not dead, and it should never look dead.
                 self.result_label.configure(
                     text="paused -- watching, touching nothing", fg=DIM)
+            else:
+                # A result that has aged out takes its line with it.
+                # The runner expires results after a few seconds, but
+                # nothing repainted this label -- so the last red error
+                # stood in the middle of the window indefinitely,
+                # reading as "still broken" long after it was over.
+                ambient = "show a hand" if shown == "--" else ""
+                self.result_label.configure(
+                    text=ambient, fg=ACCENT if ambient else DIM)
 
             self.hint_label.configure(text=hint or "")
 
