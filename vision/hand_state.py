@@ -302,6 +302,74 @@ def thumb_gap(hand):
     return distance(shape[THUMB_TIP], shape[INDEX_TIP]) / palm
 
 
+#: A thumb reaching past the knuckle line by more than this, on a hand
+#: whose fingers are all shut, is a thumbs-up -- and a thumbs-up is not
+#: a fist.  A fist's thumb sits beside or across the fingers, at or
+#: below the knuckles; only a deliberately raised thumb climbs past
+#: them.
+THUMBS_UP_RISE = 0.25
+
+#: A thumb closer to the index knuckle than this, on a hand with all
+#: four fingers straight, is tucked across the palm -- and four fingers
+#: with the thumb tucked is not an open palm.  An open palm holds the
+#: thumb out to the side, well clear of the knuckles.
+THUMB_TUCKED_SPREAD = 0.22
+
+#: Below this hand size (as a fraction of frame width) the thumb is a
+#: few pixels of guesswork, and the strict thumb tests above would be
+#: refusing real gestures over noise.  They only ask their questions
+#: of a hand close enough to answer honestly; far away, the four-finger
+#: reading -- the one that holds at range -- stands alone, exactly as
+#: it did before the thumb was consulted at all.
+THUMB_READ_SCALE = 0.05
+
+
+def thumb_rise(hand):
+    """How far the thumb tip reaches past the knuckle line, along the
+    hand's own up-axis, in palm-lengths.
+
+    Positive is thumb-up territory; a thumb beside curled fingers or
+    out to the side of a palm sits at or below zero.  Measured along
+    the wrist-to-middle-knuckle axis so turning or tilting the whole
+    hand does not change the answer.
+    """
+
+    shape = shape_of(hand)
+
+    palm = distance(shape[WRIST], shape[MIDDLE_MCP]) or 0.01
+
+    ux = (shape[MIDDLE_MCP].x - shape[WRIST].x) / palm
+    uy = (shape[MIDDLE_MCP].y - shape[WRIST].y) / palm
+    uz = (getattr(shape[MIDDLE_MCP], "z", 0.0)
+          - getattr(shape[WRIST], "z", 0.0)) / palm
+
+    dx = shape[THUMB_TIP].x - shape[INDEX_MCP].x
+    dy = shape[THUMB_TIP].y - shape[INDEX_MCP].y
+    dz = (getattr(shape[THUMB_TIP], "z", 0.0)
+          - getattr(shape[INDEX_MCP], "z", 0.0))
+
+    return (dx * ux + dy * uy + dz * uz) / palm
+
+
+def thumb_spread(hand):
+    """How far the thumb tip sits from the index knuckle, in
+    palm-lengths: wide for a thumb held out, small for one tucked
+    across the palm."""
+
+    shape = shape_of(hand)
+
+    palm = distance(shape[WRIST], shape[MIDDLE_MCP]) or 0.01
+
+    return distance(shape[THUMB_TIP], shape[INDEX_MCP]) / palm
+
+
+def thumb_readable(hand):
+    """Whether the hand is near enough for the thumb tests to be
+    honest rather than noise."""
+
+    return hand_scale(screen_of(hand)) >= THUMB_READ_SCALE
+
+
 def is_prominent(hand):
     """Whether the hand is close enough and whole enough to mean it."""
 

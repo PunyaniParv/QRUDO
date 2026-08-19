@@ -34,6 +34,11 @@ class Hand:
     landmarks: list
     world: list | None
     handedness: str
+    #: The other hand in frame, when there is one -- a second Hand, or
+    #: None.  The pairing layer in gestures.py reads it to tell both
+    #: hands making the same pose (a two-hand gesture) from one hand
+    #: making it alone.
+    partner: "Hand | None" = None
 
 
 class _Point:
@@ -209,7 +214,12 @@ class HandTracker:
                 base_options=mp_python.BaseOptions(
                     model_asset_path=str(self.model_path)),
                 running_mode=vision.RunningMode.VIDEO,
-                num_hands=1,
+                # Two, because a pair of hands is its own vocabulary: a
+                # both-hands-open pose must read as 2_OPEN_PALM, not as
+                # whichever single palm the model happened to find
+                # first.  One-hand behaviour is untouched -- the second
+                # slot simply comes back empty.
+                num_hands=2,
                 min_hand_detection_confidence=self.confidence,
                 min_hand_presence_confidence=self.confidence,
                 min_tracking_confidence=self.confidence,
@@ -217,6 +227,7 @@ class HandTracker:
         )
 
         self._last_ms = 0
+        self._last_centre = None   # where the primary hand last was
 
         return self
 
@@ -268,6 +279,7 @@ class HandTracker:
 
         if not found.hand_landmarks:
             self._scanner.missed()
+            self._last_centre = None
             return None
 
         # What the crop saw, restated for the frame everyone else sees.
@@ -276,10 +288,6 @@ class HandTracker:
         # not the view was resized on its way to the model.
         box = (left / width, top / height,
                crop_w / width, crop_h / height)
-        landmarks = unwrap(found.hand_landmarks[0], box)
-
-        centre = landmarks[hand_state.MIDDLE_MCP]
-        self._scanner.found(centre.x, centre.y, hand_state.hand_scale(landmarks))
 
         world = found.hand_world_landmarks
 
@@ -291,11 +299,58 @@ class HandTracker:
             print("  ! the tracker returned no world landmarks; pose "
                   "reading degrades", file=sys.stderr)
 
-        return Hand(
-            landmarks=landmarks,
-            world=world[0] if world else None,
-            handedness=found.handedness[0][0].category_name
-        )
+        hands = [
+            Hand(
+                landmarks=unwrap(found.hand_landmarks[i], box),
+                world=world[i] if world and i < len(world) else None,
+                handedness=found.handedness[i][0].category_name,
+            )
+            for i in range(len(found.hand_landmarks))
+        ]
+
+        # With two hands in frame, "the" hand must stay the same one
+        # from frame to frame -- the model reports them in whatever
+        # order it likes, and letting the primary flip between hands
+        # would churn every stabiliser downstream.  Continuity first
+        # (nearest to where the primary just was), size on first sight.
+        def centre(h):
+            return h.landmarks[hand_state.MIDDLE_MCP]
+
+        if len(hands) > 1:
+            if self._last_centre is not None:
+                lx, ly = self._last_centre
+                hands.sort(key=lambda h: (centre(h).x - lx) ** 2
+                           + (centre(h).y - ly) ** 2)
+            else:
+                hands.sort(
+                    key=lambda h: -hand_state.hand_scale(h.landmarks))
+
+        primary = hands[0]
+        c0 = centre(primary)
+        s0 = hand_state.hand_scale(primary.landmarks)
+        self._last_centre = (c0.x, c0.y)
+
+        if len(hands) > 1:
+            partner = hands[1]
+            c1 = centre(partner)
+            s1 = hand_state.hand_scale(partner.landmarks)
+
+            # The follow window must hold BOTH hands, or the one it
+            # drops is lost until the next sweep: centre on their
+            # midpoint, sized so the span covers the distance between
+            # them with a hand's worth of margin either side.
+            dist = ((c0.x - c1.x) ** 2 + (c0.y - c1.y) ** 2) ** 0.5
+            span = max(s0, s1,
+                       (dist + s0 + s1) / self._scanner.WINDOW_SPANS)
+            self._scanner.found((c0.x + c1.x) / 2, (c0.y + c1.y) / 2,
+                                span)
+
+            return Hand(landmarks=primary.landmarks, world=primary.world,
+                        handedness=primary.handedness, partner=partner)
+
+        self._scanner.found(c0.x, c0.y, s0)
+
+        return primary
 
     def close(self):
         if self._landmarker is not None:

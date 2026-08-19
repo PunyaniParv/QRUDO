@@ -557,11 +557,48 @@ class MacOSController(Controller):
 
     # ------------------------------------------------------- event plumbing
 
+    _ax = None   # ApplicationServices, loaded once, kept for re-asking
+
+    def _require_event_trust(self):
+        """Refuse to post keys the system would silently drop.
+
+        Synthetic key events need the app in System Settings > Privacy &
+        Security > Accessibility.  Untrusted, CGEventPost DROPS the
+        event and says nothing -- so seeking and media keys "succeeded"
+        while nothing happened, and the log swore everything was OK.
+        And the grant dies quietly on every rebuild: an ad-hoc re-sign
+        changes the signature the grant is pinned to, so the switch in
+        Settings still shows ON while the system no longer honours it.
+
+        Asked fresh on every send, not cached, so granting access mid-
+        session starts working immediately.  If the check itself is
+        unavailable, the event is sent anyway -- a maybe is better than
+        a certain refusal.
+        """
+
+        try:
+            if MacOSController._ax is None:
+                import ctypes
+                MacOSController._ax = ctypes.CDLL(
+                    "/System/Library/Frameworks/ApplicationServices."
+                    "framework/ApplicationServices")
+            trusted = bool(MacOSController._ax.AXIsProcessTrusted())
+        except Exception:
+            return
+
+        if not trusted:
+            raise UnsupportedCommand(
+                "macOS is silently dropping QRUDO's key presses -- "
+                "System Settings > Privacy & Security > Accessibility: "
+                "add QRUDO, or if it is already listed, toggle it OFF "
+                "and ON (an updated QRUDO must be re-trusted)")
+
     def _post_media_key(self, key: int) -> None:
         """Send an NSSystemDefined event -- the same thing a media key sends."""
         if self._quartz is None:
             raise UnsupportedCommand(
                 "media keys need pyobjc-framework-Quartz (pip install -r requirements.txt)")
+        self._require_event_trust()
         quartz, ns_event = self._quartz
         for pressed in (True, False):
             flags = 0xA if pressed else 0xB
@@ -582,6 +619,7 @@ class MacOSController(Controller):
         switching windows.
         """
         if self._quartz is not None:
+            self._require_event_trust()
             quartz, _ = self._quartz
             for pressed in (True, False):
                 event = quartz.CGEventCreateKeyboardEvent(None, key_code, pressed)
@@ -622,6 +660,7 @@ class MacOSController(Controller):
                     f"nowhere to go")
 
         if self._quartz is not None:
+            self._require_event_trust()
             quartz, _ = self._quartz
             for pressed in (True, False):
                 event = quartz.CGEventCreateKeyboardEvent(

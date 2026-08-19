@@ -2029,5 +2029,116 @@ class TestAJitteryAimStillRests(GestureTestCase):
         self.assertEqual(result, "SWIPE_LEFT")
 
 
+class TestOnlyTheRealShapeCounts(GestureTestCase):
+    """Only a fist is a fist, and only a whole palm is a palm.
+
+    Reported as the classifier being too generous: a thumbs-up fired
+    the fist's action, and four fingers with the thumb tucked across
+    the palm fired the palm's.  Both shapes mean something else to the
+    person making them, so they must mean nothing to the built-ins.
+    The thumb tests only apply to a hand near enough for its thumb to
+    be read honestly; the range grid in test_capability_floor pins
+    that far-off hands still carry the poses on four fingers alone.
+    """
+
+    def thumbs_up(self, cx=0.50, cy=0.50):
+        """A fist with the thumb deliberately raised past the knuckles."""
+
+        hand = make_hand(CURLED, CURLED, CURLED, CURLED, cx=cx, cy=cy)
+        hand[1] = Point(cx - 0.075, cy + 0.120)
+        hand[2] = Point(cx - 0.090, cy + 0.050)
+        hand[3] = Point(cx - 0.100, cy - 0.010)
+        hand[4] = Point(cx - 0.105, cy - 0.055)
+        return hand
+
+    def tucked(self, cx=0.50, cy=0.50):
+        """Four straight fingers with the thumb across the palm."""
+
+        hand = make_hand(cx=cx, cy=cy)
+        hand[2] = Point(cx - 0.075, cy + 0.100)
+        hand[3] = Point(cx - 0.050, cy + 0.050)
+        hand[4] = Point(cx - 0.030, cy + 0.010)
+        return hand
+
+    def test_a_thumbs_up_is_not_a_fist(self):
+        self.assertNotEqual(self.settle(self.thumbs_up()), "FIST")
+
+    def test_a_true_fist_still_is(self):
+        self.assertEqual(
+            self.settle(make_hand(CURLED, CURLED, CURLED, CURLED)), "FIST")
+
+    def test_four_fingers_with_the_thumb_tucked_is_not_a_palm(self):
+        self.assertNotEqual(self.settle(self.tucked()), "OPEN_PALM")
+
+    def test_a_whole_open_hand_still_is(self):
+        self.assertEqual(self.settle(make_hand()), "OPEN_PALM")
+
+
+class TestTwoHandsAreTheirOwnVocabulary(GestureTestCase):
+    """Both hands making a pose is a different gesture from one hand.
+
+    Raising both palms must not fire what a single palm means: the
+    pair reads as 2_OPEN_PALM (and both fists as 2_FIST), names of
+    their own, mapped to nothing until someone maps them.  A second
+    hand resting in frame suppresses nothing, and one hand alone
+    behaves exactly as it always did.
+    """
+
+    def palm(self, cx=0.50):
+        return make_hand(cx=cx)
+
+    def fist(self, cx=0.50):
+        return make_hand(CURLED, CURLED, CURLED, CURLED, cx=cx)
+
+    def paired(self, hand, partner, frames=6):
+        """Settle the primary while the partner is in frame."""
+
+        result = "UNKNOWN"
+        for _ in range(frames):
+            settled = gestures.detect_gesture(hand, HAND)
+            result = gestures.pair(settled, partner)
+        return result
+
+    def test_both_palms_read_as_the_two_hand_palm(self):
+        self.assertEqual(self.paired(self.palm(0.35), self.palm(0.65)),
+                         "2_OPEN_PALM")
+
+    def test_both_fists_read_as_the_two_hand_fist(self):
+        self.assertEqual(self.paired(self.fist(0.35), self.fist(0.65)),
+                         "2_FIST")
+
+    def test_two_different_poses_fire_nothing(self):
+        self.assertEqual(self.paired(self.palm(0.35), self.fist(0.65)),
+                         "UNKNOWN")
+
+    def test_a_resting_second_hand_suppresses_nothing(self):
+        rest = make_hand(LOOSE, LOOSE, LOOSE, LOOSE, cx=0.65)
+
+        self.assertEqual(self.paired(self.palm(0.35), rest), "OPEN_PALM")
+
+    def test_one_hand_alone_is_untouched(self):
+        self.assertEqual(self.paired(self.palm(), None), "OPEN_PALM")
+
+    def test_the_partner_needs_a_streak_before_it_is_believed(self):
+        """One frame of a misread partner must not rename a held pose."""
+
+        settled = "UNKNOWN"
+        for _ in range(5):
+            settled = gestures.detect_gesture(self.palm(0.35), HAND)
+
+        self.assertEqual(gestures.pair(settled, self.palm(0.65)),
+                         "OPEN_PALM")
+
+    def test_reading_the_partner_never_disturbs_the_primary(self):
+        """classify_still must stay stateless: reading the second hand
+        through the shared finger memories would poison the first."""
+
+        for _ in range(5):
+            settled = gestures.detect_gesture(self.palm(0.35), HAND)
+            gestures.classify_still(self.fist(0.65))
+
+        self.assertEqual(settled, "OPEN_PALM")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

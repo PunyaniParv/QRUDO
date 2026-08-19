@@ -23,11 +23,26 @@ _stabiliser = GestureStabiliser()
 _fingers = FingerMemory()
 _folded = FingerMemory()
 
+#: The poses that exist in a two-hand form.  Both hands making one of
+#: these at once is its own gesture -- "2_FIST", "2_OPEN_PALM" -- and
+#: deliberately NOT the single-hand one: raising both palms must not
+#: fire what one palm means.
+TWO_HANDED = ("FIST", "OPEN_PALM")
+
+#: The second hand's verdict must repeat this many frames before the
+#: pairing believes it, so a one-frame misread of the other hand does
+#: not flicker a held FIST into 2_FIST and back, re-arming the router
+#: each way.
+PAIR_STREAK = 3
+
+_partner = {"verdict": "UNKNOWN", "streak": 0}
+
 
 def reset():
     _stabiliser.clear()
     _fingers.clear()
     _folded.clear()
+    _partner["verdict"], _partner["streak"] = "UNKNOWN", 0
 
 
 def observe(hand):
@@ -138,10 +153,26 @@ def classify(hand, handedness=None):
     # neither way.
     from_behind = hand_state.is_back_of_hand(screen, handedness)
 
+    # The thumb tests below only apply to a hand near enough for its
+    # thumb to be read honestly; far off, the thumb is a few pixels of
+    # guesswork, and the range poses stand on the four fingers alone.
+    read_thumb = hand_state.thumb_readable(hand)
+
     # The fist first: every finger shut is the least ambiguous thing a
     # hand can be, so nothing else has to work around it.
     if hand_state.is_clenched(hand):
-        return "UNKNOWN" if from_behind else "FIST"
+        if from_behind:
+            return "UNKNOWN"
+
+        # Only a fist is a fist.  A thumbs-up has the same four fingers
+        # shut, but its raised thumb is the whole point of the gesture
+        # -- it means something else to the person making it, so it
+        # must mean nothing to the fist.
+        if (read_thumb and hand_state.thumb_rise(hand)
+                > hand_state.THUMBS_UP_RISE):
+            return "UNKNOWN"
+
+        return "FIST"
 
     fingers = _fingers_out(hand)
     folded = _fingers_folded(hand)
@@ -174,6 +205,14 @@ def classify(hand, handedness=None):
         if not _open_enough(hand):
             return "UNKNOWN"
 
+        # An open palm is all FIVE digits, not four: four fingers
+        # straight with the thumb tucked across the palm is a count of
+        # four, or half a stretch -- something else.  Only a thumb held
+        # out clear of the knuckles completes the palm.
+        if (read_thumb and hand_state.thumb_spread(hand)
+                < hand_state.THUMB_TUCKED_SPREAD):
+            return "UNKNOWN"
+
         return "OPEN_PALM"
 
     return "UNKNOWN"
@@ -201,6 +240,13 @@ def explain(hand, handedness=None):
         return "back of hand -- fist and open hand are not read from behind"
 
     if hand_state.is_clenched(hand):
+        if (hand_state.thumb_readable(hand)
+                and hand_state.thumb_rise(hand)
+                > hand_state.THUMBS_UP_RISE):
+            return (f"that is a thumbs-up (thumb "
+                    f"{hand_state.thumb_rise(hand):+.2f} palms past the "
+                    f"knuckles) -- only a fist counts as a fist")
+
         return "shut -> FIST"
 
     closed = [name for name, reach in reaches.items()
@@ -236,6 +282,13 @@ def explain(hand, handedness=None):
         weakest = min(hand_state.finger_scores(shape).values())
         return (f"open but slack: weakest finger {weakest:.2f}, "
                 f"needs {hand_state.OPEN_RATIO} to count as an open hand")
+
+    if (len(out) == 4 and hand_state.thumb_readable(hand)
+            and hand_state.thumb_spread(hand)
+            < hand_state.THUMB_TUCKED_SPREAD):
+        return (f"four fingers but the thumb is tucked "
+                f"({hand_state.thumb_spread(hand):.2f} palms from the "
+                f"knuckle) -- an open palm holds all five out")
 
     if _at_rest(hand):
         return (f"fingers out: {', '.join(out)} -- but this matches your "
@@ -273,6 +326,80 @@ def detect_gesture(hand, handedness=None):
             raw = matched
 
     return _stabiliser.update(raw)
+
+
+def classify_still(hand, handedness=None):
+    """The second hand's shape, from this frame alone, with no memory.
+
+    The stabilised path above owns per-finger memories that belong to
+    ONE hand; feeding the other hand through them would poison every
+    reading.  So the partner is read statelessly, and only for the
+    poses that exist in a two-hand form -- an answer that flickers is
+    handled by the streak in pair(), not by shared memory.
+    """
+
+    screen = hand_state.screen_of(hand)
+    handedness = getattr(hand, "handedness", handedness)
+
+    if hand_state.is_back_of_hand(screen, handedness):
+        return "UNKNOWN"
+
+    if hand_state.is_clenched(hand):
+        if (hand_state.thumb_readable(hand)
+                and hand_state.thumb_rise(hand)
+                > hand_state.THUMBS_UP_RISE):
+            return "UNKNOWN"
+
+        return "FIST"
+
+    if hand_state.is_open(hand_state.shape_of(hand)):
+        if not hand_state.is_facing_palm(screen, handedness):
+            return "UNKNOWN"
+
+        if (hand_state.thumb_readable(hand)
+                and hand_state.thumb_spread(hand)
+                < hand_state.THUMB_TUCKED_SPREAD):
+            return "UNKNOWN"
+
+        return "OPEN_PALM"
+
+    return "UNKNOWN"
+
+
+def pair(settled, partner):
+    """Fold the second hand into the settled answer.
+
+    One hand alone: the answer passes through untouched -- everything
+    that existed before two-hand gestures behaves exactly as it did.
+    Both hands making the same two-hand pose: that is its own gesture,
+    named "2_" + the pose, and deliberately not the single-hand one.
+    Both hands making DIFFERENT two-hand poses: ambiguous, so nothing
+    -- a palm shown while the other hand is a fist is not a request
+    for the palm's action.  A second hand doing nothing readable never
+    suppresses the first: hands rest in frame all the time.
+    """
+
+    if partner is None:
+        _partner["verdict"], _partner["streak"] = "UNKNOWN", 0
+        return settled
+
+    seen = classify_still(partner)
+
+    if seen == _partner["verdict"]:
+        _partner["streak"] += 1
+    else:
+        _partner["verdict"], _partner["streak"] = seen, 1
+
+    other = (_partner["verdict"]
+             if _partner["streak"] >= PAIR_STREAK else "UNKNOWN")
+
+    if settled in TWO_HANDED and other == settled:
+        return "2_" + settled
+
+    if settled in TWO_HANDED and other in TWO_HANDED:
+        return "UNKNOWN"
+
+    return settled
 
 
 def _two_up(fingers, spans):

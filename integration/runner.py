@@ -261,6 +261,18 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                 last_hand_at = time.time()
                 presence.seen(time.time())
                 gesture = gesture_module.detect_gesture(hand)
+
+                # A second hand in frame folds into the answer: both
+                # hands making the same pose is its own gesture
+                # (2_FIST, 2_OPEN_PALM), never the single-hand one.
+                # A background hand too small to mean it is ignored,
+                # same as the primary would be.
+                partner = getattr(hand, "partner", None)
+                if partner is not None \
+                        and not hand_state.is_prominent(partner):
+                    partner = None
+                gesture = gesture_module.pair(gesture, partner)
+
                 swipe = motion.detect_swipe(hand)
 
                 # A hand plainly shown and not recognised is a question
@@ -281,11 +293,20 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
 
                 if time.time() - spans_logged_at > 1.0:
                     spans_logged_at = time.time()
+                    # The thumb numbers ride along so a strictness
+                    # complaint ("my palm stopped counting" / "the back
+                    # of my hand fired") arrives with the measurements
+                    # to tune from, not just the verdict.
                     vision_log.info(
-                        "hand ext=%s gesture=%s why=%s",
+                        "hand ext=%s gesture=%s thumb(rise=%.2f "
+                        "spread=%.2f gap=%.2f) why=%s",
                         {name: round(span, 2) for name, span
                          in hand_state.finger_span(hand).items()},
-                        gesture, gesture_module.explain(hand))
+                        gesture,
+                        hand_state.thumb_rise(hand),
+                        hand_state.thumb_spread(hand),
+                        hand_state.thumb_gap(hand),
+                        gesture_module.explain(hand))
 
                 if not tuning:
                     command = router.update(gesture, swipe)

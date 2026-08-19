@@ -93,4 +93,14 @@ if [ -d "/Applications/QRUDO.app" ]; then
   # ID signature will make grants survive rebuilds; until then, this.
   tccutil reset Camera com.qrudo.app >/dev/null 2>&1 \
     && echo "  camera permission reset -- next launch will ask once"
+
+  # Accessibility dies the same quiet death on rebuild -- worse,
+  # actually: the switch in System Settings still shows ON while the
+  # system drops every key event, so seeking and media keys "work"
+  # (the log says OK) and nothing happens.  Resetting turns that lie
+  # into a clean ask; the backend refuses with instructions instead of
+  # posting keys into the void.
+  tccutil reset Accessibility com.qrudo.app >/dev/null 2>&1 \
+    && echo "  accessibility reset -- re-enable QRUDO in System Settings" \
+            "for media keys"
 fi
