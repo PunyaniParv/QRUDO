@@ -109,6 +109,7 @@ class App:
         self._recorded_name = ""
         self._recorded_signature = None
         self._recorded_direction = ""
+        self._recorded_thumb_gap = None
         self.first_frame_seen = False
 
         from version import VERSION
@@ -527,6 +528,7 @@ class App:
                 tolerance=0.25,
                 kind="move" if self._recorded_direction else "pose",
                 direction=self._recorded_direction,
+                thumb_gap=self._recorded_thumb_gap,
                 actions=[action],
                 command="", binding_type="action")
             custom.add(gesture)
@@ -628,13 +630,14 @@ class App:
         # measure a shape from the same reading the detector used.
         self.last_spans = spans
 
-    def attach_recorded(self, name, signature, direction):
+    def attach_recorded(self, name, signature, direction, thumb_gap=None):
         """The recorder hands a finished shape back here; remember it so
         the form's Save ties it to the chosen action."""
 
         self._recorded_name = name
         self._recorded_signature = signature
         self._recorded_direction = direction
+        self._recorded_thumb_gap = thumb_gap
         self.gesture_status.configure(
             text=f"recorded: {name}"
                  + (f" ({direction} swipe)" if direction else " (still)"),
@@ -764,6 +767,7 @@ class Recorder:
         self.app = app
         self.samples = []          # per-frame finger spans while holding
         self.signature = None      # the settled shape, once recorded
+        self.thumb_gap = None      # the thumb-to-index gap of that shape
         self.direction = ""        # a motion direction, if chosen
         self._polling = False
         self._preview_photo = None
@@ -883,6 +887,12 @@ class Recorder:
             values = sorted(s.get(finger, 0.0) for s in steady)
             self.signature[finger] = values[len(values) // 2]
 
+        # The thumb gap, median across the steady frames -- what tells a
+        # closed hole from an open C.  None if the readings never carried
+        # one (an older camera path), so the gesture still saves.
+        gaps = sorted(s["_thumb_gap"] for s in steady if "_thumb_gap" in s)
+        self.thumb_gap = gaps[len(gaps) // 2] if gaps else None
+
         # A shape too close to a built-in gesture can never fire -- the
         # built-in wins first (the isolation), so the custom one is
         # shadowed.  Better to say so now than save a gesture that
@@ -974,7 +984,8 @@ class Recorder:
 
         # Hand the recorded shape back to the form; the form's Save
         # button then ties it to the chosen action and writes it.
-        self.app.attach_recorded(name, self.signature, self.direction)
+        self.app.attach_recorded(name, self.signature, self.direction,
+                                 self.thumb_gap)
         self.close()
 
     # -- chrome --------------------------------------------------------

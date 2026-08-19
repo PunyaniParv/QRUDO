@@ -91,11 +91,16 @@ def apps_for(job_name):
 
 
 #: The app each catalog key belongs to, as its real macOS app name, so
-#: a keystroke locked to it can be delivered to that app by name.  A
-#: browser-site job ("youtube") has no app of its own -- it lives in a
-#: browser -- so it stays unlocked and rides the front window.
+#: a keystroke locked to it can be delivered to that app by name.
+#:
+#: Only true native apps go here.  Spotify is one, so its shortcut can
+#: be aimed at it while another window is focused.  YouTube Music is
+#: NOT -- it is a website in a browser -- so it is deliberately absent:
+#: a key aimed at a phantom "YouTube Music" app landed nowhere, which
+#: is why next/previous track did nothing.  A website's key rides the
+#: focused window (the browser), the same way play/pause already
+#: reaches a browser tab.
 APP_NAMES = {
-    "youtube_music": "YouTube Music",
     "spotify": "Spotify",
 }
 

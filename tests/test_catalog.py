@@ -78,32 +78,34 @@ class TestResolve(unittest.TestCase):
 class TestLockedToOneApp(unittest.TestCase):
     """The user's whole point: global trigger, landing in one app.
 
-    "Next track for YouTube Music, locked" is a keystroke tagged with
-    YouTube Music's real name, so the swipe fires from anywhere and the
-    key still lands there -- not on YouTube, not on the front window.
+    Only a true native app can be locked to.  Spotify is one, so "Next
+    track for Spotify, locked" is tagged with its name and fires from
+    anywhere.  YouTube Music is NOT a native app -- it is a website in a
+    browser -- so it is never locked: a key aimed at a phantom "YouTube
+    Music" app landed nowhere, which is why next/previous track did
+    nothing.  Its key rides the focused browser instead.
     """
 
-    def test_next_track_locked_to_youtube_music(self):
-        action = catalog.resolve("Next track", "youtube_music",
-                                 lock_to_app=True)
+    def test_next_track_locked_to_spotify(self):
+        action = catalog.resolve("Next track", "spotify", lock_to_app=True)
 
-        self.assertEqual(action["combo"], "shift+n")
-        self.assertEqual(action["target_app"], "YouTube Music")
+        self.assertEqual(action["combo"], "cmd+right")
+        self.assertEqual(action["target_app"], "Spotify")
 
-    def test_youtube_music_is_not_youtube(self):
-        """They are different targets; only the real app can be locked."""
+    def test_youtube_music_is_never_locked_because_it_is_a_website(self):
+        """The reported failure: locking to a non-app sent the key to
+        nowhere.  YouTube Music carries no target_app, so its key rides
+        the browser it lives in."""
 
         music = catalog.resolve("Next track", "youtube_music",
                                 lock_to_app=True)
-        site = catalog.resolve("Next track", "youtube", lock_to_app=True)
 
-        self.assertEqual(music.get("target_app"), "YouTube Music")
-        self.assertNotIn("target_app", site,
-                         "a browser site has no app of its own to lock to")
+        self.assertEqual(music["combo"], "shift+n")
+        self.assertNotIn("target_app", music,
+                         "a website has no app to lock a key to")
 
     def test_unlocked_carries_no_target(self):
-        action = catalog.resolve("Next track", "youtube_music",
-                                 lock_to_app=False)
+        action = catalog.resolve("Next track", "spotify", lock_to_app=False)
         self.assertNotIn("target_app", action)
 
 

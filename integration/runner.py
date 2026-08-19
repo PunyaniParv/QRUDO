@@ -316,8 +316,13 @@ def run(engine, args, tuning=False, on_frame=None, should_stop=None,
                 # recorder can measure a shape from the same reading the
                 # detector used.  A broken callback must not take the
                 # camera loop down.
-                spans = hand_state.finger_span(hand) if hand is not None \
-                    else None
+                if hand is not None:
+                    spans = hand_state.finger_span(hand)
+                    # The thumb gap rides alongside the spans so the
+                    # recorder can capture a closed-hole vs open-C shape.
+                    spans = dict(spans, _thumb_gap=hand_state.thumb_gap(hand))
+                else:
+                    spans = None
                 try:
                     on_frame(frame, gesture, last_result,
                              refused or permission_hint or update_notice[0],

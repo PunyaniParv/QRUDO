@@ -79,6 +79,11 @@ class CustomGesture:
     tolerance: float
     kind: str = "pose"
     direction: str = ""
+    #: The thumb-to-index gap the shape was recorded at, in palm-lengths,
+    #: or None for a gesture recorded before this existed.  It is what
+    #: tells a closed hole (thumb touching, ~0) from an open C (the same
+    #: fingers, apart) -- finger extension alone cannot.
+    thumb_gap: float | None = None
     #: What firing does: an ordered list of actions (the source of truth).
     #: A gesture saved before chains existed carries the legacy binding
     #: fields instead, and the normaliser below turns those into a
@@ -153,16 +158,24 @@ class CustomGesture:
         else:
             raise CustomError(f"unknown binding {self.binding_type!r}")
 
-    def distance(self, spans: dict) -> float:
-        """How far a live hand's fingers sit from this gesture's shape.
+    def distance(self, spans: dict, live_gap: float | None = None) -> float:
+        """How far a live hand sits from this gesture's shape.
 
-        Euclidean over the four extensions -- the same measurement the
-        built-in classifier reads, never a threshold it consults.  A
+        Euclidean over the four finger extensions -- the same
+        measurement the built-in classifier reads, never a threshold it
+        consults.  When both this gesture and the live hand carry a
+        thumb gap, that difference joins the distance, so a closed hole
+        and an open C -- identical in extension -- are told apart.  A
         hand nearer than ``tolerance`` is a match.
         """
 
-        return sum((spans.get(f, 0.0) - self.signature[f]) ** 2
-                   for f in FINGERS) ** 0.5
+        total = sum((spans.get(f, 0.0) - self.signature[f]) ** 2
+                    for f in FINGERS)
+
+        if self.thumb_gap is not None and live_gap is not None:
+            total += (live_gap - self.thumb_gap) ** 2
+
+        return total ** 0.5
 
 
 def _known_fields():
@@ -264,23 +277,23 @@ def active() -> list[CustomGesture]:
     return list(_active)
 
 
-def match(spans: dict) -> str | None:
+def match(spans: dict, thumb_gap: float | None = None) -> str | None:
     """The custom gesture this hand matches, or None.
 
     Reached only after the built-in classifier has returned UNKNOWN --
     that ordering is the isolation, and it lives at the one call site in
     gestures.py, not here.  Here the rule is only: nearest signature
     within its tolerance wins, and a tie between two rejects rather than
-    guessing.  Poses only; a "move" gesture is matched for its shape here
-    and its direction is confirmed by the existing swipe detector, the
-    same machinery the built-in movements use.
+    guessing.  ``thumb_gap`` -- the live thumb-to-index distance -- joins
+    the distance for gestures that recorded one, so a closed hole and an
+    open C are told apart.
     """
 
     if not _active:
         return None
 
     scored = sorted(
-        ((g.distance(spans), g) for g in _active),
+        ((g.distance(spans, thumb_gap), g) for g in _active),
         key=lambda pair: pair[0])
 
     best_distance, best = scored[0]

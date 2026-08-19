@@ -266,7 +266,8 @@ def detect_gesture(hand, handedness=None):
     if raw == "UNKNOWN":
         from . import custom
 
-        matched = custom.match(hand_state.finger_span(hand))
+        matched = custom.match(hand_state.finger_span(hand),
+                               hand_state.thumb_gap(hand))
 
         if matched is not None:
             raw = matched

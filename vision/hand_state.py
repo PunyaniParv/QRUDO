@@ -277,6 +277,31 @@ def hand_scale(hand_landmarks):
     )
 
 
+#: The thumb tip landmark, for the thumb-gap measurement below.
+THUMB_TIP = 4
+
+
+def thumb_gap(hand):
+    """How far the thumb tip sits from the index tip, in palm-lengths.
+
+    Finger extension cannot tell a closed hole (thumb and index
+    touching, an OK sign) from an open C (the same fingers curled but
+    apart) -- the fingers are equally curled either way.  What separates
+    them is this gap: near zero when they touch, wide when they do not.
+    Adding it to a custom gesture's signature lets the two be told
+    apart, which finger extension alone never could.
+
+    Measured in 3D over palm length so it means the same at any distance
+    or hand size.
+    """
+
+    shape = shape_of(hand)
+
+    palm = distance(shape[WRIST], shape[MIDDLE_MCP]) or 0.01
+
+    return distance(shape[THUMB_TIP], shape[INDEX_TIP]) / palm
+
+
 def is_prominent(hand):
     """Whether the hand is close enough and whole enough to mean it."""
 
