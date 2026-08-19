@@ -58,45 +58,26 @@ fi
 # boundary in Finder, so the same art looked wrong somewhere no matter
 # its geometry.  The catalog is compiled from the same icns, so there
 # is still exactly one source of art.
-# Two arts on purpose: the catalog carries the BARE mark, because the
-# system composes its own tile behind catalog icons on every modern
-# surface -- tiled art there doubles the tile.  The legacy icns keeps
-# the TILED art, because the third-party apps that read it raw (notch
-# bars, launchers) compose nothing, and the bare mark floats frameless
-# there.  Each consumer gets the art its rendering expects.
+# The REAL Tahoe icon: packaging/AppIcon.icon is a layered Icon
+# Composer document (dark fill + the gold mark), and actool compiles
+# it into Assets.car.  This is the format Chrome, VS Code and Notion
+# ship, and the one macOS composes ITSELF and hands out pre-composed
+# to every surface and every API -- Finder, Dock, cmd-tab, and the
+# third-party bars that ask for a running app's icon.  A week of
+# per-surface size fights came down to not being in this format.
+# The legacy icns stays for macOS versions that predate it.
 if xcrun actool --version >/dev/null 2>&1; then
   ICONTMP=$(mktemp -d)
-  iconutil -c iconset assets/qrudo-glyph.icns -o "$ICONTMP/q.iconset"
-  SET="$ICONTMP/Assets.xcassets/AppIcon.appiconset"
-  mkdir -p "$SET"
-  cp "$ICONTMP/q.iconset/"*.png "$SET/"
-  cat > "$SET/Contents.json" <<'JSON'
-{
-  "images": [
-    {"idiom": "mac", "size": "16x16", "scale": "1x", "filename": "icon_16x16.png"},
-    {"idiom": "mac", "size": "16x16", "scale": "2x", "filename": "icon_16x16@2x.png"},
-    {"idiom": "mac", "size": "32x32", "scale": "1x", "filename": "icon_32x32.png"},
-    {"idiom": "mac", "size": "32x32", "scale": "2x", "filename": "icon_32x32@2x.png"},
-    {"idiom": "mac", "size": "128x128", "scale": "1x", "filename": "icon_128x128.png"},
-    {"idiom": "mac", "size": "128x128", "scale": "2x", "filename": "icon_128x128@2x.png"},
-    {"idiom": "mac", "size": "256x256", "scale": "1x", "filename": "icon_256x256.png"},
-    {"idiom": "mac", "size": "256x256", "scale": "2x", "filename": "icon_256x256@2x.png"},
-    {"idiom": "mac", "size": "512x512", "scale": "1x", "filename": "icon_512x512.png"},
-    {"idiom": "mac", "size": "512x512", "scale": "2x", "filename": "icon_512x512@2x.png"}
-  ],
-  "info": {"author": "xcode", "version": 1}
-}
-JSON
-  if xcrun actool "$ICONTMP/Assets.xcassets" \
+  if xcrun actool packaging/AppIcon.icon \
       --compile "$APP/Contents/Resources" \
-      --platform macosx --minimum-deployment-target 11.0 \
+      --platform macosx --minimum-deployment-target 15.0 \
       --app-icon AppIcon \
       --output-partial-info-plist "$ICONTMP/partial.plist" \
       >/dev/null 2>&1 \
       && [ -f "$APP/Contents/Resources/Assets.car" ]; then
-    echo "  asset-catalog icon compiled -- rendered like the neighbours"
+    echo "  layered icon compiled -- composed by macOS on every surface"
   else
-    echo "  ! actool could not compile the icon catalog; icns only"
+    echo "  ! actool could not compile the layered icon; icns only"
   fi
   rm -rf "$ICONTMP"
 fi
