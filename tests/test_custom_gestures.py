@@ -162,6 +162,54 @@ class TestStore(unittest.TestCase):
         with self.assertRaises(CustomError):
             custom.save_all([a_gesture("X"), a_gesture("X")], self.path)
 
+    def test_a_null_name_cannot_crash_startup(self):
+        """The drop-the-bad-entry contract is absolute.
+
+        A null name raised AttributeError -- outside load_all's old
+        named catch -- and one bad line in the store file crashed the
+        whole app at startup, before any window existed.  Whatever a
+        bad entry raises, the good ones load.
+        """
+
+        self.path.write_text('[{"name": null, "signature": '
+                             '{"index":0.9,"middle":0.9,"ring":0.9,'
+                             '"pinky":0.4}, "tolerance":0.1}, '
+                             '{"name": "OK", "signature": '
+                             '{"index":0.9,"middle":0.9,"ring":0.9,'
+                             '"pinky":0.4}, "tolerance":0.1, '
+                             '"command":"VOLUME_UP"}]')
+
+        self.assertEqual([g.name for g in custom.load_all(self.path)],
+                         ["OK"])
+
+    def test_a_corrupt_thumb_gap_is_refused_at_load_not_at_match(self):
+        """A non-numeric thumb_gap must fail while loading, where the
+        entry is simply dropped -- not sit dormant and TypeError inside
+        distance() on the first near-matching hand, which is the
+        per-frame loop, which would take the camera down with it."""
+
+        self.path.write_text('[{"name": "TRAP", "signature": '
+                             '{"index":0.9,"middle":0.9,"ring":0.9,'
+                             '"pinky":0.4}, "tolerance":0.1, '
+                             '"thumb_gap": "oops", '
+                             '"command":"VOLUME_UP"}]')
+
+        self.assertEqual(custom.load_all(self.path), [])
+
+    def test_a_numeric_string_thumb_gap_loads_as_a_number(self):
+        gesture = a_gesture()
+        gesture.thumb_gap = 0.15
+        custom.save_all([gesture], self.path)
+
+        raw = self.path.read_text().replace("0.15", '"0.15"')
+        self.path.write_text(raw)
+        back = custom.load_all(self.path)
+
+        self.assertEqual(back[0].thumb_gap, 0.15)
+        # And distance() must arithmetic on it without complaint.
+        back[0].distance({f: 0.9 for f in ("index", "middle",
+                                           "ring", "pinky")}, 0.2)
+
 
 class TestRuntimeMatching(unittest.TestCase):
     """A taught shape is recognised, once the built-ins have passed.

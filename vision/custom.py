@@ -117,6 +117,16 @@ class CustomGesture:
         self.tolerance = min(MAX_TOLERANCE,
                              max(MIN_TOLERANCE, float(self.tolerance)))
 
+        # The gap joins the distance metric, so it gets the same
+        # coercion as the spans do.  Stored uncast, a non-number here
+        # loads without complaint, sits dormant, and then TypeErrors
+        # inside distance() the first time a hand comes near this
+        # shape -- which is the per-frame loop, which takes the camera
+        # down with it.  Cast at load, so a bad value fails HERE, where
+        # load_all drops just this entry.
+        if self.thumb_gap is not None:
+            self.thumb_gap = float(self.thumb_gap)
+
         if self.kind not in ("pose", "move"):
             raise CustomError(f"unknown kind {self.kind!r}")
 
@@ -209,7 +219,12 @@ def load_all(path: str | Path | None = None) -> list[CustomGesture]:
         try:
             gestures.append(CustomGesture(
                 **{k: v for k, v in entry.items() if k in known}))
-        except (CustomError, TypeError, ValueError):
+        except Exception:
+            # Anything.  A named tuple of expected errors once let a
+            # null name slip through as AttributeError and crash the
+            # whole app at startup, before any window existed -- over
+            # one bad line in a store file.  The contract above is
+            # absolute: this entry is dropped, the rest load.
             continue
 
     return gestures

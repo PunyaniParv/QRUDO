@@ -158,6 +158,26 @@ class TestTheShellRidesTheRunner(unittest.TestCase):
         self.assertIn("mainloop", run_source)
         self.assertIn("stop.set", run_source)
 
+    def test_the_pulse_reschedules_itself_even_when_a_beat_fails(self):
+        """An exception escaping a root.after callback ends the chain
+        silently: Tk prints to a stderr nobody sees and never runs the
+        callback again.  For tick that is the window freezing and the
+        dead-camera watchdog going blind; for the recorder's poll it is
+        'hold still' freezing mid-recording.  Both must book their next
+        beat in a finally, so one bad frame cannot end the pulse."""
+
+        import inspect as _inspect
+
+        from ui.app import App, Recorder
+
+        for pulse in (App.tick, Recorder._poll):
+            source = _inspect.getsource(pulse)
+
+            self.assertIn("finally", source,
+                          f"{pulse.__qualname__} must reschedule in a "
+                          f"finally, or one exception silently ends it")
+            self.assertIn(".after(", source)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

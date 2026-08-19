@@ -104,6 +104,7 @@ class App:
         self._frame_seq = 0         # bumped per frame; latest is not nulled
         self._drawn_seq = -1        # so the recorder can read latest too
         self._vision_died = False   # set by the worker when the loop ends
+        self._tick_error_logged = False   # a failing beat logs once, not 25/s
         self._auto_retried = False  # one free auto-recovery per death
         self.stop = threading.Event()
         self.worker = None
@@ -654,6 +655,29 @@ class App:
             text="gesture recorded — now pick what it does and press Save")
 
     def tick(self):
+        """The pulse.  One rule above all: it reschedules itself even
+        when a beat fails.  An exception escaping a root.after callback
+        does not crash anything visible -- Tk prints it to a stderr
+        nobody sees and simply never runs the callback again.  For this
+        method that would mean the window freezing and the dead-camera
+        watchdog going blind, silently, over one bad frame.  So the
+        work may fail; the next beat is booked in a finally.
+        """
+
+        try:
+            self._beat_once()
+        except Exception:
+            if not self._tick_error_logged:
+                self._tick_error_logged = True
+                from control import log as _log
+                _log.get_logger("ui").exception(
+                    "ui: a tick failed (the pulse continues; "
+                    "logging this once)")
+        finally:
+            if not self.stop.is_set():
+                self.root.after(40, self.tick)
+
+    def _beat_once(self):
         # A vision loop that ended without being asked to is a dead
         # camera; handle it here on the main thread, where Tk is safe.
         if self._vision_died and not self.stop.is_set():
@@ -718,9 +742,6 @@ class App:
                 self.preview.configure(
                     text=f"{dot} watching -- picture hidden "
                          f"(click to show)")
-
-        if not self.stop.is_set():
-            self.root.after(40, self.tick)
 
     def run(self):
         from integration import runner
@@ -927,32 +948,39 @@ class Recorder:
         if not self._polling:
             return
 
-        self._draw_preview()
+        # Booked before the work, for the same reason tick() reschedules
+        # in a finally: an exception escaping a root.after callback ends
+        # the chain silently, and here that looks like the recorder
+        # freezing mid-"hold still" with no error anywhere.
+        try:
+            self._draw_preview()
 
-        spans = self.app.last_spans
+            spans = self.app.last_spans
 
-        if spans:
-            self.samples.append(spans)
-            self._held_frames += 1
-            self.view.configure(highlightthickness=3,
-                                highlightbackground=ACCENT)
-            self.body.configure(
-                text=f"Reading your shape... hold still  "
-                     f"({self._held_frames}/{MIN_GOOD_FRAMES})", fg=ACCENT)
-        else:
-            self.view.configure(highlightthickness=3,
-                                highlightbackground="#e06c75")
-            self.body.configure(text="No hand seen -- hold your hand up to "
-                                     "the camera", fg="#e06c75")
+            if spans:
+                self.samples.append(spans)
+                self._held_frames += 1
+                self.view.configure(highlightthickness=3,
+                                    highlightbackground=ACCENT)
+                self.body.configure(
+                    text=f"Reading your shape... hold still  "
+                         f"({self._held_frames}/{MIN_GOOD_FRAMES})",
+                    fg=ACCENT)
+            else:
+                self.view.configure(highlightthickness=3,
+                                    highlightbackground="#e06c75")
+                self.body.configure(text="No hand seen -- hold your hand "
+                                         "up to the camera", fg="#e06c75")
 
-        # Done once enough steady readings are in -- measured in hand
-        # frames, not seconds, so a slow start just waits.
-        if self._held_frames >= MIN_GOOD_FRAMES:
-            self._polling = False
-            self._finish_recording()
-            return
-
-        self.app.root.after(80, self._poll)
+            # Done once enough steady readings are in -- measured in
+            # hand frames, not seconds, so a slow start just waits.
+            if self._held_frames >= MIN_GOOD_FRAMES:
+                self._polling = False
+                self._finish_recording()
+                return
+        finally:
+            if self._polling:
+                self.app.root.after(80, self._poll)
 
     def _draw_preview(self):
         latest = self.app.latest
