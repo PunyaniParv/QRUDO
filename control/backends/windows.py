@@ -446,6 +446,50 @@ class WindowsController(Controller):
         self._user32.keybd_event(key, 0, flags, 0)
         self._user32.keybd_event(key, 0, flags | KEYEVENTF_KEYUP, 0)
 
+    def quit_app(self, name: str) -> str:
+        """Ask an app -- or with "all", every windowed app -- to quit.
+
+        CloseMainWindow is the polite close, the same as the X button,
+        so unsaved work gets its own save dialog rather than being
+        lost.  The desktop (explorer) and QRUDO itself are never
+        included in "all".  Quitting an app that is not running
+        succeeds by doing nothing -- that IS the asked-for state.
+        """
+
+        import re as _re
+
+        if name.strip().lower() == "all":
+            script = (
+                "$closed = 0; Get-Process | Where-Object { "
+                "$_.MainWindowHandle -ne 0 -and $_.Id -ne $PID "
+                "-and $_.ProcessName -notin @('explorer','QRUDO') } | "
+                "ForEach-Object { if ($_.CloseMainWindow()) "
+                "{ $closed++ } }; $closed")
+            closed = (self._powershell(script) or "0").strip()
+            if closed == "0":
+                return "nothing was open to quit"
+            return f"asked {closed} apps to quit"
+
+        # The name reaches a PowerShell string: keep it to the plain
+        # characters an app name uses, so nothing can escape the quote.
+        bare = _re.sub(r"[^A-Za-z0-9 ._-]", "", name).strip()
+        if not bare:
+            return f"{name} was not running"
+
+        script = (
+            f"$closed = 0; Get-Process | Where-Object {{ "
+            f"$_.MainWindowHandle -ne 0 -and "
+            f"($_.ProcessName -like '*{bare}*' -or "
+            f"$_.MainWindowTitle -like '*{bare}*') }} | "
+            f"ForEach-Object {{ if ($_.CloseMainWindow()) "
+            f"{{ $closed++ }} }}; $closed")
+        closed = (self._powershell(script) or "0").strip()
+
+        if closed == "0":
+            return f"{name} was not running"
+
+        return f"asked {name} to quit"
+
     def _powershell(self, script: str) -> str:
         argv = ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
         try:

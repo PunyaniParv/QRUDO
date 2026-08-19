@@ -20,11 +20,16 @@ import re
 _OPENERS = {
     "launch": "open_app", "start": "open_app", "run app": "open_app",
     "open app": "open_app",
+    "quit": "quit_app", "close app": "quit_app", "exit": "quit_app",
+    "close": "quit_app",
     "go to": "open_url", "visit": "open_url", "browse": "open_url",
     "open website": "open_url", "open url": "open_url",
     "open folder": "open_path", "open file": "open_path",
     "open": None,   # ambiguous: decided by what follows
 }
+
+#: The words that mean "every app at once" after a quit verb.
+_ALL_WORDS = {"all", "everything", "all apps", "every app", "all of them"}
 
 #: The folders every Mac and Windows account has under home, by the
 #: name a person says.  "open downloads" means this folder, not an app
@@ -213,6 +218,16 @@ def parse(phrase: str):
             if kind == "open_app":
                 return _build("open_app", _strip_words(rest))
 
+            # "quit spotify" asks that app to close; "quit all" asks
+            # every open app.  The target need not be running at save
+            # time -- quitting an app that is not running succeeds by
+            # doing nothing, which is what was asked for.
+            if kind == "quit_app":
+                bare = _strip_words(rest)
+                if bare.lower() in _ALL_WORDS:
+                    bare = "all"
+                return _build("quit_app", bare)
+
             if kind is not None:
                 return _build(kind, rest)
 
@@ -269,6 +284,9 @@ def _build(kind: str, target: str):
 
     if kind == "open_app":
         return {"type": "open_app", "app": target}
+
+    if kind == "quit_app":
+        return {"type": "quit_app", "app": target}
 
     if kind == "open_path":
         return {"type": "open_path", "path": target}

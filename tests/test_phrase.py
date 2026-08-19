@@ -23,6 +23,21 @@ class TestParse(unittest.TestCase):
         self.assertEqual(phrase.parse("launch Spotify"),
                          {"type": "open_app", "app": "Spotify"})
 
+    def test_quit_an_app(self):
+        self.assertEqual(phrase.parse("quit Spotify"),
+                         {"type": "quit_app", "app": "Spotify"})
+
+    def test_close_means_quit_too(self):
+        self.assertEqual(phrase.parse("close chrome"),
+                         {"type": "quit_app", "app": "chrome"})
+
+    def test_quit_all_is_the_everything_keyword(self):
+        for said in ("quit all", "quit everything", "quit every app",
+                     "close all apps"):
+            with self.subTest(said=said):
+                self.assertEqual(phrase.parse(said),
+                                 {"type": "quit_app", "app": "all"})
+
     def test_open_a_folder_path(self):
         self.assertEqual(phrase.parse("open ~/Downloads"),
                          {"type": "open_path", "path": "~/Downloads"})

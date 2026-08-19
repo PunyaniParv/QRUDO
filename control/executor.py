@@ -242,7 +242,8 @@ class ControlEngine:
             return result.detail or command_value
 
         runner = action_mod.ActionRunner(
-            opener=opener, keystroke=send, builtin=builtin)
+            opener=opener, keystroke=send, builtin=builtin,
+            quitter=getattr(self.controller, "quit_app", None))
 
         return runner.run(payload)
 

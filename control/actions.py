@@ -32,6 +32,7 @@ ACTION_TYPES = {
     "open_path": ("path",),      # a file or folder
     "open_app": ("app",),        # launch an application
     "open_url": ("url",),        # a website
+    "quit_app": ("app",),        # ask an app to quit; "all" quits every one
     "keystroke": ("combo",),     # press a chord
     "builtin": ("command",),     # a built-in Command value
     "run_command": ("command",),  # a shell command -- the guarded one
@@ -165,6 +166,10 @@ def describe(actions) -> str:
             parts.append(f"launch {action['app']}")
         elif kind == "open_url":
             parts.append(f"open {action['url']}")
+        elif kind == "quit_app":
+            target = action["app"]
+            parts.append("quit every open app" if target == "all"
+                         else f"quit {target}")
         elif kind == "keystroke":
             parts.append(f"press {action['combo']}")
         elif kind == "builtin":
@@ -190,10 +195,11 @@ class ActionRunner:
     about finishing would be worse than one that says where it broke.
     """
 
-    def __init__(self, opener, keystroke, builtin):
+    def __init__(self, opener, keystroke, builtin, quitter=None):
         self._open = opener
         self._keystroke = keystroke
         self._builtin = builtin
+        self._quit = quitter
 
     def run(self, payload: str) -> str:
         actions = parse(payload)
@@ -224,6 +230,12 @@ class ActionRunner:
         if kind == "open_url":
             self._open(["open", action["url"]])
             return f"opened {action['url']}"
+
+        if kind == "quit_app":
+            if self._quit is None:
+                raise ActionError(
+                    "quitting apps is not supported on this platform yet")
+            return self._quit(action["app"])
 
         if kind == "keystroke":
             return self._keystroke(action["combo"],

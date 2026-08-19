@@ -102,11 +102,13 @@ class RecordingRunner(ActionRunner):
         self.opened = []
         self.keyed = []
         self.builtins = []
+        self.quits = []
         super().__init__(
             opener=lambda argv: self.opened.append(argv),
             keystroke=lambda combo, target="": self.keyed.append(
                 (combo, target)) or f"sent {combo}",
-            builtin=lambda cmd: self.builtins.append(cmd) or f"did {cmd}")
+            builtin=lambda cmd: self.builtins.append(cmd) or f"did {cmd}",
+            quitter=lambda app: self.quits.append(app) or f"quit {app}")
 
 
 class TestRunner(unittest.TestCase):
@@ -133,6 +135,26 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(self.runner.opened, [["open", "-a", "A"]])
         self.assertEqual(self.runner.keyed, [("cmd+n", "")])
         self.assertEqual(self.runner.builtins, ["VOLUME_UP"])
+
+    def test_quit_app_reaches_the_quitter(self):
+        self.runner.run(actions.serialize(
+            {"type": "quit_app", "app": "Spotify"}))
+        self.assertEqual(self.runner.quits, ["Spotify"])
+
+    def test_quit_all_carries_the_keyword(self):
+        self.runner.run(actions.serialize(
+            {"type": "quit_app", "app": "all"}))
+        self.assertEqual(self.runner.quits, ["all"])
+
+    def test_quitting_without_a_quitter_refuses_clearly(self):
+        """A platform with no quit support must say so, not crash."""
+
+        bare = ActionRunner(opener=lambda argv: None,
+                            keystroke=lambda c, t="": "",
+                            builtin=lambda c: "")
+        with self.assertRaises(ActionError):
+            bare.run(actions.serialize(
+                {"type": "quit_app", "app": "Spotify"}))
 
     def test_an_unconfirmed_command_refuses_at_run_time(self):
         payload = actions.serialize(

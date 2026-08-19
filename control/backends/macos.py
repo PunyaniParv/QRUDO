@@ -555,6 +555,60 @@ class MacOSController(Controller):
         raise UnsupportedCommand(
             "no media key support (install pyobjc-framework-Quartz) and no known player running")
 
+    # ------------------------------------------------------------ quitting
+
+    #: Never quit by "quit all": the desktop itself, and QRUDO -- an app
+    #: that closes its own controller mid-gesture is a very short demo.
+    _NEVER_QUIT = ("finder", "qrudo")
+
+    def quit_app(self, name: str) -> str:
+        """Ask an app -- or with "all", every regular app -- to quit.
+
+        Asked, not forced: terminate() is the polite quit, the same as
+        cmd-Q, so an app with unsaved work shows its own save dialog
+        instead of losing anything.  Quitting an app that is not
+        running succeeds by doing nothing -- that IS the asked-for
+        state -- so a gesture never errors over an already-closed app.
+        """
+
+        import os
+
+        if self._workspace is None:
+            raise UnsupportedCommand(
+                "quitting apps needs pyobjc (pip install -r "
+                "requirements.txt)")
+
+        me = os.getpid()
+        running = [
+            app for app in
+            self._workspace.sharedWorkspace().runningApplications()
+            if app.activationPolicy() == 0      # regular, visible apps
+            and app.processIdentifier() != me
+            and (app.localizedName() or "").lower() not in self._NEVER_QUIT
+        ]
+
+        if name.strip().lower() == "all":
+            for app in running:
+                app.terminate()
+            if not running:
+                return "nothing was open to quit"
+            return f"asked {len(running)} apps to quit"
+
+        bare = name.strip().lower()
+        hits = [a for a in running
+                if (a.localizedName() or "").lower() == bare]
+        if not hits:
+            hits = [a for a in running
+                    if bare in (a.localizedName() or "").lower()]
+
+        if not hits:
+            return f"{name} was not running"
+
+        for app in hits:
+            app.terminate()
+
+        return f"asked {hits[0].localizedName()} to quit"
+
     # ------------------------------------------------------- event plumbing
 
     _ax = None   # ApplicationServices, loaded once, kept for re-asking
