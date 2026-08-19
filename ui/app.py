@@ -866,13 +866,33 @@ class Recorder:
                            ("Cancel", self.cancel)])
             return
 
-        # The settled shape: the middle reading of each finger, so a
-        # stray frame does not define it.
+        # The settled shape: each finger's median across the steadiest
+        # frames, so a finger that wobbled during recording -- a pinky
+        # drifting between curled and out, which is what made an earlier
+        # THREE impossible to reproduce -- does not poison the signature
+        # with an in-between value nobody can hold.
         from vision.custom import FINGERS
+        steady = self.samples[len(self.samples) // 3:]   # drop the settling
         self.signature = {}
         for finger in FINGERS:
-            values = sorted(s.get(finger, 0.0) for s in self.samples)
+            values = sorted(s.get(finger, 0.0) for s in steady)
             self.signature[finger] = values[len(values) // 2]
+
+        # A shape too close to a built-in gesture can never fire -- the
+        # built-in wins first (the isolation), so the custom one is
+        # shadowed.  Better to say so now than save a gesture that
+        # silently does nothing.
+        clash = self._collides_with_builtin()
+        if clash:
+            self.title.configure(text=f"That looks like {clash}")
+            self.body.configure(
+                text=f"QRUDO already recognises this as {clash}, so a "
+                     f"custom gesture here could never fire. Try a more "
+                     f"distinct shape.")
+            self._buttons([("Try again", self.begin),
+                           ("Cancel", self.cancel)])
+            self.signature = None
+            return
 
         self.title.configure(text="Got the shape")
         self.body.configure(
@@ -880,6 +900,35 @@ class Recorder:
                  "or is it a still shape held in place?")
         self._buttons([("Choose motion", self.choose_motion),
                        ("Skip motion", self.skip_motion)])
+
+    #: The built-in poses, by their finger extensions, to warn against a
+    #: shape too close to one (which the built-in would always win).
+    _BUILTIN_SHAPES = {
+        "an open palm": {"index": 1.0, "middle": 1.0, "ring": 1.0,
+                         "pinky": 1.0},
+        "a fist": {"index": 0.4, "middle": 0.4, "ring": 0.4, "pinky": 0.4},
+        "pointing": {"index": 1.0, "middle": 0.4, "ring": 0.4, "pinky": 0.4},
+        "two fingers": {"index": 1.0, "middle": 1.0, "ring": 0.4,
+                        "pinky": 0.4},
+    }
+
+    def _collides_with_builtin(self):
+        """The built-in gesture this shape is too close to, or None.
+
+        A shape within a small distance of a built-in pose would be
+        shadowed by it (the built-in wins first), so it could never
+        fire.  Better to warn now than save a dead gesture.
+        """
+
+        from vision.custom import FINGERS
+
+        for name, shape in self._BUILTIN_SHAPES.items():
+            distance = sum((self.signature.get(f, 0.0) - shape[f]) ** 2
+                           for f in FINGERS) ** 0.5
+            if distance < 0.35:
+                return name
+
+        return None
 
     def choose_motion(self):
         self.title.configure(text="Which direction?")
