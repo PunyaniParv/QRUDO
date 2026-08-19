@@ -130,6 +130,32 @@ class TestFollowing(unittest.TestCase):
 
         self.assertEqual(scanner.view(), Scanner.FULL)
 
+    def test_a_near_follow_takes_a_wide_look_for_the_second_hand(self):
+        """The window hugs the first hand -- which is exactly why a
+        second hand could never join a pose: it was not in the picture
+        the detector saw.  Near, every sixth look is the full frame,
+        so both-hands gestures can form wherever the second hand comes
+        up."""
+
+        scanner = Scanner()
+        scanner.found(0.5, 0.5, span=0.12)
+
+        views = [scanner.view() for _ in range(Scanner.FULL_LOOK_EVERY)]
+
+        self.assertEqual(views.count(Scanner.FULL), 1)
+
+    def test_a_far_follow_never_leaves_its_window(self):
+        """Far hands are what the window exists for: a far hand is not
+        findable in the full frame at all, so out there the follow
+        stays pure and the range floor keeps its ground."""
+
+        scanner = Scanner()
+        scanner.found(0.5, 0.5, span=0.03)
+
+        views = [scanner.view() for _ in range(3 * Scanner.FULL_LOOK_EVERY)]
+
+        self.assertNotIn(Scanner.FULL, views)
+
     def test_a_miss_with_no_window_is_quiet(self):
         """The sweep misses constantly by nature; only the window cares."""
 

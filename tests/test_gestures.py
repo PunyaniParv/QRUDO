@@ -108,11 +108,14 @@ def make_hand(index=EXTENDED, middle=EXTENDED, ring=EXTENDED, pinky=EXTENDED,
     if pinch:
         thumb_tip = Point(cx - 0.06, cy - 0.048, -0.010)
     else:
-        thumb_tip = Point(cx - 0.115, cy + 0.030)
+        # Held out to the side the way real hands hold it: live open
+        # palms measure the thumb 0.45+ palm-lengths from the index
+        # knuckle, and the strict palm test leans on that distance.
+        thumb_tip = Point(cx - 0.145, cy + 0.005)
 
     points += [Point(cx - 0.085, cy + 0.140),
-               Point(cx - 0.100, cy + 0.100),
-               Point(cx - 0.110, cy + 0.065),
+               Point(cx - 0.105, cy + 0.100),
+               Point(cx - 0.125, cy + 0.055),
                thumb_tip]
 
     states = {"index": index, "middle": middle, "ring": ring, "pinky": pinky}

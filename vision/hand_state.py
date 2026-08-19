@@ -312,8 +312,11 @@ THUMBS_UP_RISE = 0.25
 #: A thumb closer to the index knuckle than this, on a hand with all
 #: four fingers straight, is tucked across the palm -- and four fingers
 #: with the thumb tucked is not an open palm.  An open palm holds the
-#: thumb out to the side, well clear of the knuckles.
-THUMB_TUCKED_SPREAD = 0.22
+#: thumb out to the side, well clear of the knuckles.  Live hands put
+#: an open thumb at 0.55-0.65 palms and a folded one well under 0.35;
+#: the first line here (0.22) was calibrated on synthetic geometry and
+#: let real folded thumbs through.
+THUMB_TUCKED_SPREAD = 0.35
 
 #: Below this hand size (as a fraction of frame width) the thumb is a
 #: few pixels of guesswork, and the strict thumb tests above would be

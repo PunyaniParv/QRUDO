@@ -116,15 +116,35 @@ class Scanner:
     WIDEN = 1.5
     MISSES_TO_SWEEP = 5
 
+    #: While following a NEAR hand, every this-many-th look is the full
+    #: frame instead of the window -- because the window is exactly why
+    #: a second hand could never join: it hugs the first hand, and a
+    #: hand raised anywhere else was simply not in the picture.  Both
+    #: palms read as one palm for that reason alone.  A near hand is
+    #: found in full frames easily (full frames were all there was
+    #: before the scanner), so the wide look costs nothing there; a
+    #: FAR hand is not, so far tracking keeps the pure window and the
+    #: range floor keeps its ground -- far two-hand poses can wait.
+    FULL_LOOK_EVERY = 6
+    NEAR_ENOUGH = 0.07
+
     def __init__(self):
         self._step = 0
         self._window = None
         self._misses = 0
+        self._span = 0.0
+        self._beat = 0
 
     def view(self):
         """The (x0, y0, w, h) fraction of the frame to look at now."""
 
         if self._window is not None:
+            self._beat += 1
+
+            if (self._span >= self.NEAR_ENOUGH
+                    and self._beat % self.FULL_LOOK_EVERY == 0):
+                return self.FULL
+
             return self._window
 
         view = self.SWEEP[self._step % len(self.SWEEP)]
@@ -139,6 +159,7 @@ class Scanner:
 
         self._window = self._around(cx, cy, side)
         self._misses = 0
+        self._span = span
 
     def missed(self):
         """No hand this frame: widen the window, then give it up."""
