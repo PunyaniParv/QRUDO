@@ -75,6 +75,15 @@ class FakeMac(MacOSController):
     def _post_media_key(self, key):
         self.media_keys.append(key)
 
+    #: What the scripted resume finds: a paused video's tab title, or
+    #: None for "it is gone".  The real one walks the browser's tabs.
+    resumable = "lofi - YouTube"
+
+    def _resume_paused_video(self, name):
+        if self.resumable is None:
+            return None
+        return f'resumed "{self.resumable}" where it sat'
+
 
 class TestNothingPlaying(unittest.TestCase):
     def test_with_no_player_open_it_refuses(self):
@@ -167,16 +176,21 @@ class TestTheMediaKeyIsSafeWhenAPlayerIsThere(unittest.TestCase):
 
     def test_paused_by_us_resumes_with_the_system_key(self):
         """Pause something, and the next fist resumes it -- no audio to
-        detect, but QRUDO knows it left a player paused."""
+        detect, but QRUDO knows it left a player paused -- and the
+        resume now goes LOOKING for that video by script and plays it
+        where it sits, because a media key with nothing claiming it
+        is answered by macOS opening Music.  The key fires exactly
+        once: for the pause."""
 
         controller = self.controller(running={"Google Chrome"},
                                      playing=True)
         controller.play_pause()                 # pauses; playing was True
         controller.playing = False              # now silent, because paused
 
-        controller.play_pause()                 # must still take the key
+        said = controller.play_pause()          # resumes, in the tab
 
-        self.assertEqual(len(controller.media_keys), 2)
+        self.assertIn("resumed", said)
+        self.assertEqual(len(controller.media_keys), 1)
 
     def test_nothing_playing_never_sends_the_system_key(self):
         """The empty case, which is the one that opened Music: silent,
@@ -445,18 +459,32 @@ class TestPlayPauseTakesWhicheverRouteIsSafe(unittest.TestCase):
     def test_pausing_then_starting_again(self):
         """The pair, in the order anyone would do them.
 
-        The second press resumes through the system key, not the
-        letter: QRUDO paused it and so knows a player is sitting there,
-        which is the case the letter used to have to cover because
-        nothing tracked it.  Resuming on the same route that paused
-        reaches the same tab, wherever it sits."""
+        The second press resumes by SCRIPT, in the tab that holds the
+        paused video, wherever it sits -- never by a second media key,
+        which with nothing claiming it is how Music kept launching."""
 
         controller = FakeMac(running={"Google Chrome"}, playing=True)
         self.assertIn("paused", controller.play_pause())
 
         controller.playing = False          # it stopped, because we stopped it
         self.assertIn("resumed", controller.play_pause())
-        self.assertEqual(len(controller.media_keys), 2)
+        self.assertEqual(len(controller.media_keys), 1)
+
+    def test_a_resume_whose_video_vanished_takes_the_letter(self):
+        """The video ended or its tab closed between the pause and the
+        resume: nothing is found, and the letter -- which cannot launch
+        anything -- carries the press.  This exact void is where Music
+        volunteered from, three separate times."""
+
+        controller = FakeMac(running={"Google Chrome"}, playing=True)
+        controller.play_pause()
+        controller.playing = False
+        controller.resumable = None         # it is gone
+
+        controller.play_pause()
+
+        self.assertEqual(len(controller.media_keys), 1)
+        self.assertEqual(len(controller.keyed), 1)
 
     def test_a_machine_that_cannot_be_asked_uses_the_app(self):
         """Without CoreAudio there is no telling, and of the two risks

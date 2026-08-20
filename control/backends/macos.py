@@ -352,17 +352,28 @@ class MacOSController(Controller):
         # "media" or unset: the system now-playing key, when it is safe.
         playing = self._audio_playing()
 
-        # Safe whenever a player is sitting there for the key to reach:
-        # something audible now, or something QRUDO paused and can
-        # resume.  Either way the key toggles it, so flip our record of
-        # which side of the toggle we are on.
-        if playing or self._paused_it:
-            was_playing = bool(playing)
+        # Safe only while something is AUDIBLE: a session provably
+        # claims the key, so it pauses that and nothing else.
+        if playing:
             self._post_media_key(NX_KEYTYPE_PLAY)
-            self._paused_it = was_playing
+            self._paused_it = True
 
-            return ("paused what was playing" if was_playing
-                    else "resumed what QRUDO paused")
+            return "paused what was playing"
+
+        # Resuming is where Music kept sneaking in: "QRUDO paused it"
+        # proves the pause happened, not that the paused thing still
+        # EXISTS -- the video ends, the tab closes, and the resume key
+        # lands in a void that macOS answers by opening Music.  So the
+        # resume goes looking instead: the paused video is found by
+        # script and played where it sits, background included.  Found
+        # nothing?  Then it is genuinely gone, and the letter -- which
+        # can never launch anything -- takes over.
+        if self._paused_it:
+            self._paused_it = False
+            said = self._resume_paused_video(name)
+
+            if said:
+                return said
 
         if playing is None:
             # The audio question could not be asked, so the safe line
@@ -581,6 +592,84 @@ class MacOSController(Controller):
                 return f"play/pause via {app}"
         raise UnsupportedCommand(
             "no media key support (install pyobjc-framework-Quartz) and no known player running")
+
+    def _resume_paused_video(self, name: str) -> str | None:
+        """Find the video QRUDO paused and play it where it sits.
+
+        One pass over the browser's tabs: the first paused video with
+        real progress (currentTime > 0 -- a video someone was actually
+        watching, not a thumbnail) is played by script, background or
+        not.  Returns None when nothing qualifies or the browser is
+        not scriptable, and the caller falls back to the letter --
+        which can never launch Music.
+        """
+
+        browser = self.config.target_app or "Google Chrome"
+
+        probe_js = ("var v=document.querySelector('video');"
+                    "if(v&&v.paused){if(v.currentTime>0){v.play();"
+                    "'resumed'}else{'paused0'}}else{'no'}")
+        play_js = ("var v=document.querySelector('video');"
+                   "if(v){v.play()};'ok'")
+
+        if browser == "Safari":
+            field = "name"
+            probe = f'do JavaScript "{probe_js}" in (tab t of window w)'
+            play = (f'do JavaScript "{play_js}" in '
+                    f'(tab fbT of window fbW)')
+        else:
+            field = "title"
+            probe = (f'execute (tab t of window w) javascript '
+                     f'"{probe_js}"')
+            play = (f'execute (tab fbT of window fbW) javascript '
+                    f'"{play_js}"')
+
+        # First choice: a paused video with real progress -- the one
+        # somebody was actually watching.  Second chance: a paused
+        # video at 0:00, which is what a restored session leaves
+        # behind.  Either way the play happens IN the tab, so nothing
+        # is ever posted into a void.
+        script = f'''
+        set fbW to 0
+        set fbT to 0
+        tell application "{browser}"
+            repeat with w from 1 to count of windows
+                repeat with t from 1 to count of tabs of window w
+                    try
+                        set r to {probe}
+                        if r is "resumed" then
+                            return {field} of tab t of window w
+                        end if
+                        if r is "paused0" and fbW is 0 then
+                            set fbW to w
+                            set fbT to t
+                        end if
+                    end try
+                end repeat
+            end repeat
+            if fbW > 0 then
+                {play}
+                return {field} of tab fbT of window fbW
+            end if
+        end tell
+        return ""
+        '''
+
+        try:
+            proc = subprocess.run(["osascript", "-e", script],
+                                  capture_output=True, text=True,
+                                  timeout=8.0)
+        except Exception:
+            return None
+
+        title = (proc.stdout or "").strip()
+
+        if proc.returncode != 0 or not title:
+            return None
+
+        short = title if len(title) <= 28 else title[:27] + "…"
+
+        return f'resumed "{short}" where it sat'
 
     def _drive_pinned_tab(self, name: str, title: str, js: str) -> str:
         """Run one line of JavaScript in the pinned tab, wherever it
