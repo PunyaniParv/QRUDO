@@ -44,10 +44,11 @@ BROWSERS = ("Google Chrome", "Safari", "Arc", "Firefox", "Microsoft Edge")
 AUTO = "auto"
 
 
-#: A single browser tab as a target: switching to it ACTIVATES the tab
-#: -- brings it to the front of its window -- because keys can only
-#: land in the tab a browser is showing.  The config's target_app then
-#: carries the BROWSER's name, so every keystroke path keeps working.
+#: A single browser tab as a target.  Switching to it moves NOTHING on
+#: screen: the pin is written to the config, and the media commands
+#: reach the tab in the background by script, wherever it sits.  The
+#: config's target_app still carries the BROWSER's name, so every
+#: other path keeps working.
 TabTarget = namedtuple("TabTarget", "browser window index title")
 
 #: Words that mark a browser tab as media worth targeting, joined by
@@ -72,11 +73,9 @@ class TargetResolver:
     hermetic and the platform split lives in one place.
     """
 
-    def __init__(self, config, probe=None, activate=None):
+    def __init__(self, config, probe=None):
         self.config = config
         self.probe = probe if probe is not None else _platform_probe
-        self._activate = activate if activate is not None \
-            else _platform_activate_tab
 
         configured = (config.target_app or config.seek_target_app).strip()
         self.preferred = "" if configured.lower() == AUTO else configured
@@ -166,8 +165,8 @@ class TargetResolver:
     def resolved(self):
         """The app targeted right now, or "" for nobody in particular."""
 
-        # A pinned TAB resolves to its browser: keys can only reach the
-        # tab the browser shows, and cycle() already brought it front.
+        # A pinned TAB resolves to its browser for everything that
+        # thinks in apps; the tab itself is carried by target_tab.
         if isinstance(self.choice, TabTarget):
             return self.choice.browser
 
@@ -218,13 +217,10 @@ class TargetResolver:
         picked = options[(options.index(current) + step) % len(options)]
         self.choice = None if picked == AUTO else picked
 
-        if isinstance(picked, TabTarget):
-            # Switching to a tab MEANS showing it: keys land only in
-            # the tab a browser has in front.
-            try:
-                self._activate(picked)
-            except Exception:
-                pass
+        # Picking a tab is SILENT: nothing moves, nothing comes
+        # forward, the screen stays exactly as it is.  The pin is
+        # written to the config, and the media commands reach the
+        # chosen tab in the background by script.
 
         self.apply()
 
@@ -413,34 +409,6 @@ def _macos_probe():
                 continue
 
     return seen
-
-
-def _platform_activate_tab(tab):
-    """Bring one browser tab to the front, so keys can reach it."""
-
-    if sys.platform != "darwin":
-        return
-
-    if tab.browser == "Safari":
-        body = (f"tell window {tab.window} to set current tab "
-                f"to tab {tab.index}")
-    else:
-        body = (f"set active tab index of window {tab.window} "
-                f"to {tab.index}")
-
-    script = f'''
-    tell application "{tab.browser}"
-        {body}
-        set index of window {tab.window} to 1
-        activate
-    end tell
-    '''
-
-    try:
-        subprocess.run(["osascript", "-e", script],
-                       capture_output=True, text=True, timeout=3.0)
-    except Exception:
-        pass
 
 
 def _windows_probe():

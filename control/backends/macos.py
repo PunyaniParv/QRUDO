@@ -329,16 +329,18 @@ class MacOSController(Controller):
 
         wanted = self.config.browser_play_key.strip().lower()
 
-        # A pinned TAB overrides the media-key route outright.  The
-        # media key follows the system's now-playing session -- the tab
-        # that was ALREADY playing -- while the person just pointed at a
-        # different one.  The letter lands in the front tab, which the
-        # target switch brought forward, which IS the chosen one.
-        if getattr(self.config, "target_tab", "").strip():
-            self._refuse_to_type_into_a_text_box(pid)
-            self._post_key(KEY_K, to_pid=pid)
-
-            return f"play/pause (k) to the pinned tab in {name}"
+        # A pinned TAB is controlled IN THE BACKGROUND: the screen must
+        # not move, so no key can carry this -- keys only reach the
+        # front tab -- and the media key follows whatever was already
+        # playing.  The browser is scripted to drive that tab's video
+        # directly, wherever the tab sits.
+        pinned = getattr(self.config, "target_tab", "").strip()
+        if pinned:
+            return self._drive_pinned_tab(
+                name, pinned,
+                "var v=document.querySelector('video');"
+                "if(!v){'novideo'} else if(v.paused){v.play();'played'}"
+                "else{v.pause();'paused'}")
 
         if wanted in ("space", "spacebar", "k"):
             key = KEY_SPACE if wanted != "k" else KEY_K
@@ -392,6 +394,20 @@ class MacOSController(Controller):
         if self.config.seek_mode == "track":
             self._post_media_key(NX_KEYTYPE_NEXT if forward else NX_KEYTYPE_PREVIOUS)
             return f"{'next' if forward else 'previous'} track"
+
+        # A pinned tab seeks in the background too, by the same script
+        # that plays it -- arrow keys only ever reach the front tab.
+        pinned = getattr(self.config, "target_tab", "").strip()
+        if pinned:
+            delta = seconds if forward else -seconds
+            said = self._drive_pinned_tab(
+                self.config.target_app or "the browser", pinned,
+                f"var v=document.querySelector('video');"
+                f"if(!v){{'novideo'}} else {{"
+                f"v.currentTime=Math.max(0,v.currentTime+({delta}));"
+                f"'sought'}}")
+            return said.replace("sought",
+                                f"seek {direction} {seconds}s")
 
         # Seek within the current track by repeating the player's own arrow-key
         # shortcut.  seek_step_seconds says how far one press moves; the config
@@ -565,6 +581,76 @@ class MacOSController(Controller):
                 return f"play/pause via {app}"
         raise UnsupportedCommand(
             "no media key support (install pyobjc-framework-Quartz) and no known player running")
+
+    def _drive_pinned_tab(self, name: str, title: str, js: str) -> str:
+        """Run one line of JavaScript in the pinned tab, wherever it
+        sits -- background control, nothing moves on screen.
+
+        The tab is found by its title at fire time, so it may drift to
+        another window or position and still answer.  Chrome (and its
+        family) and Safari each need one menu switch turned on once --
+        scripting a page is otherwise refused by the browser -- and the
+        refusal names the exact switch.
+        """
+
+        browser = self.config.target_app or "Google Chrome"
+        safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
+        safe_js = js.replace("\\", "\\\\").replace('"', '\\"')
+
+        if browser == "Safari":
+            field = "name"
+            run = f'do JavaScript "{safe_js}" in (tab t of window w)'
+        else:
+            field = "title"
+            run = f'execute (tab t of window w) javascript "{safe_js}"'
+
+        script = f'''
+        tell application "{browser}"
+            repeat with w from 1 to count of windows
+                repeat with t from 1 to count of tabs of window w
+                    if ({field} of tab t of window w) contains "{safe_title}" then
+                        return {run}
+                    end if
+                end repeat
+            end repeat
+        end tell
+        return "notfound"
+        '''
+
+        try:
+            proc = subprocess.run(["osascript", "-e", script],
+                                  capture_output=True, text=True,
+                                  timeout=5.0)
+        except Exception as exc:
+            raise UnsupportedCommand(f"could not reach {browser}: {exc}")
+
+        answer = (proc.stdout or "").strip()
+
+        if proc.returncode != 0 or not answer:
+            hint = ("Safari's Develop menu > Allow JavaScript from "
+                    "Apple Events" if browser == "Safari" else
+                    f"{browser}: View > Developer > Allow JavaScript "
+                    f"from Apple Events")
+            raise UnsupportedCommand(
+                f"controlling a background tab needs one browser "
+                f"switch, once: {hint} -- then it works silently "
+                f"forever")
+
+        short = title if len(title) <= 28 else title[:27] + "…"
+
+        if answer == "played":
+            return f'played "{short}" in the background'
+        if answer == "paused":
+            return f'paused "{short}" in the background'
+        if answer == "novideo":
+            raise UnsupportedCommand(
+                f'no video found in the pinned tab "{short}"')
+        if answer == "notfound":
+            raise UnsupportedCommand(
+                "the pinned tab is gone -- point again to pick a "
+                "new one")
+
+        return answer
 
     # ------------------------------------------------------------ quitting
 

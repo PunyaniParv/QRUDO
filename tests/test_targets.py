@@ -175,8 +175,9 @@ class TestTabTargets(unittest.TestCase):
 
     Switching apps cannot tell them apart -- that was 'switch target is
     not working' with two Chrome tabs open -- so media tabs join the
-    cycle, and picking one ACTIVATES it, because keys only ever land in
-    the tab a browser is showing."""
+    cycle as Google Chrome 1, 2, 3.  Picking one moves NOTHING on
+    screen: the pin changes in the background, and the media commands
+    reach that tab by script wherever it sits."""
 
     def resolver(self):
         from control.targets import TabTarget
@@ -190,9 +191,7 @@ class TestTabTargets(unittest.TestCase):
                          "tabs": tabs}
 
         config = ControlConfig(target_app="", cooldown_seconds=0)
-        self.activated = []
-        made = TargetResolver(config, probe=probe,
-                              activate=self.activated.append)
+        made = TargetResolver(config, probe=probe)
         made.refresh(force=True)
         return made, config, tabs
 
@@ -211,12 +210,17 @@ class TestTabTargets(unittest.TestCase):
                          'target -> Google Chrome 2 ("talk - YouTube")')
         self.assertTrue(said[2].startswith("target -> auto"))
 
-    def test_picking_a_tab_activates_it(self):
+    def test_picking_a_tab_moves_nothing_on_screen(self):
+        """The pick is SILENT: the pin changes, the screen does not.
+        The resolver has no activation hook at all any more -- there
+        is nothing here that could bring a tab forward."""
+
         made, config, tabs = self.resolver()
 
         made.cycle(+1)          # Google Chrome 1
 
-        self.assertEqual(self.activated, [tabs[0]])
+        self.assertFalse(hasattr(made, "_activate"))
+        self.assertEqual(config.target_tab, "lofi - YouTube")
 
     def test_a_tab_choice_keeps_the_browser_in_the_config(self):
         """target_app must stay an APP name -- every keystroke path
@@ -257,7 +261,7 @@ class TestTabTargets(unittest.TestCase):
                          "playing": ["Spotify"],
                          "tabs": tabs}
         config = ControlConfig(target_app="", cooldown_seconds=0)
-        made = TargetResolver(config, probe=probe, activate=lambda t: None)
+        made = TargetResolver(config, probe=probe)
         made.refresh(force=True)
 
         said = [made.cycle(+1) for _ in range(3)]
@@ -276,7 +280,7 @@ class TestTabTargets(unittest.TestCase):
                          "tabs": [TabTarget("Google Chrome", 1, 1,
                                             "New Tab")]}
         config = ControlConfig(target_app="", cooldown_seconds=0)
-        made = TargetResolver(config, probe=probe, activate=lambda t: None)
+        made = TargetResolver(config, probe=probe)
         made.refresh(force=True)
 
         self.assertEqual(made.tabs, [])
