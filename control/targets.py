@@ -81,6 +81,12 @@ class TargetResolver:
         self.preferred = "" if configured.lower() == AUTO else configured
         self.choice = self.preferred or None
 
+        # A tab pin never outlives the session that made it -- the tabs
+        # themselves do not either.  One persisted stale pin sent every
+        # play/pause hunting for a title from yesterday and answering
+        # "the pinned tab is gone" forever.
+        config.target_tab = ""
+
         self.candidates: list[str] = []
         self.playing: list[str] = []
         self.frontmost: str | None = None

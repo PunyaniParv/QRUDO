@@ -272,6 +272,40 @@ class TestTabTargets(unittest.TestCase):
         self.assertEqual(said[2],
                          'target -> Google Chrome 2 ("talk - YouTube")')
 
+    def test_a_persisted_pin_is_cleared_on_start(self):
+        """A tab pin never outlives the session that made it -- one
+        stale persisted pin made every play/pause hunt for a title
+        from yesterday, forever."""
+
+        config = ControlConfig(target_app="Google Chrome",
+                               cooldown_seconds=0)
+        config.target_tab = "yesterday - YouTube"
+
+        TargetResolver(config, probe=lambda: {})
+
+        self.assertEqual(config.target_tab, "")
+
+    def test_titles_are_matched_through_their_drift(self):
+        """Notification prefixes come and go; the pin must follow."""
+
+        import unittest as _u
+        if sys.platform != "darwin":
+            raise _u.SkipTest("the matcher lives in the macOS backend")
+
+        from control.backends.macos import _match_tab_title
+
+        titles = ["WhatsApp", "(3) lofi beats to relax - YouTube",
+                  "Cart - GoDaddy"]
+
+        self.assertEqual(
+            _match_tab_title("lofi beats to relax - YouTube", titles), 1)
+        self.assertEqual(
+            _match_tab_title("(1) lofi beats to relax - YouTube",
+                             titles), 1)
+        self.assertIsNone(
+            _match_tab_title("some other video - YouTube", titles),
+            "a genuinely different video must not be guessed at")
+
     def test_unmatched_tabs_stay_out_of_the_cycle(self):
         from control.targets import TabTarget
 

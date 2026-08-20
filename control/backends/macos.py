@@ -586,41 +586,74 @@ class MacOSController(Controller):
         """Run one line of JavaScript in the pinned tab, wherever it
         sits -- background control, nothing moves on screen.
 
-        The tab is found by its title at fire time, so it may drift to
-        another window or position and still answer.  Chrome (and its
-        family) and Safari each need one menu switch turned on once --
-        scripting a page is otherwise refused by the browser -- and the
-        refusal names the exact switch.
+        The tab is found at fire time by MATCHING titles, not equality:
+        YouTube retitles tabs constantly -- "(1) " notification
+        prefixes come and go, autoplay swaps the video -- and an exact
+        lookup answered "the pinned tab is gone" about a tab sitting
+        right there.  The matching happens in Python over an enumerated
+        list, which also survives titles containing quotes.  A tab
+        that is truly gone clears the pin, so the NEXT gesture falls
+        back to normal behaviour instead of failing forever.
         """
 
         browser = self.config.target_app or "Google Chrome"
-        safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
-        safe_js = js.replace("\\", "\\\\").replace('"', '\\"')
 
-        if browser == "Safari":
-            field = "name"
-            run = f'do JavaScript "{safe_js}" in (tab t of window w)'
-        else:
-            field = "title"
-            run = f'execute (tab t of window w) javascript "{safe_js}"'
-
-        script = f'''
+        field = "name" if browser == "Safari" else "title"
+        listing = f'''
         tell application "{browser}"
+            set out to ""
             repeat with w from 1 to count of windows
                 repeat with t from 1 to count of tabs of window w
-                    if ({field} of tab t of window w) contains "{safe_title}" then
-                        return {run}
-                    end if
+                    set out to out & w & "|" & t & "|" & ({field} of tab t of window w) & linefeed
                 end repeat
             end repeat
+            return out
         end tell
-        return "notfound"
         '''
 
         try:
-            proc = subprocess.run(["osascript", "-e", script],
-                                  capture_output=True, text=True,
-                                  timeout=5.0)
+            lines = subprocess.run(
+                ["osascript", "-e", listing],
+                capture_output=True, text=True, timeout=5.0,
+            ).stdout
+        except Exception as exc:
+            raise UnsupportedCommand(f"could not reach {browser}: {exc}")
+
+        tabs = []
+        for line in (lines or "").splitlines():
+            parts = line.split("|", 2)
+            if len(parts) == 3:
+                try:
+                    tabs.append((int(parts[0]), int(parts[1]),
+                                 parts[2].strip()))
+                except ValueError:
+                    continue
+
+        hit = _match_tab_title(title, [t[2] for t in tabs])
+        short = title if len(title) <= 28 else title[:27] + "…"
+
+        if hit is None:
+            self.config.target_tab = ""
+            raise UnsupportedCommand(
+                f'the pinned tab ("{short}") is gone -- pin cleared, '
+                f"the next gesture works normally; point again to pin "
+                f"a new tab")
+
+        window, index, _ = tabs[hit]
+        safe_js = js.replace("\\", "\\\\").replace('"', '\\"')
+
+        if browser == "Safari":
+            run = (f'do JavaScript "{safe_js}" in '
+                   f'(tab {index} of window {window})')
+        else:
+            run = (f'execute (tab {index} of window {window}) '
+                   f'javascript "{safe_js}"')
+
+        try:
+            proc = subprocess.run(
+                ["osascript", "-e",
+                 f'tell application "{browser}" to {run}'],
+                capture_output=True, text=True, timeout=5.0)
         except Exception as exc:
             raise UnsupportedCommand(f"could not reach {browser}: {exc}")
 
@@ -636,8 +669,6 @@ class MacOSController(Controller):
                 f"switch, once: {hint} -- then it works silently "
                 f"forever")
 
-        short = title if len(title) <= 28 else title[:27] + "…"
-
         if answer == "played":
             return f'played "{short}" in the background'
         if answer == "paused":
@@ -645,10 +676,6 @@ class MacOSController(Controller):
         if answer == "novideo":
             raise UnsupportedCommand(
                 f'no video found in the pinned tab "{short}"')
-        if answer == "notfound":
-            raise UnsupportedCommand(
-                "the pinned tab is gone -- point again to pick a "
-                "new one")
 
         return answer
 
@@ -1098,6 +1125,53 @@ def _ax_handles():
             _AX = False
 
     return _AX or None
+
+
+def _normalise_title(title: str) -> str:
+    """A tab title reduced to what stays put: lowercase, without the
+    "(3) " notification prefix browsers bolt on and shake off."""
+
+    import re as _re
+
+    return _re.sub(r"^\(\d+\)\s*", "", title.strip().lower())
+
+
+def _match_tab_title(stored: str, titles: list) -> int | None:
+    """The index of the live tab the stored title means, or None.
+
+    Titles drift -- notification counts appear, players append and
+    drop suffixes -- so equality is the wrong question.  Asked
+    instead, in order: same normalised title; one contains the other;
+    a generous shared prefix.  Autoplay to a NEW video is a genuinely
+    different title and stays unmatched on purpose: guessing which
+    video a person meant is worse than asking them to point again.
+    """
+
+    want = _normalise_title(stored)
+
+    if not want:
+        return None
+
+    have = [_normalise_title(title) for title in titles]
+
+    for i, title in enumerate(have):
+        if title == want:
+            return i
+
+    for i, title in enumerate(have):
+        if want in title or (title and title in want):
+            return i
+
+    for i, title in enumerate(have):
+        shared = 0
+        for a, b in zip(title, want):
+            if a != b:
+                break
+            shared += 1
+        if shared >= 12:
+            return i
+
+    return None
 
 
 class _CoreAudio:
