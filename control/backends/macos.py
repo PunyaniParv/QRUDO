@@ -342,6 +342,21 @@ class MacOSController(Controller):
                 "if(!v){'novideo'} else if(v.paused){v.play();'played'}"
                 "else{v.pause();'paused'}")
 
+        # No pin: the script route is still first, because it is the
+        # only one that acts on the video itself.  A browser with no
+        # video refuses plainly -- there is nothing a fist could have
+        # meant -- and only a browser that cannot be scripted at all
+        # falls to the letters and keys below.
+        scripted = self._browser_toggle_by_script(name)
+
+        if scripted:
+            return scripted
+
+        if scripted == "":
+            raise UnsupportedCommand(
+                f"no video to play or pause in {name} -- open one "
+                f"first")
+
         if wanted in ("space", "spacebar", "k"):
             key = KEY_SPACE if wanted != "k" else KEY_K
             self._refuse_to_type_into_a_text_box(pid)
@@ -601,6 +616,100 @@ class MacOSController(Controller):
                 return f"play/pause via {app}"
         raise UnsupportedCommand(
             "no media key support (install pyobjc-framework-Quartz) and no known player running")
+
+    def _browser_toggle_by_script(self, browser: str):
+        """Play/pause the browser's video BY SCRIPT, in one pass.
+
+        The whole letters-and-media-key tangle existed because QRUDO
+        could not talk to the video itself; with scripting allowed it
+        can, so this is the primary route.  Playing video found: pause
+        it.  Otherwise the best paused one (real progress first, a
+        restored 0:00 as second chance): play it.  Nothing typed, no
+        media key, no void for Music to answer.
+
+        Returns the sentence to show, "" when the browser has no video
+        at all (the caller refuses plainly), or None when scripting is
+        unavailable (the caller falls back to the old routes).
+        """
+
+        if browser not in ("Google Chrome", "Safari"):
+            return None
+
+        act_js = ("var v=document.querySelector('video');"
+                  "if(!v){'no'}else if(!v.paused){v.pause();'pausednow'}"
+                  "else if(v.currentTime>0){'p1'}else{'p0'}")
+        play_js = ("var v=document.querySelector('video');"
+                   "if(v){v.play()};'ok'")
+
+        if browser == "Safari":
+            field = "name"
+            act = f'do JavaScript "{act_js}" in (tab t of window w)'
+            play = f'do JavaScript "{play_js}" in (tab fbT of window fbW)'
+        else:
+            field = "title"
+            act = f'execute (tab t of window w) javascript "{act_js}"'
+            play = (f'execute (tab fbT of window fbW) javascript '
+                    f'"{play_js}"')
+
+        script = f'''
+        set fbW to 0
+        set fbT to 0
+        set fb0W to 0
+        set fb0T to 0
+        set blocked to 0
+        tell application "{browser}"
+            repeat with w from 1 to count of windows
+                repeat with t from 1 to count of tabs of window w
+                    try
+                        set r to {act}
+                        if r is "pausednow" then
+                            return "paused|" & ({field} of tab t of window w)
+                        end if
+                        if r is "p1" and fbW is 0 then
+                            set fbW to w
+                            set fbT to t
+                        end if
+                        if r is "p0" and fb0W is 0 then
+                            set fb0W to w
+                            set fb0T to t
+                        end if
+                    on error m
+                        if m contains "turned off" then set blocked to 1
+                    end try
+                end repeat
+            end repeat
+            if fbW is 0 then
+                set fbW to fb0W
+                set fbT to fb0T
+            end if
+            if fbW > 0 then
+                {play}
+                return "played|" & ({field} of tab fbT of window fbW)
+            end if
+        end tell
+        if blocked is 1 then return "OFF"
+        return ""
+        '''
+
+        try:
+            proc = subprocess.run(["osascript", "-e", script],
+                                  capture_output=True, text=True,
+                                  timeout=10.0)
+        except Exception:
+            return None
+
+        answer = (proc.stdout or "").strip()
+
+        if proc.returncode != 0 or answer == "OFF":
+            return None
+
+        if not answer:
+            return ""
+
+        verb, _, title = answer.partition("|")
+        short = title if len(title) <= 28 else title[:27] + "…"
+
+        return f'{verb} "{short}"'
 
     def _resume_paused_video(self, name: str) -> str | None:
         """Find the video QRUDO paused and play it where it sits.

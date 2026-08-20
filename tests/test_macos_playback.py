@@ -84,6 +84,15 @@ class FakeMac(MacOSController):
             return None
         return f'resumed "{self.resumable}" where it sat'
 
+    #: What the primary script route answers: a sentence, "" for a
+    #: browser with no video, or None for "cannot script here" -- the
+    #: legacy letter/media-key logic these tests exercise runs only in
+    #: that last case.
+    script_toggle = None
+
+    def _browser_toggle_by_script(self, browser):
+        return self.script_toggle
+
 
 class TestNothingPlaying(unittest.TestCase):
     def test_with_no_player_open_it_refuses(self):

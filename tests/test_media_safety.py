@@ -34,7 +34,11 @@ class TestMusicNeverVolunteers(unittest.TestCase):
         from control.backends.macos import MacOSController
         from control.config import ControlConfig
 
-        return MacOSController(ControlConfig(browser_play_key="media"))
+        made = MacOSController(ControlConfig(browser_play_key="media"))
+        # Legacy-route tests run as if scripting were unavailable; the
+        # script-route tests patch this back in themselves.
+        made._browser_toggle_by_script = lambda browser: None
+        return made
 
     def test_a_dead_resume_takes_the_letter_never_the_media_key(self):
         """QRUDO paused something that has since vanished: the resume
@@ -101,6 +105,42 @@ class TestMusicNeverVolunteers(unittest.TestCase):
             with self.assertRaises(UnsupportedCommand):
                 c._seek(10, forward=True)
 
+        media.assert_not_called()
+
+    def test_the_script_route_comes_before_every_key(self):
+        """When the browser can be scripted, the video itself is
+        toggled: no letter typed, no media key posted -- the two
+        things every reborn bug was made of."""
+
+        c = self.controller()
+
+        with mock.patch.object(c, "_browser_toggle_by_script",
+                               return_value='paused "x"') as script, \
+                mock.patch.object(c, "_post_key") as letter, \
+                mock.patch.object(c, "_post_media_key") as media:
+            said = c._play_pause_key("Google Chrome", None)
+
+        self.assertEqual(said, 'paused "x"')
+        script.assert_called_once()
+        letter.assert_not_called()
+        media.assert_not_called()
+
+    def test_a_videoless_browser_refuses_instead_of_guessing(self):
+        """No video anywhere: the fist meant nothing this route can
+        do, and saying so beats typing a letter into a page."""
+
+        from control.executor import UnsupportedCommand
+
+        c = self.controller()
+
+        with mock.patch.object(c, "_browser_toggle_by_script",
+                               return_value=""), \
+                mock.patch.object(c, "_post_key") as letter, \
+                mock.patch.object(c, "_post_media_key") as media:
+            with self.assertRaises(UnsupportedCommand):
+                c._play_pause_key("Google Chrome", None)
+
+        letter.assert_not_called()
         media.assert_not_called()
 
     def test_audible_playback_still_pauses_by_media_key(self):
