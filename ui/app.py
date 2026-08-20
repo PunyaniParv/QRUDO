@@ -524,6 +524,14 @@ class App:
             action = phrase.parse(job)
 
         if action is None:
+            # The evidence for the someday-AI layer: every phrase the
+            # rules refuse is a user saying exactly what that layer
+            # must handle.  Logged locally, greppable as PHRASE-MISS,
+            # reviewed when that work begins -- decided 2026-08-20 as
+            # a 3-4 months-after-launch item.
+            from control import log as _log
+            _log.get_logger("phrases").info("PHRASE-MISS: %r", job)
+
             self.add_note.configure(
                 text=f"not sure what {job!r} means — try \"open <name>\", "
                      f"\"launch <app>\", or \"go to <site>\"")
