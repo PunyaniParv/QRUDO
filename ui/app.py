@@ -673,6 +673,17 @@ class App:
 
         self.root.withdraw()
 
+    def _enforce_agent_policy(self):
+        """Back to Accessory: menu bar presence, no Dock entry."""
+
+        try:
+            from AppKit import (NSApp,
+                                NSApplicationActivationPolicyAccessory)
+            NSApp.setActivationPolicy_(
+                NSApplicationActivationPolicyAccessory)
+        except Exception:
+            pass
+
     def show_from_menubar(self):
         """Bring the window back, in front, from the menu bar."""
 
@@ -684,6 +695,9 @@ class App:
             NSApp.activateIgnoringOtherApps_(True)
         except Exception:
             pass
+
+        # Showing the window tempts Tk to promote the app again.
+        self.root.after(500, self._enforce_agent_policy)
 
     def quit(self):
         self.stop.set()
@@ -859,6 +873,15 @@ class App:
         self._far = getattr(self.args, "far", False)
         self._retry_button = None
         self._start_vision()
+
+        # Tk PROMOTES the app to a regular Dock app the moment its
+        # window maps, trampling the bundle's LSUIElement.  With a
+        # menu bar mark standing, push the policy back to Accessory --
+        # windows still show, but the Dock and cmd-tab stay clean.
+        # Re-asserted a few times because Tk's flip lands late.
+        if self._menubar_ready:
+            for delay in (500, 2000, 5000):
+                self.root.after(delay, self._enforce_agent_policy)
 
         self.root.after(40, self.tick)
         self.root.mainloop()
