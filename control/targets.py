@@ -25,6 +25,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import namedtuple
 
 from .commands import Command
 
@@ -43,6 +44,25 @@ BROWSERS = ("Google Chrome", "Safari", "Arc", "Firefox", "Microsoft Edge")
 AUTO = "auto"
 
 
+#: A single browser tab as a target: switching to it ACTIVATES the tab
+#: -- brings it to the front of its window -- because keys can only
+#: land in the tab a browser is showing.  The config's target_app then
+#: carries the BROWSER's name, so every keystroke path keeps working.
+TabTarget = namedtuple("TabTarget", "browser window index title")
+
+#: Words that mark a browser tab as media worth targeting, joined by
+#: whatever the config's browser_video_titles adds.
+TAB_HINTS = ("youtube", "music", "spotify", "soundcloud", "twitch",
+             "netflix", "vimeo", "prime video", "hotstar")
+
+#: Browsers whose tabs can be listed and switched by script (macOS).
+SCRIPTABLE_TABS = ("Google Chrome", "Safari")
+
+
+def _short(title, limit=40):
+    return title if len(title) <= limit else title[:limit - 1] + "…"
+
+
 class TargetResolver:
     """Keeps ``config.target_app`` pointed at the right app.
 
@@ -52,9 +72,11 @@ class TargetResolver:
     hermetic and the platform split lives in one place.
     """
 
-    def __init__(self, config, probe=None):
+    def __init__(self, config, probe=None, activate=None):
         self.config = config
         self.probe = probe if probe is not None else _platform_probe
+        self._activate = activate if activate is not None \
+            else _platform_activate_tab
 
         configured = (config.target_app or config.seek_target_app).strip()
         self.preferred = "" if configured.lower() == AUTO else configured
@@ -63,6 +85,13 @@ class TargetResolver:
         self.candidates: list[str] = []
         self.playing: list[str] = []
         self.frontmost: str | None = None
+        self.tabs: list[TabTarget] = []
+
+        hints = set(TAB_HINTS)
+        for word in (config.browser_video_titles or "").replace(",", " ") \
+                .split():
+            hints.add(word.strip().lower())
+        self._hints = hints
 
         self._seen_at = 0.0
         self._stop = threading.Event()
@@ -114,8 +143,21 @@ class TargetResolver:
 
             self.candidates = ordered
 
+            # Media tabs, so two videos in ONE browser are two targets
+            # -- switching apps cannot tell them apart, switching tabs
+            # can.
+            self.tabs = [
+                tab for tab in seen.get("tabs", ())
+                if any(hint in tab.title.lower() for hint in self._hints)
+            ]
+
     def resolved(self):
         """The app targeted right now, or "" for nobody in particular."""
+
+        # A pinned TAB resolves to its browser: keys can only reach the
+        # tab the browser shows, and cycle() already brought it front.
+        if isinstance(self.choice, TabTarget):
+            return self.choice.browser
 
         if self.choice:
             return self.choice
@@ -144,7 +186,7 @@ class TargetResolver:
 
         self.refresh(force=True)
 
-        options = [AUTO] + list(self.candidates)
+        options = [AUTO] + list(self.candidates) + list(self.tabs)
         current = self.choice or AUTO
 
         if current not in options:
@@ -153,12 +195,23 @@ class TargetResolver:
         picked = options[(options.index(current) + step) % len(options)]
         self.choice = None if picked == AUTO else picked
 
+        if isinstance(picked, TabTarget):
+            # Switching to a tab MEANS showing it: keys land only in
+            # the tab a browser has in front.
+            try:
+                self._activate(picked)
+            except Exception:
+                pass
+
         self.apply()
 
         if picked == AUTO:
             landing = self.resolved()
             return f"target -> auto ({landing})" if landing \
                 else "target -> auto (nobody playing yet)"
+
+        if isinstance(picked, TabTarget):
+            return f'target -> tab "{_short(picked.title)}"'
 
         return f"target -> {picked}"
 
@@ -276,7 +329,80 @@ def _macos_probe():
         if state == "playing":
             seen["playing"].append(player)
 
+    # The tabs of every scriptable browser that is RUNNING (telling an
+    # application anything launches it, so never name one that is not).
+    # Titles may contain the separator; the two leading fields are the
+    # numbers, the rest is title.
+    seen["tabs"] = []
+
+    for browser in SCRIPTABLE_TABS:
+        if browser not in seen["running"]:
+            continue
+
+        field = "name" if browser == "Safari" else "title"
+        script = f'''
+        tell application "{browser}"
+            set out to ""
+            repeat with w from 1 to count of windows
+                repeat with t from 1 to count of tabs of window w
+                    set out to out & w & "|" & t & "|" & ({field} of tab t of window w) & linefeed
+                end repeat
+            end repeat
+            return out
+        end tell
+        '''
+
+        try:
+            lines = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=3.0,
+            ).stdout
+        except Exception:
+            continue
+
+        for line in lines.splitlines():
+            parts = line.split("|", 2)
+            if len(parts) != 3:
+                continue
+            window, index, title = parts
+            title = title.strip()
+            if not title:
+                continue
+            try:
+                seen["tabs"].append(
+                    TabTarget(browser, int(window), int(index), title))
+            except ValueError:
+                continue
+
     return seen
+
+
+def _platform_activate_tab(tab):
+    """Bring one browser tab to the front, so keys can reach it."""
+
+    if sys.platform != "darwin":
+        return
+
+    if tab.browser == "Safari":
+        body = (f"tell window {tab.window} to set current tab "
+                f"to tab {tab.index}")
+    else:
+        body = (f"set active tab index of window {tab.window} "
+                f"to {tab.index}")
+
+    script = f'''
+    tell application "{tab.browser}"
+        {body}
+        set index of window {tab.window} to 1
+        activate
+    end tell
+    '''
+
+    try:
+        subprocess.run(["osascript", "-e", script],
+                       capture_output=True, text=True, timeout=3.0)
+    except Exception:
+        pass
 
 
 def _windows_probe():

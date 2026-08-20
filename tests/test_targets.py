@@ -170,5 +170,72 @@ class TestThePointingGesture(unittest.TestCase):
                       "the transition must not have spent the cooldown")
 
 
+class TestTabTargets(unittest.TestCase):
+    """Two videos in ONE browser are two targets.
+
+    Switching apps cannot tell them apart -- that was 'switch target is
+    not working' with two Chrome tabs open -- so media tabs join the
+    cycle, and picking one ACTIVATES it, because keys only ever land in
+    the tab a browser is showing."""
+
+    def resolver(self):
+        from control.targets import TabTarget
+
+        tabs = [TabTarget("Google Chrome", 1, 1, "lofi - YouTube"),
+                TabTarget("Google Chrome", 1, 2, "talk - YouTube")]
+
+        probe = lambda: {"frontmost": "Google Chrome",
+                         "running": ["Google Chrome"],
+                         "playing": [],
+                         "tabs": tabs}
+
+        config = ControlConfig(target_app="", cooldown_seconds=0)
+        self.activated = []
+        made = TargetResolver(config, probe=probe,
+                              activate=self.activated.append)
+        made.refresh(force=True)
+        return made, config, tabs
+
+    def test_media_tabs_join_the_cycle(self):
+        made, config, tabs = self.resolver()
+
+        said = [made.cycle(+1) for _ in range(3)]
+
+        self.assertIn('target -> tab "lofi - YouTube"', said)
+        self.assertIn('target -> tab "talk - YouTube"', said)
+
+    def test_picking_a_tab_activates_it(self):
+        made, config, tabs = self.resolver()
+
+        made.cycle(+1)          # Google Chrome, the app
+        made.cycle(+1)          # the first tab
+
+        self.assertEqual(self.activated, [tabs[0]])
+
+    def test_a_tab_choice_keeps_the_browser_in_the_config(self):
+        """target_app must stay an APP name -- every keystroke path
+        looks the target up as a process."""
+
+        made, config, tabs = self.resolver()
+
+        made.cycle(+1)
+        made.cycle(+1)
+
+        self.assertEqual(config.target_app, "Google Chrome")
+
+    def test_unmatched_tabs_stay_out_of_the_cycle(self):
+        from control.targets import TabTarget
+
+        probe = lambda: {"frontmost": None, "running": ["Google Chrome"],
+                         "playing": [],
+                         "tabs": [TabTarget("Google Chrome", 1, 1,
+                                            "New Tab")]}
+        config = ControlConfig(target_app="", cooldown_seconds=0)
+        made = TargetResolver(config, probe=probe, activate=lambda t: None)
+        made.refresh(force=True)
+
+        self.assertEqual(made.tabs, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
