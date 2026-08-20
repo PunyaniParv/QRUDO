@@ -103,12 +103,14 @@ class RecordingRunner(ActionRunner):
         self.keyed = []
         self.builtins = []
         self.quits = []
+        self.hidden = []
         super().__init__(
             opener=lambda argv: self.opened.append(argv),
             keystroke=lambda combo, target="": self.keyed.append(
                 (combo, target)) or f"sent {combo}",
             builtin=lambda cmd: self.builtins.append(cmd) or f"did {cmd}",
-            quitter=lambda app: self.quits.append(app) or f"quit {app}")
+            quitter=lambda app: self.quits.append(app) or f"quit {app}",
+            hider=lambda app: self.hidden.append(app) or f"hid {app}")
 
 
 class TestRunner(unittest.TestCase):
@@ -145,6 +147,16 @@ class TestRunner(unittest.TestCase):
         self.runner.run(actions.serialize(
             {"type": "quit_app", "app": "all"}))
         self.assertEqual(self.runner.quits, ["all"])
+
+    def test_hide_app_reaches_the_hider(self):
+        self.runner.run(actions.serialize(
+            {"type": "hide_app", "app": "Spotify"}))
+        self.assertEqual(self.runner.hidden, ["Spotify"])
+
+    def test_hide_all_carries_the_keyword(self):
+        self.runner.run(actions.serialize(
+            {"type": "hide_app", "app": "all"}))
+        self.assertEqual(self.runner.hidden, ["all"])
 
     def test_quitting_without_a_quitter_refuses_clearly(self):
         """A platform with no quit support must say so, not crash."""

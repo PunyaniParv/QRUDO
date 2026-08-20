@@ -243,7 +243,8 @@ class ControlEngine:
 
         runner = action_mod.ActionRunner(
             opener=opener, keystroke=send, builtin=builtin,
-            quitter=getattr(self.controller, "quit_app", None))
+            quitter=getattr(self.controller, "quit_app", None),
+            hider=getattr(self.controller, "hide_app", None))
 
         return runner.run(payload)
 

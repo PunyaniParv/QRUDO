@@ -490,6 +490,51 @@ class WindowsController(Controller):
 
         return f"asked {name} to quit"
 
+    #: PowerShell prologue that teaches it to minimize a window --
+    #: Windows' nearest thing to macOS hide: still running, one click
+    #: on the taskbar brings it back.
+    _MINIMIZER = (
+        "$sig = '[DllImport(\"user32.dll\")] public static extern bool "
+        "ShowWindowAsync(IntPtr hWnd, int nCmdShow);'; "
+        "Add-Type -MemberDefinition $sig -Name Win -Namespace Native; ")
+
+    def hide_app(self, name: str) -> str:
+        """Minimize an app's -- or with "all", every -- window."""
+
+        import re as _re
+
+        if name.strip().lower() == "all":
+            script = (
+                self._MINIMIZER +
+                "$hid = 0; Get-Process | Where-Object { "
+                "$_.MainWindowHandle -ne 0 -and $_.Id -ne $PID "
+                "-and $_.ProcessName -notin @('explorer','QRUDO') } | "
+                "ForEach-Object { if ([Native.Win]::ShowWindowAsync("
+                "$_.MainWindowHandle, 6)) { $hid++ } }; $hid")
+            hid = (self._powershell(script) or "0").strip()
+            if hid == "0":
+                return "nothing was showing to hide"
+            return f"hid {hid} apps"
+
+        bare = _re.sub(r"[^A-Za-z0-9 ._-]", "", name).strip()
+        if not bare:
+            return f"{name} was not running"
+
+        script = (
+            self._MINIMIZER +
+            f"$hid = 0; Get-Process | Where-Object {{ "
+            f"$_.MainWindowHandle -ne 0 -and "
+            f"($_.ProcessName -like '*{bare}*' -or "
+            f"$_.MainWindowTitle -like '*{bare}*') }} | "
+            f"ForEach-Object {{ if ([Native.Win]::ShowWindowAsync("
+            f"$_.MainWindowHandle, 6)) {{ $hid++ }} }}; $hid")
+        hid = (self._powershell(script) or "0").strip()
+
+        if hid == "0":
+            return f"{name} was not running"
+
+        return f"hid {name}"
+
     def _powershell(self, script: str) -> str:
         argv = ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
         try:

@@ -31,6 +31,18 @@ class TestParse(unittest.TestCase):
         self.assertEqual(phrase.parse("close chrome"),
                          {"type": "quit_app", "app": "chrome"})
 
+    def test_hide_an_app(self):
+        self.assertEqual(phrase.parse("hide Spotify"),
+                         {"type": "hide_app", "app": "Spotify"})
+
+    def test_minimize_means_hide(self):
+        self.assertEqual(phrase.parse("minimize chrome"),
+                         {"type": "hide_app", "app": "chrome"})
+
+    def test_hide_all(self):
+        self.assertEqual(phrase.parse("hide everything"),
+                         {"type": "hide_app", "app": "all"})
+
     def test_quit_all_is_the_everything_keyword(self):
         for said in ("quit all", "quit everything", "quit every app",
                      "close all apps"):

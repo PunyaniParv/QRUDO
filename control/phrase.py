@@ -22,6 +22,7 @@ _OPENERS = {
     "open app": "open_app",
     "quit": "quit_app", "close app": "quit_app", "exit": "quit_app",
     "close": "quit_app",
+    "hide": "hide_app", "minimize": "hide_app", "minimise": "hide_app",
     "go to": "open_url", "visit": "open_url", "browse": "open_url",
     "open website": "open_url", "open url": "open_url",
     "open folder": "open_path", "open file": "open_path",
@@ -218,15 +219,17 @@ def parse(phrase: str):
             if kind == "open_app":
                 return _build("open_app", _strip_words(rest))
 
-            # "quit spotify" asks that app to close; "quit all" asks
-            # every open app.  The target need not be running at save
-            # time -- quitting an app that is not running succeeds by
-            # doing nothing, which is what was asked for.
-            if kind == "quit_app":
+            # "quit spotify" asks that app to close; "hide chrome" puts
+            # its windows away without closing anything; with "all",
+            # every open app at once.  The target need not be running
+            # at save time -- quitting or hiding an app that is not
+            # running succeeds by doing nothing, which is what was
+            # asked for.
+            if kind in ("quit_app", "hide_app"):
                 bare = _strip_words(rest)
                 if bare.lower() in _ALL_WORDS:
                     bare = "all"
-                return _build("quit_app", bare)
+                return _build(kind, bare)
 
             if kind is not None:
                 return _build(kind, rest)
@@ -287,6 +290,9 @@ def _build(kind: str, target: str):
 
     if kind == "quit_app":
         return {"type": "quit_app", "app": target}
+
+    if kind == "hide_app":
+        return {"type": "hide_app", "app": target}
 
     if kind == "open_path":
         return {"type": "open_path", "path": target}

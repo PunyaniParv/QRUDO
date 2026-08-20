@@ -33,6 +33,7 @@ ACTION_TYPES = {
     "open_app": ("app",),        # launch an application
     "open_url": ("url",),        # a website
     "quit_app": ("app",),        # ask an app to quit; "all" quits every one
+    "hide_app": ("app",),        # hide an app's windows; "all" hides every one
     "keystroke": ("combo",),     # press a chord
     "builtin": ("command",),     # a built-in Command value
     "run_command": ("command",),  # a shell command -- the guarded one
@@ -170,6 +171,10 @@ def describe(actions) -> str:
             target = action["app"]
             parts.append("quit every open app" if target == "all"
                          else f"quit {target}")
+        elif kind == "hide_app":
+            target = action["app"]
+            parts.append("hide every open app" if target == "all"
+                         else f"hide {target}")
         elif kind == "keystroke":
             parts.append(f"press {action['combo']}")
         elif kind == "builtin":
@@ -195,11 +200,13 @@ class ActionRunner:
     about finishing would be worse than one that says where it broke.
     """
 
-    def __init__(self, opener, keystroke, builtin, quitter=None):
+    def __init__(self, opener, keystroke, builtin, quitter=None,
+                 hider=None):
         self._open = opener
         self._keystroke = keystroke
         self._builtin = builtin
         self._quit = quitter
+        self._hide = hider
 
     def run(self, payload: str) -> str:
         actions = parse(payload)
@@ -236,6 +243,12 @@ class ActionRunner:
                 raise ActionError(
                     "quitting apps is not supported on this platform yet")
             return self._quit(action["app"])
+
+        if kind == "hide_app":
+            if self._hide is None:
+                raise ActionError(
+                    "hiding apps is not supported on this platform yet")
+            return self._hide(action["app"])
 
         if kind == "keystroke":
             return self._keystroke(action["combo"],

@@ -349,8 +349,9 @@ class App:
         # what this is -- a media job asks which app, an open-thing job
         # already named its target here, so Box 3 only asks the scope.
         label(0, "1.  What should it do?")
-        hint(1, 'type anything — "next track", "open Downloads", '
-                '"launch Spotify", "go to gmail.com"')
+        hint(1, 'type anything — "open Downloads", "launch Spotify", '
+                '"quit Chrome", "hide Spotify", "quit all", '
+                '"go to gmail.com"')
         self.job_entry = tk.Entry(form, bg=PANEL, fg=INK,
                                   insertbackground=INK, relief="flat",
                                   font=("Helvetica", 15), width=38)

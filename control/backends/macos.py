@@ -609,6 +609,54 @@ class MacOSController(Controller):
 
         return f"asked {hits[0].localizedName()} to quit"
 
+    def hide_app(self, name: str) -> str:
+        """Put an app's -- or every regular app's -- windows away.
+
+        Hidden, not closed: the same as cmd-H, so everything keeps
+        running and one click on the Dock brings it back.  QRUDO and
+        the desktop are left visible -- hiding the controller mid-
+        gesture would look like a crash.
+        """
+
+        import os
+
+        if self._workspace is None:
+            raise UnsupportedCommand(
+                "hiding apps needs pyobjc (pip install -r "
+                "requirements.txt)")
+
+        me = os.getpid()
+        running = [
+            app for app in
+            self._workspace.sharedWorkspace().runningApplications()
+            if app.activationPolicy() == 0
+            and app.processIdentifier() != me
+            and (app.localizedName() or "").lower() not in self._NEVER_QUIT
+        ]
+
+        if name.strip().lower() == "all":
+            visible = [a for a in running if not a.isHidden()]
+            for app in visible:
+                app.hide()
+            if not visible:
+                return "nothing was showing to hide"
+            return f"hid {len(visible)} apps"
+
+        bare = name.strip().lower()
+        hits = [a for a in running
+                if (a.localizedName() or "").lower() == bare]
+        if not hits:
+            hits = [a for a in running
+                    if bare in (a.localizedName() or "").lower()]
+
+        if not hits:
+            return f"{name} was not running"
+
+        for app in hits:
+            app.hide()
+
+        return f"hid {hits[0].localizedName()}"
+
     # ------------------------------------------------------- event plumbing
 
     _ax = None   # ApplicationServices, loaded once, kept for re-asking
