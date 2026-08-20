@@ -421,12 +421,21 @@ class TestEntryGrace(unittest.TestCase):
         the moment the silence ends rather than being spent by it.
         """
 
+        from integration.bridge import ENTRY_GRACE, POSE_DWELL
+
+        dwell = POSE_DWELL["FIST"]
+        self.assertLess(dwell, ENTRY_GRACE,
+                        "this test needs a moment past the dwell but "
+                        "inside the grace")
+
         router = GestureRouter()
         router.hand_arrived(1000.0)
-        self.assertIsNone(router.update("FIST", now=1000.1))
-        self.assertIsNone(router.update("FIST", now=1000.46),
-                          "past its dwell, still inside the grace")
-        self.assertIsNotNone(router.update("FIST", now=1000.6))
+        self.assertIsNone(router.update("FIST", now=1000.0))
+        self.assertIsNone(
+            router.update("FIST", now=1000.0 + (dwell + ENTRY_GRACE) / 2),
+            "past its dwell, still inside the grace")
+        self.assertIsNotNone(
+            router.update("FIST", now=1000.0 + ENTRY_GRACE + 0.05))
 
     def test_a_router_never_told_of_arrivals_has_no_grace(self):
         router = GestureRouter()

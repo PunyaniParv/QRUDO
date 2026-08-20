@@ -60,9 +60,13 @@ POSE_COMMANDS = {
 #: The wait is time, deliberately not shape: a fist at any angle, from
 #: any hand, still fires exactly as it did; only a grip in passing,
 #: which never holds still for a third of a second, does not.
+#: Trimmed 2026-08-20 after "detected but fires late" from live use:
+#: the guard is against a grip IN PASSING, and passing grips do not
+#: hold still for three tenths either -- the felt lag dropped by the
+#: difference.
 POSE_DWELL = {
-    "POINT": 0.5,
-    "FIST": 0.35,
+    "POINT": 0.45,
+    "FIST": 0.30,
 }
 
 #: A hand that has just entered the picture gets a moment of silence.
@@ -70,8 +74,10 @@ POSE_DWELL = {
 #: desk, lifting a cup into shot -- and those shapes exist only in
 #: transit.  A gesture meant on entry survives this: keep holding it
 #: and it fires the moment the grace ends.  A hand already in the
-#: picture never waits.
-ENTRY_GRACE = 0.5
+#: picture never waits.  Trimmed with the dwells above: the two guards
+#: overlap (an arriving grip must still out-hold the dwell), so the
+#: grace does not need to carry the whole defence alone.
+ENTRY_GRACE = 0.35
 
 #: Movements, each on its own pose so that raising a hand mid-seek cannot
 #: be read as volume.  These are already one-off events with their own
