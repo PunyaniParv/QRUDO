@@ -1,0 +1,9 @@
+# The identity artifacts are pinned byte-for-byte by
+# tests/test_identity.py on BOTH platforms.  Git must never "helpfully"
+# convert their line endings -- a CRLF checkout on Windows changed
+# icon.json's bytes and failed the pin for that platform alone.
+assets/** -text
+packaging/AppIcon.icon/** -text
+*.png binary
+*.icns binary
+*.ico binary
