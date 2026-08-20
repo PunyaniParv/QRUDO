@@ -38,8 +38,16 @@ def install(app):
         Path(__file__).resolve().parent.parent / "assets" / "menubar.png"
 
     class _MenuTarget(NSObject):
-        """The menu's callbacks, marshalled onto Tk's own scheduler --
-        the safe place to touch the window from."""
+        """The menu's callbacks.
+
+        They do the least possible thing: drop a word in a mailbox the
+        window's own pulse reads every beat.  Nothing Cocoa-side ever
+        touches Tk directly, and even an exotic dispatch context
+        cannot lose a plain attribute write.  Each click is also
+        logged, so "the buttons do nothing" always has a diagnosis:
+        either the click never arrived (no log line) or the pulse
+        never collected it (log line, no effect).
+        """
 
         def initWithApp_(self, tk_app):
             self = objc.super(_MenuTarget, self).init()
@@ -49,10 +57,14 @@ def install(app):
             return self
 
         def showWindow_(self, sender):
-            self._app.root.after(0, self._app.show_from_menubar)
+            from control import log as _log
+            _log.get_logger("ui").info("ui: menu bar click -- show")
+            self._app._menubar_intent = "show"
 
         def quitApp_(self, sender):
-            self._app.root.after(0, self._app.quit)
+            from control import log as _log
+            _log.get_logger("ui").info("ui: menu bar click -- quit")
+            self._app._menubar_intent = "quit"
 
     try:
         bar = NSStatusBar.systemStatusBar()

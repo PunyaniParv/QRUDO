@@ -106,6 +106,7 @@ class App:
         self._drawn_seq = -1        # so the recorder can read latest too
         self._vision_died = False   # set by the worker when the loop ends
         self._tick_error_logged = False   # a failing beat logs once, not 25/s
+        self._menubar_intent = None       # the menu bar's mailbox
         self._auto_retried = False  # one free auto-recovery per death
         self.stop = threading.Event()
         self.worker = None
@@ -808,6 +809,17 @@ class App:
                 self.root.after(40, self.tick)
 
     def _beat_once(self):
+        # The menu bar's mailbox: its clicks only leave a word here,
+        # and the pulse -- Tk's own thread, the safe place -- acts on
+        # it.  Collected before anything else so a quit is never
+        # delayed by a frame's work.
+        intent, self._menubar_intent = self._menubar_intent, None
+        if intent == "quit":
+            self.quit()
+            return
+        if intent == "show":
+            self.show_from_menubar()
+
         # A vision loop that ended without being asked to is a dead
         # camera; handle it here on the main thread, where Tk is safe.
         if self._vision_died and not self.stop.is_set():
