@@ -93,6 +93,9 @@ class FakeMac(MacOSController):
     def _browser_toggle_by_script(self, browser):
         return self.script_toggle
 
+    def _browser_seek_by_script(self, browser, seek_js):
+        return None    # these tests exercise the arrow-key fallback
+
 
 class TestNothingPlaying(unittest.TestCase):
     def test_with_no_player_open_it_refuses(self):

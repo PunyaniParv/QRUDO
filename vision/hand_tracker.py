@@ -389,11 +389,22 @@ class HandTracker:
             c1 = centre(partner)
             s1 = hand_state.hand_scale(partner.landmarks)
 
+            # The model sometimes finds the SAME hand twice, slightly
+            # offset -- a phantom that matches every pose the real
+            # hand makes, which is how two-hand gestures fired from
+            # one hand.  Two real hands cannot overlap: a "partner"
+            # sitting within a hand's own span of the primary is the
+            # primary, seen double, and is dropped.
+            dist = ((c0.x - c1.x) ** 2 + (c0.y - c1.y) ** 2) ** 0.5
+
+            if dist < 0.9 * max(s0, s1):
+                self._scanner.found(c0.x, c0.y, s0)
+                return primary
+
             # The follow window must hold BOTH hands, or the one it
             # drops is lost until the next sweep: centre on their
             # midpoint, sized so the span covers the distance between
             # them with a hand's worth of margin either side.
-            dist = ((c0.x - c1.x) ** 2 + (c0.y - c1.y) ** 2) ** 0.5
             span = max(s0, s1,
                        (dist + s0 + s1) / self._scanner.WINDOW_SPANS)
             self._scanner.found((c0.x + c1.x) / 2, (c0.y + c1.y) / 2,

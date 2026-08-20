@@ -38,6 +38,7 @@ class TestMusicNeverVolunteers(unittest.TestCase):
         # Legacy-route tests run as if scripting were unavailable; the
         # script-route tests patch this back in themselves.
         made._browser_toggle_by_script = lambda browser: None
+        made._browser_seek_by_script = lambda browser, js: None
         return made
 
     def test_a_dead_resume_takes_the_letter_never_the_media_key(self):

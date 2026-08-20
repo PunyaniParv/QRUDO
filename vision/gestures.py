@@ -31,19 +31,33 @@ _folded = FingerMemory()
 TWO_HANDED = ("FIST", "OPEN_PALM", "POINT", "TWO_FINGER")
 
 #: The second hand's verdict must repeat this many frames before the
-#: pairing believes it, so a one-frame misread of the other hand does
-#: not flicker a held FIST into 2_FIST and back, re-arming the router
-#: each way.
-PAIR_STREAK = 3
+#: pairing believes it, so a misread of the other hand does not
+#: flicker a held FIST into 2_FIST and back, re-arming the router
+#: each way.  Five, not three: a pair is a deliberate act with both
+#: hands raised, and a sixth of a second of patience there is cheaper
+#: than a phantom pair firing.
+PAIR_STREAK = 5
 
 _partner = {"verdict": "UNKNOWN", "streak": 0}
 
+#: How much looser the fist's lines sit while a fist is ALREADY the
+#: settled pose.  Entering is exactly as strict as ever; holding
+#: forgives the knuckle that wobbles on the line, which is what made
+#: a held fist flicker away and read as "I have to make it three or
+#: four times".
+FIST_HOLD_SLACK = 1.15
+
+#: The settled pose of the previous frame, for the hysteresis above.
+_settled = "UNKNOWN"
+
 
 def reset():
+    global _settled
     _stabiliser.clear()
     _fingers.clear()
     _folded.clear()
     _partner["verdict"], _partner["streak"] = "UNKNOWN", 0
+    _settled = "UNKNOWN"
 
 
 def observe(hand):
@@ -160,8 +174,11 @@ def classify(hand, handedness=None):
     read_thumb = hand_state.thumb_readable(hand)
 
     # The fist first: every finger shut is the least ambiguous thing a
-    # hand can be, so nothing else has to work around it.
-    if hand_state.is_clenched(hand):
+    # hand can be, so nothing else has to work around it.  Held fists
+    # get the hysteresis slack; new ones enter on the strict lines.
+    fist_slack = FIST_HOLD_SLACK if _settled == "FIST" else 1.0
+
+    if hand_state.is_clenched(hand, slack=fist_slack):
         if from_behind:
             return "UNKNOWN"
 
@@ -206,12 +223,29 @@ def classify(hand, handedness=None):
         if not _open_enough(hand):
             return "UNKNOWN"
 
+        # And open THIS FRAME, not merely in the memory's steadied
+        # past: the memory smooths a finger dropping out of the pose,
+        # which is exactly how three fingers and a lagging reading
+        # went on counting as four.  Near hands only -- far off, the
+        # memory's smoothing IS the range capability the floor pins,
+        # and this frame's reading is noise.
+        if (read_thumb
+                and not hand_state.is_open(hand_state.shape_of(hand))):
+            return "UNKNOWN"
+
         # An open palm is all FIVE digits, not four: four fingers
         # straight with the thumb tucked across the palm is a count of
         # four, or half a stretch -- something else.  Only a thumb held
         # out clear of the knuckles completes the palm.
         if (read_thumb and hand_state.thumb_spread(hand)
                 < hand_state.THUMB_TUCKED_SPREAD):
+            return "UNKNOWN"
+
+        # And held AWAY from the index tip: an OK-sign's thumb touches
+        # it, and contact is that sign's whole meaning -- no open palm
+        # has it.
+        if (read_thumb and hand_state.thumb_gap(hand)
+                < hand_state.PALM_MIN_GAP):
             return "UNKNOWN"
 
         return "OPEN_PALM"
@@ -335,7 +369,10 @@ def detect_gesture(hand, handedness=None):
         if matched is not None:
             raw = matched
 
-    return _stabiliser.update(raw)
+    global _settled
+    _settled = _stabiliser.update(raw)
+
+    return _settled
 
 
 def classify_still(hand, handedness=None):
@@ -385,10 +422,13 @@ def classify_still(hand, handedness=None):
         if not hand_state.is_facing_palm(screen, handedness):
             return "UNKNOWN"
 
-        if (hand_state.thumb_readable(hand)
-                and hand_state.thumb_spread(hand)
-                < hand_state.THUMB_TUCKED_SPREAD):
-            return "UNKNOWN"
+        if hand_state.thumb_readable(hand):
+            if (hand_state.thumb_spread(hand)
+                    < hand_state.THUMB_TUCKED_SPREAD):
+                return "UNKNOWN"
+
+            if hand_state.thumb_gap(hand) < hand_state.PALM_MIN_GAP:
+                return "UNKNOWN"
 
         return "OPEN_PALM"
 

@@ -316,7 +316,14 @@ THUMBS_UP_RISE = 0.25
 #: an open thumb at 0.55-0.65 palms and a folded one well under 0.35;
 #: the first line here (0.22) was calibrated on synthetic geometry and
 #: let real folded thumbs through.
-THUMB_TUCKED_SPREAD = 0.35
+THUMB_TUCKED_SPREAD = 0.40
+
+#: An open palm also holds the thumb AWAY from the index tip: live
+#: palms measure the gap at 0.35 palm-lengths and far beyond, while an
+#: OK-sign -- thumb and index touching, three fingers up -- sits near
+#: zero and was read as a palm.  Contact is the whole meaning of that
+#: sign, and no open palm has it.
+PALM_MIN_GAP = 0.25
 
 #: Below this hand size (as a fraction of frame width) the thumb is a
 #: few pixels of guesswork, and the strict thumb tests above would be
@@ -568,8 +575,15 @@ def is_open(hand_landmarks):
     )
 
 
-def is_clenched(hand):
+def is_clenched(hand, slack=1.0):
     """Whether the hand is shut, not merely un-straight.
+
+    ``slack`` loosens both lines proportionally.  1.0 is the strict
+    entry test; the caller passes a little more while a fist is
+    ALREADY the settled pose, so a knuckle wobbling on the line keeps
+    the fist rather than flickering it away -- which read as "I have
+    to make the fist three or four times".  Entering stays exactly as
+    strict as ever.
 
     The index finger has to be in, and two of the other three.  Requiring
     all four made a fist fail whenever one finger was misread, which on a
@@ -590,8 +604,9 @@ def is_clenched(hand):
     shape = shape_of(hand)
 
     closed = {
-        name: (finger_reach(screen, tip, mcp) < FIST_REACH
-               or finger_extension(shape, tip, pip, mcp) < FIST_CURL)
+        name: (finger_reach(screen, tip, mcp) < FIST_REACH * slack
+               or finger_extension(shape, tip, pip, mcp)
+               < FIST_CURL * slack)
         for name, (tip, pip, mcp) in FINGERS.items()
     }
 

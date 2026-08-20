@@ -338,8 +338,13 @@ class MacOSController(Controller):
         if pinned:
             return self._drive_pinned_tab(
                 name, pinned,
-                "var v=document.querySelector('video');"
-                "if(!v){'novideo'} else if(v.paused){v.play();'played'}"
+                "var vs=document.querySelectorAll('video'),v=null,i;"
+                "for(i=0;i<vs.length;i++){if(!vs[i].paused)"
+                "{v=vs[i];break}}"
+                "if(!v){for(i=0;i<vs.length;i++)"
+                "{if(vs[i].currentTime>0){v=vs[i];break}}}"
+                "if(!v&&vs.length){v=vs[0]}"
+                "if(!v){'novideo'}else if(v.paused){v.play();'played'}"
                 "else{v.pause();'paused'}")
 
         # No pin: the script route is still first, because it is the
@@ -430,19 +435,45 @@ class MacOSController(Controller):
             self._post_media_key(NX_KEYTYPE_NEXT if forward else NX_KEYTYPE_PREVIOUS)
             return f"{'next' if forward else 'previous'} track"
 
-        # A pinned tab seeks in the background too, by the same script
-        # that plays it -- arrow keys only ever reach the front tab.
+        delta = seconds if forward else -seconds
+        seek_js = (
+            f"var vs=document.querySelectorAll('video'),v=null,i;"
+            f"for(i=0;i<vs.length;i++){{if(!vs[i].paused)"
+            f"{{v=vs[i];break}}}}"
+            f"if(!v){{for(i=0;i<vs.length;i++)"
+            f"{{if(vs[i].currentTime>0){{v=vs[i];break}}}}}}"
+            f"if(!v){{'novideo'}}else{{"
+            f"v.currentTime=Math.max(0,v.currentTime+({delta}));"
+            f"'sought'}}")
+
+        # A pinned tab seeks in the background by the same script that
+        # plays it -- arrow keys only ever reach the front tab.
         pinned = getattr(self.config, "target_tab", "").strip()
         if pinned:
-            delta = seconds if forward else -seconds
             said = self._drive_pinned_tab(
-                self.config.target_app or "the browser", pinned,
-                f"var v=document.querySelector('video');"
-                f"if(!v){{'novideo'}} else {{"
-                f"v.currentTime=Math.max(0,v.currentTime+({delta}));"
-                f"'sought'}}")
+                self.config.target_app or "the browser", pinned, seek_js)
             return said.replace("sought",
                                 f"seek {direction} {seconds}s")
+
+        # No pin, browser target: still by script -- gestures must not
+        # depend on typing keys into pages.  The last-controlled tab
+        # answers first; a browser that cannot be scripted falls to the
+        # arrow keys below, exactly as before.
+        browser = (self.config.target_app or "").strip()
+        if browser in ("Google Chrome", "Safari"):
+            last = getattr(self, "_last_media_title", None)
+            if last:
+                try:
+                    said = self._drive_pinned_tab(browser, last, seek_js)
+                    if said == "sought":
+                        return f"seek {direction} {seconds}s"
+                except UnsupportedCommand:
+                    self._last_media_title = None
+
+            said = self._browser_seek_by_script(browser, seek_js)
+            if said:
+                return f"seek {direction} {seconds}s " \
+                       f'("{said if len(said) <= 28 else said[:27] + "…"}")'
 
         # Seek within the current track by repeating the player's own arrow-key
         # shortcut.  seek_step_seconds says how far one press moves; the config
@@ -461,6 +492,11 @@ class MacOSController(Controller):
 
     #: Set when QRUDO was the one that paused, so it knows it may resume.
     _paused_it = False
+
+    #: The title of the media tab last played, paused or sought, so the
+    #: next gesture means THAT tab -- "the one I was just controlling"
+    #: -- rather than whichever tab enumeration reaches first.
+    _last_media_title = None
 
     def _media_play_pause(self, name: str, pid: int) -> str:
         """Play or pause, by whichever route is safe just now.
@@ -635,11 +671,44 @@ class MacOSController(Controller):
         if browser not in ("Google Chrome", "Safari"):
             return None
 
-        act_js = ("var v=document.querySelector('video');"
-                  "if(!v){'no'}else if(!v.paused){v.pause();'pausednow'}"
-                  "else if(v.currentTime>0){'p1'}else{'p0'}")
-        play_js = ("var v=document.querySelector('video');"
-                   "if(v){v.play()};'ok'")
+        # The tab acted on LAST answers first: with several media tabs
+        # in one window, a fist means "the one I was just controlling",
+        # not whichever tab enumeration happens to reach first.
+        last = getattr(self, "_last_media_title", None)
+        if last:
+            try:
+                said = self._drive_pinned_tab(
+                    browser, last,
+                    "var vs=document.querySelectorAll('video'),v=null,i;"
+                    "for(i=0;i<vs.length;i++){if(!vs[i].paused)"
+                    "{v=vs[i];break}}"
+                    "if(!v){for(i=0;i<vs.length;i++)"
+                    "{if(vs[i].currentTime>0){v=vs[i];break}}}"
+                    "if(!v&&vs.length){v=vs[0]}"
+                    "if(!v){'novideo'}else if(v.paused){v.play();"
+                    "'played'}else{v.pause();'paused'}")
+                if said:
+                    return said
+            except UnsupportedCommand:
+                self._last_media_title = None   # gone; the pass decides
+
+        # ALL of a page's videos, not the first: a Shorts feed keeps a
+        # stack of preloaded <video> elements, and querySelector kept
+        # answering for a preloaded one while the short actually
+        # playing went untouched.
+        act_js = (
+            "var vs=document.querySelectorAll('video'),v=null,i;"
+            "for(i=0;i<vs.length;i++){if(!vs[i].paused){v=vs[i];break}}"
+            "if(v){v.pause();'pausednow'}else{"
+            "for(i=0;i<vs.length;i++){if(vs[i].currentTime>0)"
+            "{v=vs[i];break}}"
+            "if(v){'p1'}else if(vs.length){'p0'}else{'no'}}")
+        play_js = (
+            "var vs=document.querySelectorAll('video'),v=null,i;"
+            "for(i=0;i<vs.length;i++){if(vs[i].currentTime>0)"
+            "{v=vs[i];break}}"
+            "if(!v&&vs.length){v=vs[0]}"
+            "if(v){v.play()};'ok'")
 
         if browser == "Safari":
             field = "name"
@@ -707,9 +776,59 @@ class MacOSController(Controller):
             return ""
 
         verb, _, title = answer.partition("|")
+        # Remembered, so the next fist means THIS tab again.
+        self._last_media_title = title
         short = title if len(title) <= 28 else title[:27] + "…"
 
         return f'{verb} "{short}"'
+
+    def _browser_seek_by_script(self, browser: str, seek_js: str):
+        """Seek whichever tab holds the live video, by script.
+
+        One pass: the first tab whose video answers "sought" wins, and
+        its title is remembered as the last-controlled tab.  Returns
+        the title, or None when nothing could be sought.
+        """
+
+        safe_js = seek_js.replace("\\", "\\\\").replace('"', '\\"')
+
+        if browser == "Safari":
+            field = "name"
+            run = f'do JavaScript "{safe_js}" in (tab t of window w)'
+        else:
+            field = "title"
+            run = f'execute (tab t of window w) javascript "{safe_js}"'
+
+        script = f'''
+        tell application "{browser}"
+            repeat with w from 1 to count of windows
+                repeat with t from 1 to count of tabs of window w
+                    try
+                        if ({run}) is "sought" then
+                            return {field} of tab t of window w
+                        end if
+                    end try
+                end repeat
+            end repeat
+        end tell
+        return ""
+        '''
+
+        try:
+            proc = subprocess.run(["osascript", "-e", script],
+                                  capture_output=True, text=True,
+                                  timeout=10.0)
+        except Exception:
+            return None
+
+        title = (proc.stdout or "").strip()
+
+        if proc.returncode != 0 or not title:
+            return None
+
+        self._last_media_title = title
+
+        return title
 
     def _resume_paused_video(self, name: str) -> str | None:
         """Find the video QRUDO paused and play it where it sits.
@@ -887,6 +1006,9 @@ class MacOSController(Controller):
                 f"the pinned tab could not be reached just now "
                 f"({stderr.splitlines()[-1][:80] if stderr else 'no answer'}) "
                 f"-- it may be asleep; click it once or point again")
+
+        if answer in ("played", "paused", "sought"):
+            self._last_media_title = title
 
         if answer == "played":
             return f'played "{short}" in the background'
