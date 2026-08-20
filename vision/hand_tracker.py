@@ -142,10 +142,29 @@ class Scanner:
 
         return self._window is not None and self._span >= 0.07
 
+    #: How fast the follow window chases its target, per frame.  It
+    #: GLIDES rather than jumps: video-mode tracking carries the last
+    #: frame's hand rectangle into this frame's view, and a view that
+    #: recentres and rescales sharply every frame -- worst with two
+    #: hands, whose union window breathes with the distance between
+    #: them -- occasionally hands the converter a degenerate rectangle,
+    #: which is the seed of the rare native crash the supervisor mops
+    #: up.  A gliding window keeps consecutive views nearly identical,
+    #: which starves that seed.
+    CHASE = 0.35
+
     def found(self, cx, cy, span):
         """A hand at (cx, cy), ``span`` hand-scale, all frame fractions."""
 
         side = min(1.0, max(self.WINDOW_FLOOR, span * self.WINDOW_SPANS))
+
+        if self._window is not None:
+            x0, y0, w, h = self._window
+            ocx, ocy, oside = x0 + w / 2, y0 + h / 2, w
+
+            cx = ocx + self.CHASE * (cx - ocx)
+            cy = ocy + self.CHASE * (cy - ocy)
+            side = oside + self.CHASE * (side - oside)
 
         self._window = self._around(cx, cy, side)
         self._misses = 0

@@ -130,6 +130,26 @@ class TestFollowing(unittest.TestCase):
 
         self.assertEqual(scanner.view(), Scanner.FULL)
 
+    def test_the_window_glides_rather_than_jumps(self):
+        """Consecutive views must stay nearly identical: video-mode
+        tracking carries the last frame's rectangle into this frame's
+        view, and sharp recentring is the seed of the rare native
+        crash.  A second sighting far away pulls the window PART of
+        the way, never all of it."""
+
+        scanner = Scanner()
+        scanner.found(0.3, 0.5, span=0.10)
+        first = scanner.view()
+
+        scanner.found(0.7, 0.5, span=0.10)
+        second = scanner.view()
+
+        moved = (second[0] + second[2] / 2) - (first[0] + first[2] / 2)
+
+        self.assertGreater(moved, 0.05, "the window must follow")
+        self.assertLess(moved, 0.4 * 0.9,
+                        "but never teleport the whole distance at once")
+
     def test_the_follow_view_never_jumps(self):
         """Video-mode tracking leans on frame-to-frame continuity, so
         the follow view must stay the steady window every single
