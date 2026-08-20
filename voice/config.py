@@ -101,11 +101,29 @@ class VoiceConfig:
     # --- Command capture (silence-based end-of-utterance detection) ---
     # Simple RMS energy check -- no extra native dependency (avoids webrtcvad
     # build headaches on Windows).  When adaptive_silence is on, the working
-    # threshold is the larger of silence_threshold_rms and ~3x the measured
-    # noise floor, so a noisier room still ends the utterance instead of
-    # recording the full max_recording_s.
-    silence_threshold_rms: float = 300.0
+    # threshold is the larger of silence_threshold_rms and noise_gate_multiplier
+    # times the measured noise floor, so a noisier room still ends the
+    # utterance instead of recording the full max_recording_s.
+    #
+    # silence_threshold_rms is a low ABSOLUTE floor only: it keeps a
+    # near-silent room's tiny dither/mic self-noise from being speech, but it
+    # is NOT the dominant gate.  Measured on the real machine, a fixed 300 RMS
+    # floor forced the user to shout (normal conversational speech produces
+    # many frames at 100-300 RMS, all below the old gate) and made those quiet
+    # speech frames feed the noise estimator, raising the gate further.  The
+    # gate is now relative to the measured noise floor instead.
+    silence_threshold_rms: float = 100.0
     adaptive_silence: bool = True
+    # The working gate rides this many times above the measured noise floor.
+    # Background noise stays rejected (it sits at ~1x the floor) while normal
+    # speech (typically 3-10x the floor) crosses it.
+    noise_gate_multiplier: float = 3.0
+    # Robust noise floor estimation: pre-speech quiet frames adapt the floor
+    # fast downward and only very slowly upward, so a quiet syllable that dips
+    # below the gate cannot pollute the floor and raise the gate (the
+    # mid-command-dip bug).  The floor is also seeded from the monitor's
+    # session ambient estimate when one is available.
+    noise_floor_init: float = 80.0
     silence_duration_s: float = 0.7        # continuous quiet ends the utterance
     min_recording_s: float = 0.3           # ignore accidental blips shorter than this
     max_recording_s: float = 12.0          # hard cap so a stuck mic can't hang forever
@@ -113,6 +131,34 @@ class VoiceConfig:
     pre_speech_timeout_s: float = 3.0      # how long to wait for speech after wake
     command_pre_roll_s: float = 0.3        # audio retained just before wake/command
     pre_roll_frames: int = 4               # ~0.32 s at 80 ms frames
+    # Post-wake grace: when a command capture begins right after wake detection,
+    # the first loud frames are the wake phrase tail, and a short silence that
+    # follows is the natural pause before the command -- NOT the end of the
+    # utterance.  Within this grace window a continuous loud run is treated as
+    # the command itself (same-utterance "hey jarvis, increase the volume"); a
+    # silence gap >= silence_duration_s inside it is treated as the wake-command
+    # pause and the capture keeps listening (up to pre_speech_timeout_s).
+    post_wake_grace_s: float = 0.8
+    # Speech onset after the wake phrase: a pre-speech silence of at least this
+    # long proves the wake phrase is over (the phrase itself is never silent),
+    # so the next loud frame is the command -- the natural pause the user takes
+    # before speaking is not mistaken for the end of the utterance.  This is
+    # what lets "hey jarvis" [0.8-2s pause] "increase the volume" work without
+    # the user having to time their command precisely.
+    wake_pause_min_s: float = 0.3
+    # Same-breath / intermittent onset: the command may begin right after the
+    # wake tail with frames that dip below the gate between syllables.  Rather
+    # than requiring a long uninterrupted loud run, speech onset is also
+    # established when at least onset_min_loud of the last onset_window_frames
+    # are loud AND at least one frame in that window is quiet (a real speech
+    # rhythm; a solid wake-tail run never looks like that, so the tail cannot
+    # be mistaken for the command and ended early on the pause that follows it).
+    onset_window_frames: int = 6
+    onset_min_loud: int = 3
+    # How much of the monitor's recent history feeds the ambient-noise estimate
+    # that seeds the capture's noise floor (frames; 120 x 80 ms ~ 9.6 s).
+    ambient_floor_frames: int = 120
+    ambient_floor_percentile: float = 15.0
 
     # --- Voice response (wake word -> acknowledgement) ---
     # By default there is NO spoken acknowledgement in the command path: a
@@ -152,10 +198,21 @@ class VoiceConfig:
     stt_min_frames: int = 5
 
     # --- Diagnostics ---
-    # Frame/RMS/model diagnostics ([wake-debug], [wake-stats], [record-stats],
-    # [whisper-stats], [voice-timing]) print only when debug is on.  Normal
-    # mode prints the one-line lifecycle.  Set SARV_VOICE_DEBUG=1 to enable.
-    debug: bool = os.getenv("SARV_VOICE_DEBUG", "") in ("1", "true", "yes", "on")
+    # USER lifecycle messages print always.  Aggregate per-utterance
+    # diagnostics ([wake-stats], [record-stats], [whisper-stats],
+    # [voice-timing], [capture-debug], [stt-input-debug], [handoff-debug])
+    # print only when debug is on.  Frame-level telemetry ([mic-frame],
+    # [mic-pop], [capture-frame], per-second [wake-debug] lines, raw scores,
+    # thresholds, counters) prints only when debug AND trace are both on, so
+    # DEBUG mode never floods the terminal.  Set QRUDO_VOICE_DEBUG=1 or
+    # SARV_VOICE_DEBUG=1 to enable debug, and QRUDO_VOICE_TRACE=1 or
+    # SARV_VOICE_TRACE=1 to additionally enable trace.
+    debug: bool = (
+        os.getenv("QRUDO_VOICE_DEBUG") or os.getenv("SARV_VOICE_DEBUG") or ""
+    ).lower() in ("1", "true", "yes", "on")
+    trace: bool = (
+        os.getenv("QRUDO_VOICE_TRACE") or os.getenv("SARV_VOICE_TRACE") or ""
+    ).lower() in ("1", "true", "yes", "on")
 
 
 CONFIG = VoiceConfig()

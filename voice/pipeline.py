@@ -38,8 +38,12 @@ the existing ControlEngine command vocabulary (built-in commands and, through
 the catalog, CUSTOM action chains).  Everything is local and offline.
 
 Diagnostics (``[wake-debug]``, ``[wake-stats]``, ``[record-stats]``,
-``[whisper-stats]``, ``[voice-timing]``) print only when ``debug=True``; the
-normal mode prints the one-line lifecycle.
+``[whisper-stats]``, ``[voice-timing]``, ``[stt-input-debug]``,
+``[handoff-debug]``) print only when ``debug=True`` (aggregate per-utterance
+blocks).  Frame-level telemetry (``[mic-frame]``, ``[mic-pop]``,
+``[capture-frame]``, per-second ``[wake-debug]`` lines) additionally requires
+``trace=True``.  The normal mode prints only the one-line lifecycle
+(``voice_log``); everything is routed through :mod:`voice.log`.
 """
 
 from __future__ import annotations
@@ -52,6 +56,7 @@ from control import ControlEngine
 from voice.audio_capture import capture_command, record_until_silence
 from voice.bridge import VoiceIntentRouter, normalize
 from voice.config import CONFIG
+from voice.log import voice_debug, voice_log
 from voice.stt import SpeechToText
 from voice.stream import MicMonitor
 from voice.wake_word import WakeWordError, create_wake_word_engine
@@ -72,22 +77,22 @@ def run_voice_loop(on_text: TextHandler, on_listening: Callable[[], None] | None
     e.g. to play a short beep or flash a UI indicator — useful feedback so
     the user knows the assistant is actually recording.
     """
-    print("[SARV] Loading speech-to-text model...")
+    voice_log("[SARV] Loading speech-to-text model...")
     stt = SpeechToText()
 
-    print("[SARV] Starting wake word listener...")
+    voice_log("[SARV] Starting wake word listener...")
     try:
         listener = create_wake_word_engine()
         listener.initialize()
     except WakeWordError as exc:
-        print(f"[SARV] Wake-word unavailable: {exc}")
-        print("[SARV] Voice control will not start. No commands executed.")
+        voice_log(f"[SARV] Wake-word unavailable: {exc}")
+        voice_log("[SARV] Voice control will not start. No commands executed.")
         return
     except Exception as exc:  # genuine (non-anticipated) startup failure
-        print(f"[SARV] Failed to start wake-word listener: {exc}")
+        voice_log(f"[SARV] Failed to start wake-word listener: {exc}")
         raise
 
-    print(f'[SARV] Ready. Say the wake phrase ({listener.name}).')
+    voice_log(f'[SARV] Ready. Say the wake phrase ({listener.name}).')
     try:
         while True:
             listener.wait_for_wake_word()
@@ -95,7 +100,7 @@ def run_voice_loop(on_text: TextHandler, on_listening: Callable[[], None] | None
             if on_listening:
                 on_listening()
             else:
-                print("[SARV] Listening...")
+                voice_log("[SARV] Listening...")
 
             t0 = time.monotonic()
             audio = record_until_silence()
@@ -103,10 +108,10 @@ def run_voice_loop(on_text: TextHandler, on_listening: Callable[[], None] | None
             elapsed_ms = (time.monotonic() - t0) * 1000
 
             if not transcript:
-                print("[SARV] (heard nothing usable)")
+                voice_log("[SARV] (heard nothing usable)")
                 continue
 
-            print(f"[SARV] Heard: \"{transcript}\"  ({elapsed_ms:.0f}ms)")
+            voice_log(f"[SARV] Heard: \"{transcript}\"  ({elapsed_ms:.0f}ms)")
             on_text(transcript)
     finally:
         listener.close()
@@ -168,6 +173,35 @@ def _speak_ack(tts_speak: Callable[[str], None], text: str) -> None:
         pass
 
 
+def _print_stt_input_debug(audio: np.ndarray, enabled: bool = False) -> None:
+    """Inspect the exact float32 buffer handed to Whisper (before the gate).
+
+    This is the ground truth for "did captured PCM actually reach STT?" --
+    sample count, duration, dtype, shape, range and finiteness -- independent
+    of the model's decode or the sustained-energy gate.
+    """
+    import numpy as np
+
+    samples = int(audio.size)
+    voice_debug("[stt-input-debug]", enabled=enabled)
+    voice_debug(f"samples={samples}", enabled=enabled)
+    voice_debug(f"duration={samples / CONFIG.sample_rate:.3f}s", enabled=enabled)
+    voice_debug(f"dtype={audio.dtype}", enabled=enabled)
+    voice_debug(f"shape={audio.shape}", enabled=enabled)
+    if samples:
+        voice_debug(f"min={float(np.min(audio)):.4f}", enabled=enabled)
+        voice_debug(f"max={float(np.max(audio)):.4f}", enabled=enabled)
+        rms = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+        voice_debug(f"rms={rms:.4f}", enabled=enabled)
+        finite = bool(np.all(np.isfinite(audio)))
+    else:
+        voice_debug("min=0.0", enabled=enabled)
+        voice_debug("max=0.0", enabled=enabled)
+        voice_debug("rms=0.0", enabled=enabled)
+        finite = True
+    voice_debug(f"finite={finite}", enabled=enabled)
+
+
 def run_voice_command_loop(
     *,
     router: VoiceIntentRouter | None = None,
@@ -216,7 +250,7 @@ def run_voice_command_loop(
     """
     router = router if router is not None else VoiceIntentRouter()
     if stt is None:
-        print("[voice] Loading speech-to-text model...")
+        voice_log("[voice] Loading speech-to-text model...")
         stt = SpeechToText()
     wake = wake_engine if wake_engine is not None else create_wake_word_engine()
     debug = CONFIG.debug if debug is None else debug
@@ -233,8 +267,8 @@ def run_voice_command_loop(
     try:
         wake.initialize()
     except WakeWordError as exc:
-        print(f"[wake-word] Wake-word unavailable: {exc}")
-        print("[voice] Voice control will not start. No commands executed.")
+        voice_log(f"[wake-word] Wake-word unavailable: {exc}")
+        voice_log("[voice] Voice control will not start. No commands executed.")
         if owns_monitor:
             monitor.close()
         if owns_engine:
@@ -247,14 +281,14 @@ def run_voice_command_loop(
     try:
         monitor.open()
     except Exception as exc:
-        print(f"[voice] ERROR: no microphone available: {exc}")
-        print("[voice] Voice control will not start.")
+        voice_log(f"[voice] ERROR: no microphone available: {exc}")
+        voice_log("[voice] Voice control will not start.")
         if owns_engine:
             control_engine.close()
         wake.close()
         return
 
-    print("[voice] Ready. Say the wake phrase.")
+    voice_log("[voice] Ready. Listening...")
 
     cycles = 0
     try:
@@ -262,21 +296,26 @@ def run_voice_command_loop(
             if should_stop is not None and should_stop():
                 break
             cycles += 1
+            if cycles > 1:
+                voice_log("[voice] Listening...")
 
             # --- WAKE_LISTENING -> WAKE_DETECTED -------------------------
             try:
                 heard = wake.wait_for_wake_word(
-                    frame_source=monitor.next_frame,
+                    frame_source=lambda *a, **k: monitor.next_frame(
+                        *a, **k, consumer="wake"
+                    ),
                     stop=should_stop,
                     debug=debug,
                 )
             except WakeWordError as exc:
                 # AUDIO_FAILURE: the mic died mid-session.
-                print(f"[voice] ERROR: wake-word listening failed: {exc}")
+                voice_log(f"[voice] ERROR: wake-word listening failed: {exc}")
                 break
             if not heard:
                 break  # shutdown requested
-            print(f"[wake-word] WAKE WORD DETECTED: {label}")
+            voice_log("[voice] Wake word detected.")
+            voice_debug(f"[wake-word] WAKE WORD DETECTED: {label}", enabled=debug)
 
             # Clear the wake model's buffers so the phrase tail and the
             # command audio cannot re-trigger it.
@@ -293,47 +332,70 @@ def run_voice_command_loop(
                 _speak_ack(tts_speak, response)
                 monitor.drain()
 
+            if debug:
+                # Handoff telemetry: how full the queue was right after wake
+                # detection, and what the command capture will see as pre-roll.
+                voice_debug("[handoff-debug]", enabled=debug)
+                voice_debug(
+                    f"pending_after_wake={monitor.pending_count()}",
+                    enabled=debug,
+                )
+                voice_debug(
+                    f"pre_roll_frames={len(monitor.pre_roll())}", enabled=debug
+                )
+
             # --- COMMAND_CAPTURE -----------------------------------------
+            voice_log("[voice] Listening for command...")
             t_capture = time.monotonic()
             try:
-                captured = capture_command(monitor, stop=should_stop, stats=debug)
+                captured = capture_command(
+                    monitor, stop=should_stop, stats=debug, debug=debug
+                )
             except Exception as exc:
                 # AUDIO_FAILURE: recover and keep listening.
-                print(f"[voice] ERROR: command capture failed: {exc}")
+                voice_log(f"[voice] ERROR: command capture failed: {exc}")
                 continue
             t_stt = time.monotonic()
             if captured is None:
                 # EMPTY_COMMAND: nothing said after the wake phrase.
-                print("[voice] No speech after the wake phrase; "
-                      "back to wake-word listening.")
+                voice_log("[voice] No command detected.")
                 continue
             audio, record_stats = captured if debug else (captured, None)
 
             # --- TRANSCRIBING --------------------------------------------
-            t_stt_done = time.monotonic()
+            t_stt = time.monotonic()
+            if debug:
+                _print_stt_input_debug(audio, enabled=debug)
             try:
                 transcript = stt.transcribe(audio)
             except Exception as exc:
                 # STT_FAILURE: recover and keep listening.
-                print(f"[voice] ERROR: speech-to-text failed: {exc}")
+                voice_log(f"[voice] ERROR: speech-to-text failed: {exc}")
                 continue
+            t_stt_done = time.monotonic()
             if debug:
-                print("[whisper-stats]")
-                print(f"model={getattr(stt, 'model_name', CONFIG.whisper_model_size)}")
-                print(f"duration={t_stt_done - t_stt:.2f}s")
-                print(f'text="{transcript}"')
+                voice_debug("[whisper-stats]", enabled=debug)
+                voice_debug(
+                    f"model={getattr(stt, 'model_name', CONFIG.whisper_model_size)}",
+                    enabled=debug,
+                )
+                voice_debug(
+                    f"audio_duration={audio.size / CONFIG.sample_rate:.3f}s",
+                    enabled=debug,
+                )
+                voice_debug(f"decode={t_stt_done - t_stt:.2f}s", enabled=debug)
+                voice_debug(f'text="{transcript}"', enabled=debug)
                 empty = "yes" if not transcript else "no"
-                print(f"empty={empty}")
+                voice_debug(f"empty={empty}", enabled=debug)
 
             # Wake+command in one utterance: strip the wake phrase so the
             # remainder routes as a plain command.
             command_text = strip_wake_phrase(transcript, label)
             if not command_text:
                 # EMPTY_COMMAND (wake word only, or a hallucination).
-                print("[voice] No speech detected after the wake word. "
-                      "Back to wake-word listening.")
+                voice_log("[voice] No command detected.")
                 continue
-            print(f'[voice] Transcription: "{command_text}"')
+            voice_log(f'[voice] Command: "{command_text}"')
             if on_transcript:
                 on_transcript(command_text)
 
@@ -343,35 +405,50 @@ def run_voice_command_loop(
             if route is None:
                 # UNSUPPORTED_COMMAND: malformed or unsupported speech --
                 # nothing is executed, ever.
-                print("[voice] No supported command matched. Nothing executed.")
+                voice_log("[voice] No supported command matched. Nothing executed.")
                 continue
             command = route.command
             payload = route.payload
-            print(f"[voice] Intent: {command.name}")
+            voice_log(f"[voice] Intent: {command.name}")
             if payload:
-                print(f"[voice] Executing: {command.name} (payload={payload})")
+                voice_log(f"[voice] Executing: {command.name} (payload={payload})")
             else:
-                print(f"[voice] Executing: {command.name}")
+                voice_log(f"[voice] Executing: {command.name}")
 
             # --- EXECUTING ------------------------------------------------
             t_exec = time.monotonic()
             control_engine.submit(command, source=source, payload=payload)
+            voice_log("[voice] Done.")
 
             if debug:
                 if record_stats is not None:
-                    print("[record-stats]")
-                    print(f"first_speech_after={record_stats['first_speech_after']:.2f}s")
-                    print(f"duration={record_stats['duration']:.2f}s")
-                    print(f"final_silence={record_stats['final_silence']:.2f}s")
-                    print(f"samples={record_stats['samples']}")
-                print("[voice-timing]")
-                print(f"capture_duration={t_stt - t_capture:.2f}s")
-                print(f"stt_duration={t_stt_done - t_stt:.2f}s")
-                print(f"routing={t_route - t_stt_done:.2f}s")
-                print(f"execution={t_exec - t_route:.2f}s")
-                print(f"total_command={t_exec - t_capture:.2f}s")
+                    voice_debug("[record-stats]", enabled=debug)
+                    voice_debug(
+                        f"first_speech_after={record_stats['first_speech_after']:.2f}s",
+                        enabled=debug,
+                    )
+                    voice_debug(
+                        f"duration={record_stats['duration']:.2f}s", enabled=debug
+                    )
+                    voice_debug(
+                        f"final_silence={record_stats['final_silence']:.2f}s",
+                        enabled=debug,
+                    )
+                    voice_debug(f"samples={record_stats['samples']}", enabled=debug)
+                voice_debug("[voice-timing]", enabled=debug)
+                voice_debug(
+                    f"capture_duration={t_stt - t_capture:.2f}s", enabled=debug
+                )
+                voice_debug(
+                    f"stt_duration={t_stt_done - t_stt:.2f}s", enabled=debug
+                )
+                voice_debug(f"routing={t_route - t_stt_done:.2f}s", enabled=debug)
+                voice_debug(f"execution={t_exec - t_route:.2f}s", enabled=debug)
+                voice_debug(
+                    f"total_command={t_exec - t_capture:.2f}s", enabled=debug
+                )
     except KeyboardInterrupt:
-        print("\n[voice] Stopped by user.")
+        voice_log("\n[voice] Stopped by user.")
     finally:
         if owns_monitor:
             monitor.close()

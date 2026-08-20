@@ -9,23 +9,27 @@ for.
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from control import ControlConfig, log
+from control import Command, ControlConfig, log
 
 # Scratch logs, not the live ones -- see test_control for why.
 import tempfile
 
 log.setup(tempfile.mkdtemp(), console=False)
+from control import actions
 from control.backends import windows
 from control.backends.windows import (
     VK_J,
     VK_L,
     VK_LEFT,
+    VK_LWIN,
     VK_MEDIA_NEXT_TRACK,
     VK_MEDIA_PLAY_PAUSE,
     VK_RIGHT,
@@ -33,7 +37,7 @@ from control.backends.windows import (
     VK_VOLUME_UP,
     WindowsController,
 )
-from control.executor import UnsupportedCommand
+from control.executor import ControlEngine, ControlError, UnsupportedCommand
 
 log.setup(console=False)
 
@@ -294,6 +298,279 @@ class TestPreflight(unittest.TestCase):
         controller = FakeWindowsController(read_reply="error|Not supported")
         self.assertTrue(any("brightness control unavailable" in w
                             for w in controller.preflight()))
+
+
+class FakeCustomController(WindowsController):
+    """WindowsController with the OS seams custom actions touch replaced."""
+
+    def __init__(self):
+        self.config = ControlConfig()
+        self.log = log.get_logger("test")
+        self.pressed = []
+        self.chords = []
+        self.posted = []
+        self.launched = []
+        self.runs = []
+        self.window = None
+        self._worker = None
+
+    def _press(self, key, *, extended=False):
+        self.pressed.append(key)
+
+    def _press_chord(self, vks):
+        self.chords.append(vks)
+
+    def _post_chord(self, hwnd, vks):
+        self.posted.append((hwnd, vks))
+
+    def _target_window(self, title=None):
+        return self.window
+
+    def _launch(self, exe):
+        self.launched.append(exe)
+
+    def _run(self, argv):
+        self.runs.append(argv)
+        return "ran " + " ".join(argv)
+
+
+class TestOpenArgv(unittest.TestCase):
+    """The ActionRunner's argv convention, turned into Windows launches."""
+
+    def setUp(self):
+        self.controller = FakeCustomController()
+
+    def test_open_app_resolves_then_launches(self):
+        chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        self.controller._resolve_app = lambda app: chrome
+
+        detail = self.controller.open_argv(["open", "-a", "Google Chrome"])
+
+        self.assertEqual(self.controller.launched, [chrome])
+        self.assertEqual(detail, "launched Google Chrome")
+
+    def test_open_app_with_an_unknown_app_refuses(self):
+        self.controller._resolve_app = lambda app: None
+
+        with self.assertRaises(UnsupportedCommand) as caught:
+            self.controller.open_argv(["open", "-a", "Televator"])
+        self.assertIn("Televator", str(caught.exception))
+        self.assertEqual(self.controller.launched, [])
+
+    def test_open_path_and_url_use_startfile(self):
+        with mock.patch("control.backends.windows.os.startfile") as startfile:
+            self.assertEqual(
+                self.controller.open_argv(["open", "C:/temp/notes.txt"]),
+                "opened C:/temp/notes.txt")
+            self.assertEqual(
+                self.controller.open_argv(["open", "https://example.com"]),
+                "opened https://example.com")
+        self.assertEqual(
+            [call.args[0] for call in startfile.call_args_list],
+            ["C:/temp/notes.txt", "https://example.com"])
+
+    def test_a_confirmed_command_argv_runs_as_a_program(self):
+        detail = self.controller.open_argv(["echo", "hi"])
+        self.assertEqual(self.controller.runs, [["echo", "hi"]])
+        self.assertEqual(detail, "ran echo hi")
+
+    def test_an_empty_argv_is_an_error(self):
+        with self.assertRaises(ControlError):
+            self.controller.open_argv([])
+
+
+class TestSendCombo(unittest.TestCase):
+    """Taught keystrokes press through the same user32 calls as the media keys."""
+
+    def setUp(self):
+        self.controller = FakeCustomController()
+
+    def test_combo_holds_the_modifiers_while_tapping_the_key(self):
+        detail = self.controller.send_combo("cmd+shift+n")
+        self.assertEqual(self.controller.chords, [[VK_LWIN, 0x10, 0x4E]])
+        self.assertEqual(detail, "sent cmd+shift+n")
+
+    def test_a_bare_key_needs_no_modifiers(self):
+        self.controller.send_combo("space")
+        self.assertEqual(self.controller.chords, [[0x20]])
+
+    def test_alt_and_ctrl_map_to_their_windows_keys(self):
+        # Modifiers come out of the parser alphabetically: alt before ctrl.
+        self.controller.send_combo("ctrl+alt+n")
+        self.assertEqual(self.controller.chords, [[0x12, 0x11, 0x4E]])
+
+    def test_target_app_posts_the_chord_to_that_window(self):
+        self.controller.window = 4242
+        detail = self.controller.send_combo("cmd+n", target_app="YouTube")
+        self.assertEqual(self.controller.posted, [(4242, [VK_LWIN, 0x4E])])
+        self.assertEqual(self.controller.chords, [])
+        self.assertIn("to YouTube", detail)
+
+    def test_target_app_not_running_refuses(self):
+        with self.assertRaises(UnsupportedCommand) as caught:
+            self.controller.send_combo("cmd+n", target_app="YouTube")
+        self.assertIn("not running", str(caught.exception))
+
+    def test_an_unparsable_combo_is_unsupported(self):
+        with self.assertRaises(UnsupportedCommand):
+            self.controller.send_combo("cmd+flurb")
+
+
+class TestKeynameToVk(unittest.TestCase):
+    def test_letters_digits_and_named_keys(self):
+        self.assertEqual(windows._keyname_vk("n"), 0x4E)
+        self.assertEqual(windows._keyname_vk("7"), 0x37)
+        self.assertEqual(windows._keyname_vk("space"), 0x20)
+
+    def test_an_unknown_key_is_none(self):
+        self.assertIsNone(windows._keyname_vk("zzz"))
+
+
+class _FakeKey:
+    """A registry key that answers only the values it was given."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def QueryValueEx(self, name):
+        if name in self._values:
+            return self._values[name], 1
+        raise OSError("missing value")
+
+
+class _FakeWinreg:
+    """A winreg stand-in whose OpenKey answers a fixed table of subkeys."""
+
+    HKEY_LOCAL_MACHINE = "HKLM"
+    HKEY_CURRENT_USER = "HKCU"
+
+    def __init__(self, entries):
+        self._entries = entries  # subkey suffix -> default value
+        self.opened = []
+
+    def OpenKey(self, root, name):
+        self.opened.append((root, name))
+        for suffix, value in self._entries.items():
+            if name.endswith(suffix):
+                return _FakeKey({"": value})
+        raise OSError("missing key")
+
+    def QueryValueEx(self, key, name):
+        return key.QueryValueEx(name)
+
+
+class TestAppResolution(unittest.TestCase):
+    """The registry/PATH lookup behind open_app, mocked so it runs anywhere."""
+
+    def setUp(self):
+        self.controller = FakeCustomController()
+        self.dir = tempfile.mkdtemp()
+
+    def _exe(self, name):
+        path = os.path.join(self.dir, name)
+        Path(path).write_text("")
+        return path
+
+    def test_a_literal_path_wins(self):
+        exe = self._exe("custom.exe")
+        self.assertEqual(self.controller._resolve_app(exe), exe)
+
+    def test_path_before_registry(self):
+        exe = self._exe("thing.exe")
+        with mock.patch.object(windows.shutil, "which", return_value=exe), \
+             mock.patch.object(windows.os.path, "isfile", return_value=False):
+            self.assertEqual(self.controller._resolve_app("thing"), exe)
+
+    def test_known_display_name_resolves_through_app_paths(self):
+        exe = self._exe("chrome.exe")
+        fake = _FakeWinreg({r"App Paths\chrome.exe": exe})
+        isfile = mock.patch.object(
+            windows.os.path, "isfile", side_effect=lambda p: p == exe)
+        with mock.patch.object(windows, "winreg", fake), \
+             mock.patch.object(windows.shutil, "which", return_value=None), \
+             isfile:
+            self.assertEqual(self.controller._resolve_app("Google Chrome"), exe)
+
+    def test_app_paths_missing_key_is_none(self):
+        with mock.patch.object(windows, "winreg", _FakeWinreg({})):
+            self.assertIsNone(self.controller._app_paths("chrome"))
+
+    def test_uninstall_display_icon_is_the_executable(self):
+        exe = self._exe("App.exe")
+        key = _FakeKey({"DisplayIcon": exe + ",0"})
+        with mock.patch.object(windows, "winreg", _FakeWinreg({})):
+            self.assertEqual(self.controller._uninstall_exe(key, "App"), exe)
+
+    def test_uninstall_install_location_probes_for_one_exe(self):
+        loc = tempfile.mkdtemp()
+        exe = os.path.join(loc, "word.exe")
+        Path(exe).write_text("")
+        key = _FakeKey({"InstallLocation": loc, "DisplayIcon": ""})
+        with mock.patch.object(windows, "winreg", _FakeWinreg({})):
+            self.assertEqual(
+                self.controller._uninstall_exe(key, "Microsoft Word"), exe)
+
+
+class TestCustomActionsThroughTheEngine(unittest.TestCase):
+    """CUSTOM rides the pipe to the Windows backend end to end."""
+
+    def engine(self, **cfg):
+        controller = FakeCustomController()
+        config = ControlConfig(cooldown_seconds=0.0, **cfg)
+        return ControlEngine(controller=controller, config=config), controller
+
+    def test_open_app_custom_reaches_the_windows_backend(self):
+        chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        engine, controller = self.engine()
+        controller._resolve_app = lambda app: chrome
+
+        result = engine.execute(
+            Command.CUSTOM,
+            payload=actions.serialize(
+                {"type": "open_app", "app": "Google Chrome"}))
+
+        self.assertTrue(result.ok)
+        self.assertEqual(controller.launched, [chrome])
+
+    def test_a_keystroke_custom_reaches_the_windows_backend(self):
+        engine, controller = self.engine()
+
+        result = engine.execute(Command.CUSTOM, payload="cmd+shift+n")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(controller.chords, [[VK_LWIN, 0x10, 0x4E]])
+
+    def test_an_unresolvable_app_is_unsupported_not_a_crash(self):
+        engine, controller = self.engine()
+        controller._resolve_app = lambda app: None
+
+        result = engine.execute(
+            Command.CUSTOM,
+            payload=actions.serialize(
+                {"type": "open_app", "app": "Televator"}))
+
+        self.assertEqual(result.status, "UNSUPPORTED")
+        self.assertIn("could not find", result.error)
+        self.assertEqual(controller.launched, [])
+
+    def test_an_empty_payload_is_unsupported(self):
+        engine, _ = self.engine()
+        result = engine.execute(Command.CUSTOM, payload="")
+        self.assertEqual(result.status, "UNSUPPORTED")
+
+    def test_volume_commands_are_unaffected(self):
+        engine, controller = self.engine(volume_step=1)
+
+        result = engine.execute(Command.VOLUME_UP)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(controller.pressed, [VK_VOLUME_UP])
 
 
 if __name__ == "__main__":

@@ -84,6 +84,7 @@ import numpy as np
 from voice.config import CONFIG
 from voice.detect import WakeDetector
 from voice.device import MicrophoneStream
+from voice.log import voice_debug, voice_trace
 from voice import tts
 
 logger = logging.getLogger("sarv.voice.wake_word")
@@ -534,8 +535,8 @@ class LocalWakeWordEngine(WakeWordEngine):
             name = self._model_names[0] if self._model_names else "?"
             value = float(scores.get(name, 0.0))
             now = time.monotonic()
-            if debug and now - last_report >= 1.0:
-                print(
+            if now - last_report >= 1.0:
+                voice_trace(
                     "[wake-debug] frame={} RMS={:.1f} raw_score={:.3f} "
                     "threshold={:.2f} max_score={:.3f}".format(
                         detector.frames,
@@ -543,15 +544,16 @@ class LocalWakeWordEngine(WakeWordEngine):
                         value,
                         self._threshold,
                         detector.max_score,
-                    )
+                    ),
+                    enabled=debug,
                 )
                 last_report = now
             if detector.update(value):
                 if debug:
-                    print("[wake-stats]")
+                    voice_debug("[wake-stats]", enabled=debug)
                     for key, val in detector.stats().items():
-                        print(f"{key}={val}")
-                    print("[wake-debug] WAKE DETECTED")
+                        voice_debug(f"{key}={val}", enabled=debug)
+                    voice_debug("[wake-debug] WAKE DETECTED", enabled=debug)
                 return True
             return False
 

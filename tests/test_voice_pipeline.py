@@ -64,13 +64,16 @@ class _FakeMonitor:
     def open(self):
         self.opened = True
 
-    def next_frame(self, timeout=0.25, stop=None):
+    def next_frame(self, timeout=0.25, stop=None, consumer=""):
         if self._frames:
             return self._frames.pop(0)
         return None
 
     def pre_roll(self):
         return list(self.pre_roll_frames)
+
+    def pending_count(self):
+        return len(self._frames)
 
     def drain(self):
         self.drained += 1
@@ -199,8 +202,8 @@ class VoiceCommandPipelineCase(unittest.TestCase):
                 max_cycles=1,
             )
         out = buf.getvalue()
-        self.assertIn("[wake-word] WAKE WORD DETECTED: hey_jarvis", out)
-        self.assertIn('[voice] Transcription: "volume up"', out)
+        self.assertIn("[voice] Wake word detected.", out)
+        self.assertIn('[voice] Command: "volume up"', out)
         self.assertIn("[voice] Intent: VOLUME_UP", out)
         self.assertIn("[voice] Executing: VOLUME_UP", out)
         # Default: no spoken acknowledgement, so TTS is never invoked and
@@ -226,18 +229,14 @@ class VoiceCommandPipelineCase(unittest.TestCase):
                 max_cycles=1,
             )
         out = buf.getvalue()
-        self.assertIn('[voice] Transcription: "increase the volume"', out)
+        self.assertIn('[voice] Command: "increase the volume"', out)
         self.assertIn("[voice] Intent: VOLUME_UP", out)
         self.assertEqual(engine.submitted, [Command.VOLUME_UP])
 
     def test_wake_phrase_alone_routes_as_empty(self):
         # Just the wake phrase (no command after it) must execute nothing.
         out = _run(stt=_FakeSTT("hey jarvis"))
-        self.assertIn(
-            "[voice] No speech detected after the wake word. "
-            "Back to wake-word listening.",
-            out,
-        )
+        self.assertIn("[voice] No command detected.", out)
 
     def test_transcription_callback_receives_transcript(self):
         on_transcript = mock.Mock()
@@ -320,6 +319,28 @@ class VoiceCommandPipelineCase(unittest.TestCase):
         out_empty = _run(stt=_FakeSTT(""), debug=True)
         self.assertIn("empty=yes", out_empty)
 
+    def test_stt_input_debug_prints_the_exact_audio_buffer(self):
+        # Ground truth for "did captured PCM actually reach Whisper?": the
+        # buffer handed to transcribe(), independent of the gate/decode.
+        out = _run(capture=_AUDIO_STATS, debug=True)
+        self.assertIn("[stt-input-debug]", out)
+        self.assertIn("samples=16000", out)
+        self.assertIn("duration=1.000s", out)
+        self.assertIn("dtype=float32", out)
+        self.assertIn("shape=", out)
+        self.assertIn("min=", out)
+        self.assertIn("max=", out)
+        self.assertIn("rms=", out)
+        self.assertIn("finite=True", out)
+
+    def test_whisper_stats_reports_audio_duration_not_decode_time(self):
+        # Regression: the old [whisper-stats] "duration" was the STT elapsed
+        # time, so a fast gate rejection printed 0.00s and looked like the
+        # audio itself was empty.  Now it reports the actual PCM duration.
+        out = _run(capture=_AUDIO_STATS, debug=True)
+        self.assertIn("audio_duration=1.000s", out)
+        self.assertIn("decode=", out)
+
     def test_unknown_command_executes_nothing(self):
         engine = _FakeEngine()
         buf = io.StringIO()
@@ -336,7 +357,7 @@ class VoiceCommandPipelineCase(unittest.TestCase):
                 max_cycles=1,
             )
         out = buf.getvalue()
-        self.assertIn('[voice] Transcription: "open televator"', out)
+        self.assertIn('[voice] Command: "open televator"', out)
         self.assertIn("[voice] No supported command matched. Nothing executed.", out)
         self.assertEqual(engine.submitted, [])
         self.assertNotIn("Executing", out)
@@ -403,11 +424,8 @@ class VoiceCommandPipelineCase(unittest.TestCase):
                 max_cycles=2,
             )
         out = buf.getvalue()
-        self.assertIn(
-            "[voice] No speech detected after the wake word. Back to wake-word listening.",
-            out,
-        )
-        self.assertEqual(out.count("WAKE WORD DETECTED"), 2)
+        self.assertIn("[voice] No command detected.", out)
+        self.assertEqual(out.count("Wake word detected."), 2)
         self.assertEqual(wake.calls, 2)
         self.assertEqual(engine.submitted, [])
 
@@ -415,9 +433,8 @@ class VoiceCommandPipelineCase(unittest.TestCase):
         # capture_command returned None (no speech within pre-speech timeout);
         # the loop keeps listening.
         out = _run(capture=None, max_cycles=2)
-        self.assertIn("[voice] No speech after the wake phrase; "
-                      "back to wake-word listening.", out)
-        self.assertEqual(out.count("WAKE WORD DETECTED"), 2)
+        self.assertIn("[voice] No command detected.", out)
+        self.assertEqual(out.count("Wake word detected."), 2)
 
     def test_capture_error_does_not_kill_loop(self):
         wake = _FakeWake()
@@ -437,7 +454,7 @@ class VoiceCommandPipelineCase(unittest.TestCase):
             )
         out = buf.getvalue()
         self.assertIn("[voice] ERROR: command capture failed: mic went away", out)
-        self.assertEqual(out.count("WAKE WORD DETECTED"), 2)
+        self.assertEqual(out.count("Wake word detected."), 2)
         self.assertEqual(wake.calls, 2)
 
     def test_stt_failure_recovers_and_keeps_listening(self):
@@ -481,6 +498,29 @@ class VoiceCommandPipelineCase(unittest.TestCase):
                 max_cycles=1,
             )
         self.assertEqual(engine.submitted, [])
+
+    def test_one_command_produces_exactly_one_execution(self):
+        # "Hey Jarvis, increase the volume" must submit VOLUME_UP exactly once
+        # -- the wake phrase tail and the command are ONE capture and ONE
+        # routing, never two executions.
+        engine = _FakeEngine()
+        buf = io.StringIO()
+        with mock.patch.object(
+            pipeline, "capture_command", return_value=_AUDIO
+        ), redirect_stdout(buf):
+            pipeline.run_voice_command_loop(
+                router=VoiceIntentRouter(),
+                control_engine=engine,
+                stt=_FakeSTT("hey jarvis increase the volume"),
+                wake_engine=_FakeWake(),
+                tts_speak=mock.Mock(),
+                monitor=_FakeMonitor(),
+                max_cycles=1,
+            )
+        out = buf.getvalue()
+        self.assertEqual(engine.submitted, [Command.VOLUME_UP])
+        self.assertEqual(engine.submitted.count(Command.VOLUME_UP), 1)
+        self.assertEqual(out.count("[voice] Done."), 1)
 
     def test_single_cycle_per_wake_detection(self):
         wake = _FakeWake()
