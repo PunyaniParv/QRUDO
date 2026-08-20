@@ -144,16 +144,29 @@ def should_supervise(frozen, argv, env):
     return bool(frozen) and not argv and "QRUDO_SUPERVISED" not in env
 
 
-def died_by_signal(code):
-    """Whether an exit code means a crash rather than a decision.
+#: The signals that mean the PROGRAM failed, not that a person asked
+#: it to stop.  SIGTERM, SIGINT and SIGHUP are people and systems
+#: saying "quit" -- Activity Monitor, ctrl-C, logout -- and bringing
+#: the app back after those is exactly the "it relaunches when I quit
+#: it" bug.  Only genuine faults earn a resurrection.
+_CRASH_SIGNALS = (4, 5, 6, 7, 8, 10, 11)   # ILL TRAP ABRT EMT FPE BUS SEGV
 
-    POSIX reports a signal death as a negative code; Windows reports
-    fatal exceptions as NTSTATUS values from 0xC0000000 up.  A small
-    positive code is the app MEANING to exit -- a config error, a
-    refused singleton -- and relaunching those would loop forever.
+
+def died_by_signal(code):
+    """Whether an exit code means a CRASH rather than a decision.
+
+    POSIX reports a signal death as a negative code -- but only fault
+    signals count: a SIGTERM is somebody quitting the app, and obeying
+    them beats resurrecting it.  Windows reports fatal exceptions as
+    NTSTATUS values from 0xC0000000 up.  A small positive code is the
+    app MEANING to exit -- a config error, a refused singleton -- and
+    relaunching those would loop forever.
     """
 
-    return code < 0 or code >= 0xC0000000
+    if code < 0:
+        return -code in _CRASH_SIGNALS
+
+    return code >= 0xC0000000
 
 
 def supervise():
@@ -175,6 +188,7 @@ def supervise():
     """
 
     import os
+    import signal
     import subprocess
 
     from control import log as control_log
@@ -186,9 +200,25 @@ def supervise():
         births = [b for b in births if time.time() - b < 120.0]
         births.append(time.time())
 
-        code = subprocess.call(
+        child = subprocess.Popen(
             [sys.executable],
             env=dict(os.environ, QRUDO_SUPERVISED="1"))
+
+        # A quit aimed at the watcher is a quit: pass it to the child
+        # and stand down, never leave an orphan running headless.
+        def _hand_down(signum, frame):
+            try:
+                child.terminate()
+            except Exception:
+                pass
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                signal.signal(sig, _hand_down)
+            except Exception:
+                pass
+
+        code = child.wait()
 
         if not died_by_signal(code):
             return code

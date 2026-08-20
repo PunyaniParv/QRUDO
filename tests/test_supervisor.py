@@ -40,6 +40,16 @@ class TestWhoGetsAWatcher(unittest.TestCase):
 class TestWhatCountsAsACrash(unittest.TestCase):
     def test_a_posix_signal_death_is_a_crash(self):
         self.assertTrue(died_by_signal(-11))    # SIGSEGV
+        self.assertTrue(died_by_signal(-6))     # SIGABRT
+
+    def test_a_person_quitting_is_final(self):
+        """SIGTERM and SIGINT are somebody saying quit -- Activity
+        Monitor, ctrl-C, logout -- and obeying them beats resurrecting
+        the app, which read as 'it relaunches whenever I quit it'."""
+
+        self.assertFalse(died_by_signal(-15))   # SIGTERM
+        self.assertFalse(died_by_signal(-2))    # SIGINT
+        self.assertFalse(died_by_signal(-1))    # SIGHUP
 
     def test_a_windows_fatal_exception_is_a_crash(self):
         self.assertTrue(died_by_signal(0xC0000005))
