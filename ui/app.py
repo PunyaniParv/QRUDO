@@ -163,6 +163,14 @@ class App:
             "WM_DELETE_WINDOW",
             self.hide_window if self._menubar_ready else self.quit)
 
+        # cmd-Q must be OUR quit, not Tk's: Tk's own exit path aborts
+        # during Cocoa teardown (SIGABRT), which the supervisor reads
+        # as a crash and resurrects -- "it relaunches when I quit it".
+        try:
+            self.root.createcommand("::tk::mac::Quit", self.quit)
+        except Exception:
+            pass
+
         self.home = tk.Frame(self.root, bg=BACKGROUND)
         self.settings = tk.Frame(self.root, bg=BACKGROUND)
         self.add_gesture = tk.Frame(self.root, bg=BACKGROUND)
@@ -671,6 +679,11 @@ class App:
         """The window goes away; QRUDO does not.  The camera, the
         gestures and the menu bar mark all stay exactly as they are."""
 
+        from control import log as _log
+        _log.get_logger("ui").info(
+            "ui: window hidden (close button) -- still running; quit "
+            "lives in the menu bar Q")
+
         self.root.withdraw()
 
     def _enforce_agent_policy(self):
@@ -700,12 +713,45 @@ class App:
         self.root.after(500, self._enforce_agent_policy)
 
     def quit(self):
+        """Stop everything that matters, then leave -- without giving
+        Tk the chance to abort.
+
+        Tk on macOS often dies by SIGABRT inside its own Cocoa
+        teardown after destroy(), and the supervisor rightly treats
+        SIGABRT as a crash -- so a person's quit came back as a
+        relaunch.  Everything QRUDO owns is shut down deliberately
+        here (the vision loop and camera by the join, the menu bar
+        mark by hand, the log by flushing); what remains is toolkit
+        teardown with nothing left to protect, so the exit is taken
+        directly, as a success.
+        """
+
+        import logging
+        import os
+
+        from control import log as _log
+        _log.get_logger("ui").info("ui: quit -- goodbye")
+
         self.stop.set()
 
         if self.worker is not None:
             self.worker.join(timeout=3.0)
 
-        self.root.destroy()
+        try:
+            from AppKit import NSStatusBar
+            item = getattr(self, "_menubar", (None,))[0]
+            if item is not None:
+                NSStatusBar.systemStatusBar().removeStatusItem_(item)
+        except Exception:
+            pass
+
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+        logging.shutdown()
+        os._exit(0)
 
     # -- the vision thread and the pulse -------------------------------
 
