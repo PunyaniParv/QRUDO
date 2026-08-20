@@ -26,8 +26,10 @@ from version import VERSION
 # The hand model, where hand_tracker expects it: models/ beside the code.
 datas = [(os.path.join(ROOT, "models", "hand_landmarker.task"), "models"),
          # The logo rides along for the window's own icon; the app and
-         # exe icons below are baked in at build time.
-         (os.path.join(ROOT, "assets", "logo.png"), "assets")]
+         # exe icons below are baked in at build time.  The menu bar
+         # mark rides too -- the white Q on the right of the menu bar.
+         (os.path.join(ROOT, "assets", "logo.png"), "assets"),
+         (os.path.join(ROOT, "assets", "menubar.png"), "assets")]
 binaries = []
 hidden = []
 
@@ -76,6 +78,11 @@ if sys.platform == "darwin":
         icon=os.path.join(ROOT, "assets", "qrudo.icns"),
         bundle_identifier="com.qrudo.app",
         info_plist={
+            # An AGENT: no Dock icon, no cmd-tab entry.  QRUDO is a
+            # background service whose whole visible presence is the
+            # Q in the menu bar; the window appears from there (or on
+            # launch) and closing it hides rather than quits.
+            "LSUIElement": True,
             # The modern icon: build_mac.sh compiles Assets.car into
             # Resources, and this name points macOS at it.  Surfaces on
             # Tahoe render catalog icons consistently; the legacy icns

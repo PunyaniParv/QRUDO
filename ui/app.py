@@ -146,7 +146,22 @@ class App:
         self.root.geometry("880x560")
         self.root.minsize(700, 480)
         self.root.configure(bg=BACKGROUND)
-        self.root.protocol("WM_DELETE_WINDOW", self.quit)
+        # QRUDO is a background service with a menu bar mark, not a
+        # window you must keep open: closing the window HIDES it, and
+        # the gestures keep working.  Quitting belongs to the menu bar
+        # (and to the window's own Quit).  Without a menu bar mark --
+        # AppKit unavailable -- closing still quits, or the app would
+        # be unreachable.
+        self._menubar_ready = False
+        try:
+            from ui import statusbar
+            self._menubar_ready = statusbar.install(self)
+        except Exception:
+            pass
+
+        self.root.protocol(
+            "WM_DELETE_WINDOW",
+            self.hide_window if self._menubar_ready else self.quit)
 
         self.home = tk.Frame(self.root, bg=BACKGROUND)
         self.settings = tk.Frame(self.root, bg=BACKGROUND)
@@ -652,6 +667,24 @@ class App:
         if selfupdate.apply(staged, version):
             selfupdate.relaunch(Path(sys.executable).resolve().parents[2])
 
+    def hide_window(self):
+        """The window goes away; QRUDO does not.  The camera, the
+        gestures and the menu bar mark all stay exactly as they are."""
+
+        self.root.withdraw()
+
+    def show_from_menubar(self):
+        """Bring the window back, in front, from the menu bar."""
+
+        self.root.deiconify()
+        self.root.lift()
+
+        try:
+            from AppKit import NSApp
+            NSApp.activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+
     def quit(self):
         self.stop.set()
 
@@ -773,7 +806,8 @@ class App:
                 # window in the background.
                 minimised = False
                 try:
-                    minimised = self.root.state() == "iconic"
+                    minimised = self.root.state() in ("iconic",
+                                                      "withdrawn")
                 except Exception:
                     pass
 
