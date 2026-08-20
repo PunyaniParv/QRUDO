@@ -196,19 +196,25 @@ class TestTabTargets(unittest.TestCase):
         made.refresh(force=True)
         return made, config, tabs
 
-    def test_media_tabs_join_the_cycle(self):
+    def test_tabs_cycle_as_numbered_chromes(self):
+        """Two tabs are 'Google Chrome 1' and 'Google Chrome 2' -- the
+        way a person counts them -- and the bare 'Google Chrome' entry
+        steps aside, since it says nothing the numbers do not."""
+
         made, config, tabs = self.resolver()
 
         said = [made.cycle(+1) for _ in range(3)]
 
-        self.assertIn('target -> tab "lofi - YouTube"', said)
-        self.assertIn('target -> tab "talk - YouTube"', said)
+        self.assertEqual(said[0],
+                         'target -> Google Chrome 1 ("lofi - YouTube")')
+        self.assertEqual(said[1],
+                         'target -> Google Chrome 2 ("talk - YouTube")')
+        self.assertTrue(said[2].startswith("target -> auto"))
 
     def test_picking_a_tab_activates_it(self):
         made, config, tabs = self.resolver()
 
-        made.cycle(+1)          # Google Chrome, the app
-        made.cycle(+1)          # the first tab
+        made.cycle(+1)          # Google Chrome 1
 
         self.assertEqual(self.activated, [tabs[0]])
 
@@ -218,7 +224,6 @@ class TestTabTargets(unittest.TestCase):
 
         made, config, tabs = self.resolver()
 
-        made.cycle(+1)
         made.cycle(+1)
 
         self.assertEqual(config.target_app, "Google Chrome")
@@ -230,17 +235,38 @@ class TestTabTargets(unittest.TestCase):
 
         made, config, tabs = self.resolver()
 
-        made.cycle(+1)                      # the app
-        self.assertEqual(config.target_tab, "")
-
-        made.cycle(+1)                      # the first tab
+        made.cycle(+1)                      # Google Chrome 1
         self.assertEqual(config.target_tab, "lofi - YouTube")
 
-        made.cycle(+1)                      # the second tab
+        made.cycle(+1)                      # Google Chrome 2
         self.assertEqual(config.target_tab, "talk - YouTube")
 
         made.cycle(+1)                      # back to auto
         self.assertEqual(config.target_tab, "")
+
+    def test_other_media_apps_come_before_the_numbered_tabs(self):
+        """Apps first, then the browser's numbered tabs: Spotify ->
+        Google Chrome 1 -> Google Chrome 2."""
+
+        from control.targets import TabTarget
+
+        tabs = [TabTarget("Google Chrome", 1, 1, "lofi - YouTube"),
+                TabTarget("Google Chrome", 1, 2, "talk - YouTube")]
+        probe = lambda: {"frontmost": "Spotify",
+                         "running": ["Spotify", "Google Chrome"],
+                         "playing": ["Spotify"],
+                         "tabs": tabs}
+        config = ControlConfig(target_app="", cooldown_seconds=0)
+        made = TargetResolver(config, probe=probe, activate=lambda t: None)
+        made.refresh(force=True)
+
+        said = [made.cycle(+1) for _ in range(3)]
+
+        self.assertEqual(said[0], "target -> Spotify")
+        self.assertEqual(said[1],
+                         'target -> Google Chrome 1 ("lofi - YouTube")')
+        self.assertEqual(said[2],
+                         'target -> Google Chrome 2 ("talk - YouTube")')
 
     def test_unmatched_tabs_stay_out_of_the_cycle(self):
         from control.targets import TabTarget

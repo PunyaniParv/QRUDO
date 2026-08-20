@@ -141,14 +141,26 @@ class TargetResolver:
 
             note(self.preferred)
 
-            self.candidates = ordered
-
             # Media tabs, so two videos in ONE browser are two targets
             # -- switching apps cannot tell them apart, switching tabs
             # can.
             self.tabs = [
                 tab for tab in seen.get("tabs", ())
                 if any(hint in tab.title.lower() for hint in self._hints)
+            ]
+
+            # The cycle reads apps first, then the numbered tabs.  A
+            # browser whose tabs are listed does not ALSO appear bare
+            # -- "Google Chrome" says nothing "Google Chrome 2" does
+            # not -- and a configured pseudo-name (the old "youtube")
+            # steps aside once real tabs carry that meaning.
+            tabbed = {tab.browser for tab in self.tabs}
+
+            self.candidates = [
+                name for name in ordered
+                if name not in tabbed
+                and not (self.tabs and name == self.preferred
+                         and name not in running)
             ]
 
     def resolved(self):
@@ -171,7 +183,11 @@ class TargetResolver:
         if self.preferred:
             return self.preferred
 
-        return self.candidates[0] if self.candidates else ""
+        if self.candidates:
+            return self.candidates[0]
+
+        # A browser represented only by its tabs still answers for auto.
+        return self.tabs[0].browser if self.tabs else ""
 
     def apply(self):
         """Point the config at the resolution, where the backends read."""
@@ -218,9 +234,24 @@ class TargetResolver:
                 else "target -> auto (nobody playing yet)"
 
         if isinstance(picked, TabTarget):
-            return f'target -> tab "{_short(picked.title)}"'
+            return (f"target -> {self.tab_label(picked)} "
+                    f'("{_short(picked.title, 24)}")')
 
         return f"target -> {picked}"
+
+    def tab_label(self, tab):
+        """The name a tab goes by in the cycle: the browser, numbered
+        -- "Google Chrome 2" -- because that is how a person counts
+        them."""
+
+        n = 0
+        for candidate in self.tabs:
+            if candidate.browser == tab.browser:
+                n += 1
+            if candidate == tab:
+                return f"{tab.browser} {n}"
+
+        return f"{tab.browser} ?"
 
     # -- the background refresh --------------------------------------------
 
