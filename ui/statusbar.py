@@ -88,6 +88,15 @@ def install(app):
         # garbage-collected status item vanishes from the bar.
         app._menubar = (item, menu, target, image)
 
+        from control import log as _log
+        _log.get_logger("ui").info("ui: menu bar mark standing")
+
         return True
-    except Exception:
+    except Exception as exc:
+        try:
+            from control import log as _log
+            _log.get_logger("ui").error(
+                "ui: menu bar mark failed: %s", exc)
+        except Exception:
+            pass
         return False
