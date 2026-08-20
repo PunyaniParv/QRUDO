@@ -163,7 +163,10 @@ class CaptureCommandCase(unittest.TestCase):
         # The buffer capture_command returns must pass the STT preprocessing
         # path (trim + sustained-energy gate) unchanged -- capture-side VAD
         # already proved speech exists, so STT must see real samples.
-        from voice.stt import _has_sustained_energy, _trim_silence
+        try:
+            from voice.stt import _has_sustained_energy, _trim_silence
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"voice extras not installed: {exc}")
 
         monitor = _FakeMonitor(
             [_LOUD] * 10 + [_SILENT] * 12, pre_roll=[_LOUD, _LOUD]
@@ -547,7 +550,10 @@ class CommandCaptureSensitivityCase(unittest.TestCase):
         )
         self.assertIsNotNone(audio)
         self.assertEqual(stats["ended_reason"], "silence_after_command")
-        self.assertEqual(stats["command_after"], 0.0)  # same-breath: no pause
+        # Same-breath: no pause.  A float built from frame arithmetic,
+        # so "zero" means "well under a frame", never bit-exact zero --
+        # it came out 1.5e-05 on the Mac and failed an assertEqual.
+        self.assertLess(stats["command_after"], 0.01)
 
     def test_noise_floor_frozen_once_speech_begins(self):
         # Once speech onset is established the noise floor / gate must remain

@@ -358,7 +358,10 @@ class TestOpenArgv(unittest.TestCase):
         self.assertEqual(self.controller.launched, [])
 
     def test_open_path_and_url_use_startfile(self):
-        with mock.patch("control.backends.windows.os.startfile") as startfile:
+        # create=True: os.startfile only exists on Windows, and this
+        # logic must stay testable on the Mac half of CI too.
+        with mock.patch("control.backends.windows.os.startfile",
+                        create=True) as startfile:
             self.assertEqual(
                 self.controller.open_argv(["open", "C:/temp/notes.txt"]),
                 "opened C:/temp/notes.txt")

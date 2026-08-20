@@ -31,11 +31,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 
+import unittest as _unittest
+
 from control import Command
 from voice import audio_capture
 from voice import config as config_module
 from voice import log as voice_log
-from voice import pipeline
+
+# The pipeline imports faster_whisper at module load; without the
+# voice extras this module SKIPS -- the suite must run green on both
+# machines and both CI platforms.
+try:
+    from voice import pipeline
+except ModuleNotFoundError as exc:
+    raise _unittest.SkipTest(f"voice extras not installed: {exc}")
 from voice.bridge import VoiceIntentRouter
 from voice.stream import MicMonitor
 
