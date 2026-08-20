@@ -177,6 +177,13 @@ class TargetResolver:
         """Point the config at the resolution, where the backends read."""
 
         self.config.target_app = self.resolved()
+        # And say whether that resolution is a pinned TAB: play/pause
+        # must then go into the front tab by letter, never the media
+        # key -- the media key follows whatever was already playing,
+        # which is exactly not what someone switching tabs meant.
+        self.config.target_tab = (self.choice.title
+                                  if isinstance(self.choice, TabTarget)
+                                  else "")
 
     # -- the user's word ----------------------------------------------------
 

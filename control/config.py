@@ -68,6 +68,15 @@ class ControlConfig:
     to the old behaviour rather than failing.
     """
 
+    target_tab: str = ""
+    """The pinned browser TAB's title, when the target cycle picked a
+    tab rather than an app -- written by the target resolver, read by
+    the play/pause routing.  A pinned tab forces the letter-key route:
+    the media key follows the system's now-playing session, which is
+    whatever was ALREADY playing, while the person just chose a
+    different tab.  Empty whenever the target is an app or auto.
+    """
+
     seek_target_app: str = ""
     """Older name for ``target_app``, still honoured.  Use ``target_app``.
 

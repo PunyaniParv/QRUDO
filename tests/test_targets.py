@@ -223,6 +223,25 @@ class TestTabTargets(unittest.TestCase):
 
         self.assertEqual(config.target_app, "Google Chrome")
 
+    def test_a_pinned_tab_is_written_for_the_play_routing(self):
+        """The media key follows whatever was ALREADY playing, so a
+        pinned tab must announce itself: config.target_tab set while a
+        tab is chosen, empty the moment the choice moves on."""
+
+        made, config, tabs = self.resolver()
+
+        made.cycle(+1)                      # the app
+        self.assertEqual(config.target_tab, "")
+
+        made.cycle(+1)                      # the first tab
+        self.assertEqual(config.target_tab, "lofi - YouTube")
+
+        made.cycle(+1)                      # the second tab
+        self.assertEqual(config.target_tab, "talk - YouTube")
+
+        made.cycle(+1)                      # back to auto
+        self.assertEqual(config.target_tab, "")
+
     def test_unmatched_tabs_stay_out_of_the_cycle(self):
         from control.targets import TabTarget
 

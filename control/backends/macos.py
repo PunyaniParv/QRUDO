@@ -329,6 +329,17 @@ class MacOSController(Controller):
 
         wanted = self.config.browser_play_key.strip().lower()
 
+        # A pinned TAB overrides the media-key route outright.  The
+        # media key follows the system's now-playing session -- the tab
+        # that was ALREADY playing -- while the person just pointed at a
+        # different one.  The letter lands in the front tab, which the
+        # target switch brought forward, which IS the chosen one.
+        if getattr(self.config, "target_tab", "").strip():
+            self._refuse_to_type_into_a_text_box(pid)
+            self._post_key(KEY_K, to_pid=pid)
+
+            return f"play/pause (k) to the pinned tab in {name}"
+
         if wanted in ("space", "spacebar", "k"):
             key = KEY_SPACE if wanted != "k" else KEY_K
             self._refuse_to_type_into_a_text_box(pid)
