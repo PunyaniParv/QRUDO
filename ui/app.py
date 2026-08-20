@@ -872,6 +872,15 @@ class App:
         # than an empty crash.
         self._far = getattr(self.args, "far", False)
         self._retry_button = None
+
+        # Born in the menu bar: with the mark standing, the window
+        # exists only when Show QRUDO asks for it.  Withdrawn before
+        # mainloop ever maps it, so it never even flashes.  Camera
+        # trouble still summons it -- an invisible failure is the one
+        # thing worse than an uninvited window.
+        if self._menubar_ready:
+            self.root.withdraw()
+
         self._start_vision()
 
         # Tk PROMOTES the app to a regular Dock app the moment its
@@ -924,6 +933,9 @@ class App:
                 text="Camera busy -- another app or a closing copy of "
                      "QRUDO may have it.", fg="#e06c75")
             self._show_retry()
+            # Trouble must be seen: summon the window even in menu bar
+            # life.
+            self.show_from_menubar()
             return
 
         # Success: clear any retry chrome from a previous failed attempt.
@@ -983,6 +995,9 @@ class App:
             self.root.after(2000, self._start_vision)
         else:
             self._show_retry()
+            # A camera that stayed dead is news the person must see,
+            # window hidden or not.
+            self.show_from_menubar()
 
     def _show_retry(self):
         if self._retry_button is not None:
