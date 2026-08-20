@@ -403,6 +403,15 @@ class MacOSController(Controller):
         direction = "forward" if forward else "back"
 
         if self.config.seek_mode == "track":
+            # The track keys are media keys, and a media key with no
+            # session claiming it is answered by macOS opening Music.
+            # Skipping tracks only means anything while something is
+            # playing, so that is the only time the key is sent.
+            if not self._audio_playing():
+                raise UnsupportedCommand(
+                    "nothing is playing to skip -- start something "
+                    "first")
+
             self._post_media_key(NX_KEYTYPE_NEXT if forward else NX_KEYTYPE_PREVIOUS)
             return f"{'next' if forward else 'previous'} track"
 
@@ -749,14 +758,26 @@ class MacOSController(Controller):
         answer = (proc.stdout or "").strip()
 
         if proc.returncode != 0 or not answer:
-            hint = ("Safari's Develop menu > Allow JavaScript from "
-                    "Apple Events" if browser == "Safari" else
-                    f"{browser}: View > Developer > Allow JavaScript "
-                    f"from Apple Events")
+            stderr = (proc.stderr or "").strip()
+
+            # Only claim the switch is off when the browser SAID so --
+            # a sleeping tab or a chrome:// page fails differently, and
+            # sending someone to a menu that is already on reads as
+            # the app being broken.
+            if "turned off" in stderr or "1743" in stderr:
+                hint = ("Safari's Develop menu > Allow JavaScript from "
+                        "Apple Events" if browser == "Safari" else
+                        f"{browser}: View > Developer > Allow "
+                        f"JavaScript from Apple Events")
+                raise UnsupportedCommand(
+                    f"controlling a background tab needs one browser "
+                    f"switch, once: {hint} -- then it works silently "
+                    f"forever")
+
             raise UnsupportedCommand(
-                f"controlling a background tab needs one browser "
-                f"switch, once: {hint} -- then it works silently "
-                f"forever")
+                f"the pinned tab could not be reached just now "
+                f"({stderr.splitlines()[-1][:80] if stderr else 'no answer'}) "
+                f"-- it may be asleep; click it once or point again")
 
         if answer == "played":
             return f'played "{short}" in the background'
@@ -976,6 +997,16 @@ class MacOSController(Controller):
 
         if self._quartz is not None:
             self._require_event_trust()
+
+            # Delivered to the FOCUSED window, a taught chord is typed
+            # wherever the cursor sits -- which printed a literal N
+            # into a document when a hole-gesture's shift+n landed in a
+            # text box.  The same guard the play/pause letters use: a
+            # text box refuses, a video page takes the chord.  A chord
+            # aimed at a NAMED app is deliberate and goes through.
+            if to_pid is None:
+                self._refuse_to_type_into_a_text_box(None)
+
             quartz, _ = self._quartz
             for pressed in (True, False):
                 event = quartz.CGEventCreateKeyboardEvent(

@@ -70,6 +70,39 @@ class TestMusicNeverVolunteers(unittest.TestCase):
         media.assert_not_called()
         letter.assert_not_called()
 
+    def test_a_focused_window_chord_refuses_a_text_box(self):
+        """A taught chord delivered to the focused window is TYPED
+        wherever the cursor sits: shift+n printed a literal N into a
+        document.  The text-box guard the letters use covers chords
+        now."""
+
+        from control.executor import UnsupportedCommand
+
+        c = self.controller()
+
+        with mock.patch.object(
+                c, "_refuse_to_type_into_a_text_box",
+                side_effect=UnsupportedCommand("text box")), \
+                mock.patch.object(c, "_require_event_trust"):
+            with self.assertRaises(UnsupportedCommand):
+                c.send_combo("shift+n")
+
+    def test_track_skip_needs_something_playing(self):
+        """Next/previous track are media keys, and a media key with no
+        claim is how Music launches.  Silence refuses."""
+
+        from control.executor import UnsupportedCommand
+
+        c = self.controller()
+        c.config.seek_mode = "track"
+
+        with mock.patch.object(c, "_audio_playing", return_value=False), \
+                mock.patch.object(c, "_post_media_key") as media:
+            with self.assertRaises(UnsupportedCommand):
+                c._seek(10, forward=True)
+
+        media.assert_not_called()
+
     def test_audible_playback_still_pauses_by_media_key(self):
         """The one safe case stays: something is audible, a session
         claims the key, the pause is precise."""
