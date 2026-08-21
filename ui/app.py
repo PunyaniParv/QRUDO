@@ -31,12 +31,22 @@ import threading
 import tkinter as tk
 from pathlib import Path
 
-BACKGROUND = "#101418"
-PANEL = "#1a2027"
-INK = "#e8edf2"
-DIM = "#8a97a3"
-ACCENT = "#4cc38a"
-SIDEBAR = "#0c0f13"
+# The Karabiner-Elements palette, sampled from the real thing: a
+# near-black content pane, a purple-to-magenta gradient sidebar, iOS
+# blue for switches and selection, that exact red for delete.
+BACKGROUND = "#1d1d1f"
+PANEL = "#2c2c2e"
+INK = "#f2f2f6"
+DIM = "#98989d"
+ACCENT = "#4cc38a"          # QRUDO's own green, kept for status words
+BLUE = "#3478f6"
+RED = "#e1524a"
+HAIRLINE = "#3a3a3c"
+SIDEBAR = "#241b3e"          # gradient top...
+SIDEBAR_END = "#8f4569"      # ...to bottom
+SIDEBAR_INK = "#efe9f4"
+SIDEBAR_DIM = "#b9aec9"
+SIDEBAR_PILL = "#57506b"
 
 PREVIEW_SIZE = (320, 240)
 
@@ -200,58 +210,133 @@ class App:
         self._build_gestures_page()
         self._select("home")
 
-    # -- the sidebar ---------------------------------------------------
+    # -- drawn chrome, the Karabiner way -------------------------------
 
-    def _build_sidebar(self, version):
-        tk.Label(self.sidebar, text="QRUDO", bg=SIDEBAR, fg=INK,
-                 font=("Helvetica", 16, "bold"), anchor="w",
-                 padx=18).pack(fill="x", pady=(18, 10))
+    @staticmethod
+    def _round_rect(canvas, x1, y1, x2, y2, r, **kw):
+        """A rounded rectangle -- the shape Tk forgot to ship."""
 
-        def group(title):
-            tk.Label(self.sidebar, text=title, bg=SIDEBAR, fg=DIM,
-                     font=("Helvetica", 11), anchor="w", padx=18
-                     ).pack(fill="x", pady=(14, 2))
+        points = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
+                  x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+                  x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+        return canvas.create_polygon(points, smooth=True, **kw)
 
-        self._nav_items = {}
+    @staticmethod
+    def _blend(a, b, t):
+        ar, ag, ab_ = int(a[1:3], 16), int(a[3:5], 16), int(a[5:7], 16)
+        br, bg_, bb = int(b[1:3], 16), int(b[3:5], 16), int(b[5:7], 16)
+        return "#%02x%02x%02x" % (round(ar + (br - ar) * t),
+                                  round(ag + (bg_ - ag) * t),
+                                  round(ab_ + (bb - ab_) * t))
 
-        def item(key, text, command):
-            row = tk.Label(self.sidebar, text=text, bg=SIDEBAR, fg=INK,
-                           font=("Helvetica", 14), anchor="w",
-                           padx=18, pady=7,
+    def _chip(self, parent, text, command, bg=PANEL, fg=INK, width=None,
+              font=("Helvetica Neue", 13)):
+        """A rounded button chip, drawn -- Edit-gray, delete-red,
+        add-rule-gray, all the same shape Karabiner uses."""
+
+        pad = 14
+        probe = tk.Label(parent, text=text, font=font)
+        probe.update_idletasks()
+        w = width or probe.winfo_reqwidth() + pad * 2
+        h = 30
+        probe.destroy()
+
+        canvas = tk.Canvas(parent, width=w, height=h,
+                           bg=parent["bg"], highlightthickness=0,
                            cursor="pointinghand"
                            if sys.platform == "darwin" else "hand2")
-            row.pack(fill="x", padx=8)
-            row.bind("<Button-1>", lambda _e: command())
-            self._nav_items[key] = row
+        self._round_rect(canvas, 1, 1, w - 1, h - 1, 9, fill=bg,
+                         outline=bg)
+        canvas.create_text(w / 2, h / 2, text=text, fill=fg, font=font)
+        canvas.bind("<Button-1>", lambda _e: command())
+        return canvas
 
-        group("Control")
-        item("home", "⌂   Home", self.show_home)
-        item("gestures", "✋   Gestures", self.show_gestures)
-        item("add", "＋   Add Gesture", self.show_add_gesture)
+    # -- the sidebar ---------------------------------------------------
 
-        group("Configuration")
-        item("settings", "⚙   Settings", self.show_settings)
+    #: The sidebar's rows: (key, glyph, label) per section.
+    _NAV = [
+        ("Control", [("home", "▢", "Home"),
+                     ("gestures", "✋", "Gestures"),
+                     ("add", "＋", "Add Gesture")]),
+        ("Configuration", [("settings", "⚙", "Settings")]),
+    ]
 
-        tk.Label(self.sidebar, text=f"v{version}", bg=SIDEBAR, fg=DIM,
-                 font=("Helvetica", 11), anchor="w", padx=18
-                 ).pack(side="bottom", fill="x", pady=(0, 10))
+    def _build_sidebar(self, version):
+        self._side = tk.Canvas(self.sidebar, highlightthickness=0,
+                               bd=0, bg=SIDEBAR)
+        self._side.pack(fill="both", expand=True)
+        self._side.bind("<Configure>", lambda _e: self._paint_sidebar())
+        self._side.bind("<Button-1>", self._sidebar_click)
+        self._selected = "home"
+        self._side_version = version
+        self._nav_hits = []     # (y1, y2, key or "quit")
 
-        quit_row = tk.Label(self.sidebar, text="⏻   Quit QRUDO",
-                            bg=SIDEBAR, fg=DIM, font=("Helvetica", 13),
-                            anchor="w", padx=18, pady=7,
-                            cursor="pointinghand"
-                            if sys.platform == "darwin" else "hand2")
-        quit_row.pack(side="bottom", fill="x", padx=8)
-        quit_row.bind("<Button-1>", lambda _e: self.quit())
+    def _paint_sidebar(self):
+        c = self._side
+        c.delete("all")
+        w = max(c.winfo_width(), 2)
+        h = max(c.winfo_height(), 2)
+
+        # The gradient, drawn as bands -- purple falling into magenta,
+        # the way the original's glass reads.
+        bands = 60
+        for i in range(bands):
+            colour = self._blend(SIDEBAR, SIDEBAR_END, i / (bands - 1))
+            c.create_rectangle(0, h * i / bands, w, h * (i + 1) / bands,
+                               fill=colour, outline=colour)
+
+        self._nav_hits = []
+        y = 24
+        font = ("Helvetica Neue", 14)
+
+        for title, items in self._NAV:
+            c.create_text(16, y, text=title, anchor="w",
+                          fill=SIDEBAR_DIM, font=("Helvetica Neue", 11))
+            y += 20
+
+            for key, glyph, label in items:
+                if key == self._selected:
+                    self._round_rect(c, 8, y - 4, w - 8, y + 26, 9,
+                                     fill=SIDEBAR_PILL,
+                                     outline=SIDEBAR_PILL)
+                c.create_text(18, y + 11, text=glyph, anchor="w",
+                              fill=SIDEBAR_INK,
+                              font=("Helvetica Neue", 13))
+                c.create_text(44, y + 11, text=label, anchor="w",
+                              fill=SIDEBAR_INK, font=font)
+                self._nav_hits.append((y - 4, y + 26, key))
+                y += 36
+
+            y += 12
+
+        # The bottom: quit, then the version, the way Maintenance sits.
+        c.create_text(16, h - 78, text="Maintenance", anchor="w",
+                      fill=SIDEBAR_DIM, font=("Helvetica Neue", 11))
+        c.create_text(18, h - 52, text="⏻", anchor="w",
+                      fill=SIDEBAR_INK, font=("Helvetica Neue", 13))
+        c.create_text(44, h - 52, text="Quit QRUDO", anchor="w",
+                      fill=SIDEBAR_INK, font=font)
+        self._nav_hits.append((h - 66, h - 38, "quit"))
+        c.create_text(16, h - 20, text=f"v{self._side_version}",
+                      anchor="w", fill=SIDEBAR_DIM,
+                      font=("Helvetica Neue", 11))
+
+    def _sidebar_click(self, event):
+        for y1, y2, key in self._nav_hits:
+            if y1 <= event.y <= y2:
+                if key == "quit":
+                    self.quit()
+                elif key == "gestures":
+                    self.show_gestures()
+                else:
+                    self._select(key)
+                return
 
     def _select(self, key):
-        """Raise a page and paint its sidebar row as the chosen one."""
+        """Raise a page and pin its sidebar pill."""
 
-        for name, row in self._nav_items.items():
-            if name == key:
-                row.configure(bg=ACCENT, fg=BACKGROUND)
-            else:
-                row.configure(bg=SIDEBAR, fg=INK)
+        self._selected = key
+        self._paint_sidebar()
 
         {"home": self.home, "gestures": self.gestures_page,
          "add": self.add_gesture,
@@ -567,25 +652,36 @@ class App:
     # -- the gestures page ---------------------------------------------
 
     def _build_gestures_page(self):
-        tk.Label(self.gestures_page, text="Your gestures",
+        tk.Label(self.gestures_page, text="QRUDO Settings",
                  bg=BACKGROUND, fg=INK,
-                 font=("Helvetica", 20, "bold")).place(
-            relx=0.05, rely=0.06, anchor="w")
+                 font=("Helvetica Neue", 17, "bold")).place(
+            relx=0.04, rely=0.045, anchor="w")
+
+        bar = tk.Frame(self.gestures_page, bg=BACKGROUND)
+        bar.place(relx=0.04, rely=0.115, anchor="w")
+        self._chip(bar, "＋  Add Gesture",
+                   self.show_add_gesture).pack(side="left", padx=(0, 10))
+        self._chip(bar, "✦  Re-record a gesture",
+                   self.show_add_gesture).pack(side="left")
+
+        tk.Frame(self.gestures_page, bg=HAIRLINE, height=1).place(
+            relx=0, rely=0.16, relwidth=1)
 
         tk.Label(self.gestures_page,
-                 text="every gesture you have taught -- switch one off "
-                      "to pause it, delete to forget it",
-                 bg=BACKGROUND, fg=DIM, font=("Helvetica", 12)).place(
-            relx=0.05, rely=0.11, anchor="w")
+                 text="switch a gesture off to pause it -- it stays "
+                      "taught, and never fires until it is back on",
+                 bg=BACKGROUND, fg=DIM,
+                 font=("Helvetica Neue", 12)).place(
+            relx=0.04, rely=0.20, anchor="w")
 
         self._gesture_rows = tk.Frame(self.gestures_page, bg=BACKGROUND)
-        self._gesture_rows.place(relx=0.05, rely=0.16, relwidth=0.9,
-                                 relheight=0.78, anchor="nw")
+        self._gesture_rows.place(relx=0.04, rely=0.24, relwidth=0.92,
+                                 relheight=0.72, anchor="nw")
 
     def _switch(self, parent, on, command):
         """A Karabiner-style toggle, drawn by hand -- Tk has none."""
 
-        track_on, track_off = ACCENT, "#3a4149"
+        track_on, track_off = BLUE, "#48484b"
         canvas = tk.Canvas(parent, width=42, height=24, bg=PANEL,
                            highlightthickness=0,
                            cursor="pointinghand"
@@ -624,25 +720,32 @@ class App:
             return
 
         for gesture in gestures:
-            row = tk.Frame(self._gesture_rows, bg=PANEL)
-            row.pack(fill="x", pady=4)
+            row = tk.Frame(self._gesture_rows, bg=BACKGROUND)
+            row.pack(fill="x")
 
-            hands = " (two hands)" if gesture.partner_signature else ""
-            tk.Label(row, text=gesture.name + hands, bg=PANEL,
-                     fg=INK if gesture.enabled else DIM,
-                     font=("Helvetica", 14, "bold"),
-                     padx=14, pady=10).pack(side="left")
+            body = tk.Frame(row, bg=BACKGROUND)
+            body.pack(fill="x", pady=9)
 
+            live = gesture.enabled
+
+            tk.Label(body, text="⇅", bg=BACKGROUND, fg=DIM,
+                     font=("Helvetica Neue", 12)).pack(side="left",
+                                                       padx=(2, 10))
+
+            hands = "  (two hands)" if gesture.partner_signature else ""
             try:
                 said = action_mod.describe(gesture.actions)
             except Exception:
                 said = ""
-            if len(said) > 58:
-                said = said[:57] + "…"
-            tk.Label(row, text=said, bg=PANEL, fg=DIM,
-                     font=("Helvetica", 12)).pack(side="left")
+            if len(said) > 46:
+                said = said[:45] + "…"
 
-            def flip(paint, name=gesture.name, was=gesture.enabled):
+            tk.Label(body,
+                     text=f"{gesture.name}{hands}  →  {said}",
+                     bg=BACKGROUND, fg=INK if live else DIM,
+                     font=("Helvetica Neue", 14)).pack(side="left")
+
+            def flip(paint, name=gesture.name, was=live):
                 custom.set_enabled(name, not was)
                 self._refresh_gestures()
 
@@ -651,24 +754,19 @@ class App:
                 custom.load()
                 self._refresh_gestures()
 
-            def redo(_name=gesture.name):
-                # The Add Gesture page's recorder replaces a gesture
-                # saved under the same name, so re-recording is just
-                # recording again.
-                self.show_add_gesture()
+            self._chip(body, "🗑", forget, bg=RED, fg="#ffffff",
+                       width=44).pack(side="right", padx=(8, 0))
+            self._chip(body, "✎  Edit", self.show_add_gesture,
+                       bg=PANEL, fg=INK).pack(side="right", padx=(10, 0))
+            self._switch(body, live, flip).pack(side="right",
+                                                padx=(10, 0))
 
-            self._switch(row, gesture.enabled, flip).pack(
-                side="right", padx=(6, 14))
+            if not live:
+                tk.Label(body, text="disabled", bg=BACKGROUND, fg=DIM,
+                         font=("Helvetica Neue", 12)).pack(
+                    side="right", padx=(0, 4))
 
-            for text, colour, act in (("Delete", "#e06c75", forget),
-                                      ("Re-record", DIM, redo)):
-                b = tk.Label(row, text=text, bg=PANEL, fg=colour,
-                             font=("Helvetica", 12), padx=8,
-                             cursor="pointinghand"
-                             if sys.platform == "darwin" else "hand2")
-                b.pack(side="right")
-                b.bind("<Button-1>",
-                       lambda _e, act=act: act())
+            tk.Frame(row, bg=HAIRLINE, height=1).pack(fill="x")
 
     def show_gestures(self):
         self._refresh_gestures()
