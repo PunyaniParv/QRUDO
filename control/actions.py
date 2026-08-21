@@ -154,6 +154,19 @@ def parse(payload: str) -> list:
     return normalise(raw)
 
 
+def contains_keystroke(actions) -> bool:
+    """Whether any action in the chain presses keys.
+
+    Gestures are deliberately NOT keyboard macros for now -- they
+    open, quit, hide, visit and drive the built-ins directly -- so
+    the gesture form refuses to save a keystroke until that feature
+    is built on purpose rather than inherited by accident.
+    """
+
+    return any(action.get("type") == "keystroke"
+               for action in normalise(actions))
+
+
 def describe(actions) -> str:
     """A chain in words, for a person to read before saving it."""
 

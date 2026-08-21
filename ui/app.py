@@ -831,6 +831,18 @@ class App:
             return
 
         from control import actions as action_mod
+
+        # Gestures are not keyboard macros -- yet.  Keystroke binding
+        # is a later feature to be built deliberately; until then a
+        # job that resolves to key presses is refused with the reason,
+        # never saved by accident.
+        if action_mod.contains_keystroke([action]):
+            self.add_note.configure(
+                text="keyboard-shortcut gestures are a later feature — "
+                     "for now try \"open …\", \"launch …\", \"quit …\", "
+                     "\"hide …\" or \"go to …\"")
+            return
+
         summary = action_mod.describe([action])
 
         if self._recorded_signature is None:

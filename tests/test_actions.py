@@ -138,6 +138,20 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(self.runner.keyed, [("cmd+n", "")])
         self.assertEqual(self.runner.builtins, ["VOLUME_UP"])
 
+    def test_keystrokes_are_recognisable_for_the_gesture_gate(self):
+        """The gesture form refuses keystroke actions until that
+        feature exists on purpose; the check must see through chains
+        and miss nothing else."""
+
+        self.assertTrue(actions.contains_keystroke(
+            {"type": "keystroke", "combo": "shift+n"}))
+        self.assertTrue(actions.contains_keystroke(
+            [{"type": "open_app", "app": "Spotify"},
+             {"type": "keystroke", "combo": "cmd+k"}]))
+        self.assertFalse(actions.contains_keystroke(
+            [{"type": "open_path", "path": "~/Downloads"},
+             {"type": "quit_app", "app": "all"}]))
+
     def test_quit_app_reaches_the_quitter(self):
         self.runner.run(actions.serialize(
             {"type": "quit_app", "app": "Spotify"}))
