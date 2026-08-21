@@ -67,20 +67,14 @@ def install(app):
             self._app._menubar_intent = "quit"
 
     try:
-        # Position is left to macOS and to the person's own cmd-drag.
-        # A "pin it right" experiment once shoved the Q past the
-        # battery into the system cluster -- Tahoe interleaves more
-        # than documented -- and a mark that wanders reads as broken.
-        # Any stale pinned position from that experiment is cleared.
-        from Foundation import NSUserDefaults
-
-        defaults = NSUserDefaults.standardUserDefaults()
-        key = "NSStatusItem Preferred Position QRUDO"
-        if defaults.objectForKey_(key) is not None:
-            defaults.removeObjectForKey_(key)
-
+        # The Q remembers its place under the name "QRUDO".  The value
+        # itself is left alone here: macOS seats a fresh install
+        # naturally, a cmd-drag rules afterwards, and a calibrated
+        # position (the user wants the Q just right of the camera
+        # pill) survives relaunches.
         bar = NSStatusBar.systemStatusBar()
         item = bar.statusItemWithLength_(NSVariableStatusItemLength)
+        item.setAutosaveName_("QRUDO")
 
         image = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
         if image is None:
