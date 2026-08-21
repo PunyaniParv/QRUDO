@@ -340,6 +340,41 @@ class TestRuntimeMatching(unittest.TestCase):
                          "a natural repeat of the shape must still match")
 
 
+class TestTheSwitch(unittest.TestCase):
+    """Off means paused, not forgotten -- listed, taught, never fired."""
+
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "qrudo_gestures.json"
+        custom._active = []
+
+    def tearDown(self):
+        custom._active = []
+
+    def test_a_disabled_gesture_never_matches(self):
+        gesture = a_gesture()
+        gesture.enabled = False
+        custom._active = [gesture]
+
+        self.assertIsNone(custom.match(
+            {"index": 0.95, "middle": 0.95, "ring": 0.95, "pinky": 0.40}))
+
+    def test_set_enabled_flips_on_disk_and_live(self):
+        custom.save_all([a_gesture("THREE")], self.path)
+        custom.load(self.path)
+
+        self.assertTrue(custom.set_enabled("three", False, self.path))
+        self.assertFalse(custom.load_all(self.path)[0].enabled)
+        self.assertFalse(custom.by_name("THREE").enabled)
+
+        self.assertTrue(custom.set_enabled("THREE", True, self.path))
+        self.assertTrue(custom.load_all(self.path)[0].enabled)
+
+    def test_flipping_a_missing_name_says_so(self):
+        custom.save_all([a_gesture("THREE")], self.path)
+
+        self.assertFalse(custom.set_enabled("GHOST", False, self.path))
+
+
 class TestPairMatching(unittest.TestCase):
     """A two-hand gesture is the pair, and only ever the pair."""
 

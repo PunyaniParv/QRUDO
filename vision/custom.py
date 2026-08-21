@@ -90,6 +90,9 @@ class CustomGesture:
     #: of the pair, in either left/right assignment.
     partner_signature: dict | None = None
     partner_thumb_gap: float | None = None
+    #: The Karabiner-style switch: a gesture turned off stays taught
+    #: and listed, but never matches -- paused, not forgotten.
+    enabled: bool = True
     #: What firing does: an ordered list of actions (the source of truth).
     #: A gesture saved before chains existed carries the legacy binding
     #: fields instead, and the normaliser below turns those into a
@@ -148,6 +151,8 @@ class CustomGesture:
 
         if self.partner_thumb_gap is not None:
             self.partner_thumb_gap = float(self.partner_thumb_gap)
+
+        self.enabled = bool(self.enabled)
 
         if self.kind not in ("pose", "move"):
             raise CustomError(f"unknown kind {self.kind!r}")
@@ -387,14 +392,15 @@ def match(spans: dict, thumb_gap: float | None = None,
         paired = _nearest([
             (g.pair_distance(spans, thumb_gap, partner_spans, partner_gap),
              g)
-            for g in _active if g.partner_signature is not None])
+            for g in _active
+            if g.enabled and g.partner_signature is not None])
 
         if paired is not None:
             return paired
 
     return _nearest([
         (g.distance(spans, thumb_gap), g)
-        for g in _active if g.partner_signature is None])
+        for g in _active if g.enabled and g.partner_signature is None])
 
 
 def by_name(name: str) -> CustomGesture | None:
@@ -403,6 +409,29 @@ def by_name(name: str) -> CustomGesture | None:
             return gesture
 
     return None
+
+
+def set_enabled(name: str, on: bool,
+                path: str | Path | None = None) -> bool:
+    """Flip one gesture's switch on disk and in the live registry.
+
+    Returns whether the gesture was found.  Off means paused, not
+    forgotten: it stays listed and taught, and simply never matches.
+    """
+
+    gestures = load_all(path)
+    found = False
+
+    for gesture in gestures:
+        if gesture.name == name.strip().upper():
+            gesture.enabled = bool(on)
+            found = True
+
+    if found:
+        save_all(gestures, path)
+        load(path)
+
+    return found
 
 
 def remove(name: str, path: str | Path | None = None) -> Path:
