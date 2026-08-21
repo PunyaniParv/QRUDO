@@ -936,6 +936,11 @@ class App:
             text=f"saved! \"{self._recorded_name}\" now does: {summary}")
         self._recorded_signature = None   # ready for the next one
 
+        # And the record button returns to its fresh self, ready to
+        # teach the next gesture -- not a leftover of the last one.
+        self.gesture_status.configure(text="＋  Record a gesture",
+                                      fg=BACKGROUND)
+
     def show_settings(self):
         self._select("settings")
 
@@ -1067,20 +1072,23 @@ class App:
         the switcher; only Quit or cmd-Q ends it.
         """
 
-        try:
-            from AppKit import NSApp
-            NSApp.setActivationPolicy_(0)     # regular: cmd-tab listed
-        except Exception:
-            pass
+        def press_forward():
+            try:
+                from AppKit import NSApp
+                NSApp.setActivationPolicy_(0)   # regular: cmd-tab listed
+                NSApp.activateIgnoringOtherApps_(True)
+            except Exception:
+                pass
 
+        press_forward()
         self.root.deiconify()
         self.root.lift()
 
-        try:
-            from AppKit import NSApp
-            NSApp.activateIgnoringOtherApps_(True)
-        except Exception:
-            pass
+        # An accessory app turning regular is not always picked up by
+        # the switcher on the same run-loop turn -- press the point
+        # again a beat later, and once more for slow days.
+        self.root.after(200, press_forward)
+        self.root.after(700, press_forward)
 
     def quit(self):
         """Stop everything that matters, then leave -- without giving
@@ -1146,11 +1154,13 @@ class App:
         self._recorded_thumb_gap = thumb_gap
         self._recorded_partner = partner
         self._recorded_partner_gap = partner_gap
+        # Dark text -- the button's own face is the accent green, and
+        # accent-on-accent was the invisible "green block".
         self.gesture_status.configure(
             text=f"recorded: {name}"
                  + (" (two hands)" if partner else "")
                  + (f" ({direction} swipe)" if direction else " (still)"),
-            fg=ACCENT)
+            fg=BACKGROUND)
         self.add_note.configure(
             text="gesture recorded — now pick what it does and press Save")
 
