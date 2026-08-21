@@ -266,12 +266,14 @@ class App:
         """A rounded button chip, drawn -- Edit-gray, delete-red,
         add-rule-gray, all the same shape Karabiner uses."""
 
+        # Measured by the font itself -- the old probe widget forced a
+        # full idle-queue flush PER CHIP, twice per gesture row, which
+        # was a real share of "the app is laggy".
+        import tkinter.font as tkfont
+
         pad = 14
-        probe = tk.Label(parent, text=text, font=font)
-        probe.update_idletasks()
-        w = width or probe.winfo_reqwidth() + pad * 2
+        w = width or tkfont.Font(font=font).measure(text) + pad * 2
         h = 30
-        probe.destroy()
 
         canvas = tk.Canvas(parent, width=w, height=h,
                            bg=parent["bg"], highlightthickness=0,
@@ -290,10 +292,12 @@ class App:
     #: Monochrome glyphs only -- colour emoji render as rough bitmaps
     #: and were much of the shabbiness.  ︎ forces the text
     #: presentation where a glyph has an emoji twin.
+    #: Add Gesture is deliberately NOT here: adding lives inside the
+    #: Gestures page, where its button already is -- a verb is not a
+    #: place.
     _NAV = [
         ("Modifications", [("home", "⌂︎", "Home"),
-                           ("gestures", "❖", "Gestures"),
-                           ("add", "＋", "Add Gesture")]),
+                           ("gestures", "❖", "Gestures")]),
         ("Configurations", [("settings", "⚙︎", "Settings")]),
         ("Maintenance", [("update", "↻", "Update"),
                          ("quit", "⏻", "Quit, Restart")]),
@@ -312,9 +316,18 @@ class App:
 
     def _paint_sidebar(self):
         c = self._side
-        c.delete("all")
         w = max(c.winfo_width(), 2)
         h = max(c.winfo_height(), 2)
+
+        # Repaint only when something actually changed: <Configure>
+        # fires for every pixel of a window drag, and a full redraw
+        # per pixel read as lag.
+        key = (w, h, self._selected)
+        if getattr(self, "_side_key", None) == key:
+            return
+        self._side_key = key
+
+        c.delete("all")
 
         # Flat, quiet plum -- the original's frosted glass at rest.
         c.create_rectangle(0, 0, w, h, fill=SIDEBAR, outline=SIDEBAR)
@@ -416,23 +429,32 @@ class App:
             "Resume" if self.engine.config.dry_run else "Pause",
             self.toggle_pause, relx=0, rely=1, anchor="sw")
 
-        # The words keep to the left three-fifths of the window, so
-        # nothing ever runs underneath the preview in the right corner.
+        # One left-aligned column on the page's own gutter, the way
+        # every other page reads -- an eyebrow, the big reading, the
+        # result, the hint, quiet hairlines between; nothing floats in
+        # the middle of nowhere any more.
+        tk.Frame(self.home, bg=HAIRLINE, height=1).place(
+            relx=0, rely=0, relwidth=1)
+
+        tk.Label(self.home, text="WATCHING FOR", bg=BACKGROUND,
+                 fg=DIM, font=(SYSFONT, 12, "bold")).place(
+            x=28, rely=0.14, anchor="w")
+
         self.gesture_label = tk.Label(self.home, text="--",
                                       bg=BACKGROUND, fg=INK,
-                                      font=(SYSFONT, 44, "bold"))
-        self.gesture_label.place(relx=0.36, rely=0.32, anchor="center")
+                                      font=(SYSFONT, 46, "bold"))
+        self.gesture_label.place(x=28, rely=0.26, anchor="w")
 
         self.result_label = tk.Label(self.home, text="starting camera...",
                                      bg=BACKGROUND, fg=DIM,
-                                     font=(SYSFONT, 18),
-                                     wraplength=420, justify="center")
-        self.result_label.place(relx=0.36, rely=0.48, anchor="center")
+                                     font=(SYSFONT, 17),
+                                     wraplength=520, justify="left")
+        self.result_label.place(x=28, rely=0.42, anchor="w")
 
         self.hint_label = tk.Label(self.home, text="", bg=BACKGROUND,
                                    fg=DIM, font=(SYSFONT, 13),
-                                   wraplength=460, justify="left")
-        self.hint_label.place(relx=0, rely=1, anchor="sw", x=18, y=-72)
+                                   wraplength=520, justify="left")
+        self.hint_label.place(x=28, rely=1, anchor="sw", y=-76)
 
         # The camera, in the corner: above the Quit button, small on
         # purpose -- the product is the gestures, not the video feed.
@@ -522,19 +544,20 @@ class App:
                      relx=1, rely=1, anchor="se")
 
         tk.Label(self.add_gesture, text="Teach QRUDO a new gesture",
-                 bg=BACKGROUND, fg=INK, font=(SYSFONT, 20, "bold")).place(
-            relx=0.5, rely=0.09, anchor="center")
+                 bg=BACKGROUND, fg=INK,
+                 font=(SYSFONT, 15, "bold")).place(x=28, rely=0.035,
+                                                   anchor="w")
+        tk.Frame(self.add_gesture, bg=HAIRLINE, height=1).place(
+            relx=0, rely=0.075, relwidth=1)
 
-        # Left-anchored, not centred: a centred grid with a wide hint
-        # column overflowed off the left edge and cut the labels.  A
-        # fixed left margin keeps every label whole at any window size.
+        # On the same 28px gutter as every other page.
         form = tk.Frame(self.add_gesture, bg=BACKGROUND)
-        form.place(relx=0.08, rely=0.2, anchor="nw")
+        form.place(x=28, rely=0.11, anchor="nw")
 
         def label(r, text):
             tk.Label(form, text=text, bg=BACKGROUND, fg=INK,
-                     font=(SYSFONT, 14), anchor="w").grid(
-                row=r, column=0, columnspan=2, padx=4, pady=(14, 2),
+                     font=(SYSFONT, 15, "bold"), anchor="w").grid(
+                row=r, column=0, columnspan=2, padx=4, pady=(16, 3),
                 sticky="w")
 
         def hint(r, text):
