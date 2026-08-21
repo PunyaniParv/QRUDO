@@ -21,6 +21,38 @@ class TrackerError(RuntimeError):
     """The hand model is missing or unusable."""
 
 
+def plausible_pair(primary_label, primary_scale, partner_label,
+                   partner_scale, partner_score, centre_distance):
+    """Whether a second detection is a REAL second hand.
+
+    One person's pair has properties no phantom shares, and every one
+    is required.  Opposite labels: your two hands are mirror images,
+    while the model's favourite phantom -- the same hand found twice
+    -- always wears the same label.  Similar size: both hands live at
+    the same distance, while a face or elbow read as a hand does not.
+    Confidence: real hands score high on handedness, phantoms hedge.
+    Separation: two real hands cannot overlap.  Two-hand gestures
+    fired from ONE hand until all four were demanded at once.
+    """
+
+    if primary_label == partner_label:
+        return False
+
+    if partner_score < 0.90:
+        return False
+
+    bigger = max(primary_scale, partner_scale)
+    smaller = min(primary_scale, partner_scale) or 1e-6
+
+    if bigger / smaller > 1.8:
+        return False
+
+    if centre_distance < 0.9 * bigger:
+        return False
+
+    return True
+
+
 @dataclass(frozen=True)
 class Hand:
     """One hand, in both of the forms MediaPipe reports it.
@@ -34,6 +66,9 @@ class Hand:
     landmarks: list
     world: list | None
     handedness: str
+    #: How sure the model is of that handedness -- real hands score
+    #: high, phantoms hedge.  1.0 for synthetic test hands.
+    score: float = 1.0
     #: The other hand in frame, when there is one -- a second Hand, or
     #: None.  The pairing layer in gestures.py reads it to tell both
     #: hands making the same pose (a two-hand gesture) from one hand
@@ -358,6 +393,7 @@ class HandTracker:
                 landmarks=unwrap(found.hand_landmarks[i], box),
                 world=world[i] if world and i < len(world) else None,
                 handedness=found.handedness[i][0].category_name,
+                score=float(found.handedness[i][0].score),
             )
             for i in range(len(found.hand_landmarks))
         ]
@@ -389,15 +425,13 @@ class HandTracker:
             c1 = centre(partner)
             s1 = hand_state.hand_scale(partner.landmarks)
 
-            # The model sometimes finds the SAME hand twice, slightly
-            # offset -- a phantom that matches every pose the real
-            # hand makes, which is how two-hand gestures fired from
-            # one hand.  Two real hands cannot overlap: a "partner"
-            # sitting within a hand's own span of the primary is the
-            # primary, seen double, and is dropped.
+            # A second detection is only a second HAND if it survives
+            # the whole anatomy gauntlet -- see plausible_pair.
             dist = ((c0.x - c1.x) ** 2 + (c0.y - c1.y) ** 2) ** 0.5
 
-            if dist < 0.9 * max(s0, s1):
+            if not plausible_pair(primary.handedness, s0,
+                                  partner.handedness, s1,
+                                  partner.score, dist):
                 self._scanner.found(c0.x, c0.y, s0)
                 return primary
 

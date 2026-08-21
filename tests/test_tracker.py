@@ -179,6 +179,37 @@ class TestFollowing(unittest.TestCase):
         scanner._window = None
         self.assertFalse(scanner.following_near())
 
+    def test_the_pair_gauntlet(self):
+        """Two-hand gestures fired from ONE hand until a second
+        detection had to survive every anatomical test at once: your
+        two hands wear opposite labels, live at the same distance,
+        score high, and cannot overlap.  Each test alone kills one
+        phantom species."""
+
+        from vision.hand_tracker import plausible_pair
+
+        real = dict(primary_label="Left", primary_scale=0.10,
+                    partner_label="Right", partner_scale=0.11,
+                    partner_score=0.98, centre_distance=0.30)
+
+        self.assertTrue(plausible_pair(**real))
+
+        self.assertFalse(plausible_pair(**{
+            **real, "partner_label": "Left"}),
+            "the same hand found twice wears the same label")
+
+        self.assertFalse(plausible_pair(**{
+            **real, "partner_score": 0.6}),
+            "a face read as a hand hedges its handedness")
+
+        self.assertFalse(plausible_pair(**{
+            **real, "partner_scale": 0.03}),
+            "an elbow-sized 'hand' is not at the person's distance")
+
+        self.assertFalse(plausible_pair(**{
+            **real, "centre_distance": 0.05}),
+            "two real hands cannot overlap")
+
     def test_a_miss_with_no_window_is_quiet(self):
         """The sweep misses constantly by nature; only the window cares."""
 
