@@ -44,12 +44,16 @@ BLUE = "#3878f6"
 RED = "#e5484d"
 HAIRLINE = "#39373b"
 TOGGLE_OFF = "#d9d9de"
-SIDEBAR = "#2b2044"          # gradient top...
-SIDEBAR_MID = "#6f3a63"      # ...through...
-SIDEBAR_END = "#a34e74"      # ...to bottom
-SIDEBAR_INK = "#efe9f4"
-SIDEBAR_DIM = "#a99bc0"
+# The sidebar is NOT a gradient -- in the original it is frosted
+# glass over the desktop, which at rest reads as one quiet dark plum.
+SIDEBAR = "#2c2733"
+SIDEBAR_INK = "#eeeaf2"
+SIDEBAR_DIM = "#9d93ad"
 SIDEBAR_PILL = "#3d6ff2"
+
+# The system's own font is most of what "native crispness" means --
+# SF Pro on the Mac, Segoe on Windows -- and Tk knows it by name.
+SYSFONT = ".AppleSystemUIFont" if sys.platform == "darwin" else "Segoe UI"
 
 PREVIEW_SIZE = (320, 240)
 
@@ -200,8 +204,8 @@ class App:
         # The window title, constant over every page, the way the
         # original keeps "Karabiner-Elements Settings" standing.
         tk.Label(self.content, text="QRUDO Settings", bg=BACKGROUND,
-                 fg=INK, font=("Helvetica Neue", 17, "bold"),
-                 anchor="w", padx=28, pady=16).pack(fill="x")
+                 fg=INK, font=(SYSFONT, 17, "bold"),
+                 anchor="w", padx=28).pack(fill="x", pady=(22, 14))
 
         self.pages = tk.Frame(self.content, bg=BACKGROUND)
         self.pages.pack(fill="both", expand=True)
@@ -225,13 +229,29 @@ class App:
     # -- drawn chrome, the Karabiner way -------------------------------
 
     @staticmethod
-    def _round_rect(canvas, x1, y1, x2, y2, r, **kw):
-        """A rounded rectangle -- the shape Tk forgot to ship."""
+    def _round_rect(canvas, x1, y1, x2, y2, r, fill, outline=None):
+        """A rounded rectangle -- the shape Tk forgot to ship.
 
-        points = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
-                  x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
-                  x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
-        return canvas.create_polygon(points, smooth=True, **kw)
+        Built from real quarter-circles and rectangles, not a smoothed
+        polygon: the polygon's bezier corners come out mushy, and
+        mushy corners are half of what read as "shabby" against the
+        native original.
+        """
+
+        outline = outline or fill
+        d = 2 * r
+        canvas.create_oval(x1, y1, x1 + d, y1 + d, fill=fill,
+                           outline=outline)
+        canvas.create_oval(x2 - d, y1, x2, y1 + d, fill=fill,
+                           outline=outline)
+        canvas.create_oval(x1, y2 - d, x1 + d, y2, fill=fill,
+                           outline=outline)
+        canvas.create_oval(x2 - d, y2 - d, x2, y2, fill=fill,
+                           outline=outline)
+        canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill,
+                                outline=fill)
+        canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill,
+                                outline=fill)
 
     @staticmethod
     def _blend(a, b, t):
@@ -242,7 +262,7 @@ class App:
                                   round(ab_ + (bb - ab_) * t))
 
     def _chip(self, parent, text, command, bg=PANEL, fg=INK, width=None,
-              font=("Helvetica Neue", 13)):
+              font=(SYSFONT, 13)):
         """A rounded button chip, drawn -- Edit-gray, delete-red,
         add-rule-gray, all the same shape Karabiner uses."""
 
@@ -267,14 +287,17 @@ class App:
 
     #: The sidebar's rows -- (key, glyph, label) per section, the four
     #: groups the original uses, filled with QRUDO's honest contents.
+    #: Monochrome glyphs only -- colour emoji render as rough bitmaps
+    #: and were much of the shabbiness.  ︎ forces the text
+    #: presentation where a glyph has an emoji twin.
     _NAV = [
-        ("Modifications", [("home", "◲", "Home"),
-                           ("gestures", "✋", "Gestures"),
+        ("Modifications", [("home", "⌂︎", "Home"),
+                           ("gestures", "❖", "Gestures"),
                            ("add", "＋", "Add Gesture")]),
-        ("Configurations", [("settings", "⚙", "Settings")]),
-        ("Maintenance", [("update", "◍", "Update"),
-                         ("quit", "⨂", "Quit, Restart")]),
-        ("Diagnostic", [("log", "🗎", "Log")]),
+        ("Configurations", [("settings", "⚙︎", "Settings")]),
+        ("Maintenance", [("update", "↻", "Update"),
+                         ("quit", "⏻", "Quit, Restart")]),
+        ("Diagnostic", [("log", "▤", "Log")]),
     ]
 
     def _build_sidebar(self, version):
@@ -293,25 +316,19 @@ class App:
         w = max(c.winfo_width(), 2)
         h = max(c.winfo_height(), 2)
 
-        # The glass: plum falling through violet into magenta.
-        bands = 80
-        for i in range(bands):
-            t = i / (bands - 1)
-            colour = (self._blend(SIDEBAR, SIDEBAR_MID, t * 2)
-                      if t < 0.5 else
-                      self._blend(SIDEBAR_MID, SIDEBAR_END,
-                                  (t - 0.5) * 2))
-            c.create_rectangle(0, h * i / bands, w, h * (i + 1) / bands,
-                               fill=colour, outline=colour)
+        # Flat, quiet plum -- the original's frosted glass at rest.
+        c.create_rectangle(0, 0, w, h, fill=SIDEBAR, outline=SIDEBAR)
 
         self._nav_hits = []
-        y = 22
-        font = ("Helvetica Neue", 14)
+        # Room at the top where the window buttons float once the
+        # title bar goes transparent.
+        y = 48
+        font = (SYSFONT, 14)
 
         for title, items in self._NAV:
             c.create_text(16, y, text=title, anchor="w",
                           fill=SIDEBAR_DIM,
-                          font=("Helvetica Neue", 12, "bold"))
+                          font=(SYSFONT, 12, "bold"))
             y += 22
 
             for key, glyph, label in items:
@@ -323,7 +340,7 @@ class App:
                                      outline=SIDEBAR_PILL)
                 c.create_text(20, y + 11, text=glyph, anchor="w",
                               fill=SIDEBAR_INK,
-                              font=("Helvetica Neue", 13))
+                              font=(SYSFONT, 13))
                 c.create_text(46, y + 11, text=label, anchor="w",
                               fill=SIDEBAR_INK, font=font)
                 self._nav_hits.append((y - 5, y + 27, key))
@@ -333,7 +350,7 @@ class App:
 
         c.create_text(16, h - 16, text=f"v{self._side_version}",
                       anchor="w", fill=SIDEBAR_DIM,
-                      font=("Helvetica Neue", 11))
+                      font=(SYSFONT, 11))
 
     def _sidebar_click(self, event):
         for y1, y2, key in self._nav_hits:
@@ -373,7 +390,7 @@ class App:
         """
 
         button = tk.Label(page, text=text, bg=PANEL, fg=INK,
-                          font=("Helvetica", 14), padx=16, pady=8,
+                          font=(SYSFONT, 14), padx=16, pady=8,
                           cursor="pointinghand" if sys.platform == "darwin"
                           else "hand2")
         # Nudge off the very edge, except a centred button which wants no
@@ -403,17 +420,17 @@ class App:
         # nothing ever runs underneath the preview in the right corner.
         self.gesture_label = tk.Label(self.home, text="--",
                                       bg=BACKGROUND, fg=INK,
-                                      font=("Helvetica", 44, "bold"))
+                                      font=(SYSFONT, 44, "bold"))
         self.gesture_label.place(relx=0.36, rely=0.32, anchor="center")
 
         self.result_label = tk.Label(self.home, text="starting camera...",
                                      bg=BACKGROUND, fg=DIM,
-                                     font=("Helvetica", 18),
+                                     font=(SYSFONT, 18),
                                      wraplength=420, justify="center")
         self.result_label.place(relx=0.36, rely=0.48, anchor="center")
 
         self.hint_label = tk.Label(self.home, text="", bg=BACKGROUND,
-                                   fg=DIM, font=("Helvetica", 13),
+                                   fg=DIM, font=(SYSFONT, 13),
                                    wraplength=460, justify="left")
         self.hint_label.place(relx=0, rely=1, anchor="sw", x=18, y=-72)
 
@@ -423,7 +440,7 @@ class App:
         # picture, only the person did, and some people would rather
         # not watch themselves.  The choice is kept in the config.
         self.preview = tk.Label(self.home, bg=PANEL, fg=DIM,
-                                font=("Helvetica", 12),
+                                font=(SYSFONT, 12),
                                 cursor="pointinghand"
                                 if sys.platform == "darwin" else "hand2")
         self.preview.place(relx=1, rely=1, anchor="se", x=-16, y=-64)
@@ -474,19 +491,19 @@ class App:
 
         for row, (name, words) in enumerate(self.SETTINGS):
             tk.Label(form, text=words, bg=BACKGROUND, fg=INK,
-                     font=("Helvetica", 14), anchor="e", width=26).grid(
+                     font=(SYSFONT, 14), anchor="e", width=26).grid(
                 row=row, column=0, padx=8, pady=7, sticky="e")
 
             entry = tk.Entry(form, bg=PANEL, fg=INK,
                              insertbackground=INK, relief="flat",
-                             font=("Helvetica", 14), width=16)
+                             font=(SYSFONT, 14), width=16)
             entry.insert(0, str(getattr(self.engine.config, name, "")))
             entry.grid(row=row, column=1, padx=8, pady=7, sticky="w")
             self.fields[name] = entry
 
         self.settings_note = tk.Label(self.settings, text="",
                                       bg=BACKGROUND, fg=ACCENT,
-                                      font=("Helvetica", 13))
+                                      font=(SYSFONT, 13))
         self.settings_note.place(relx=0.5, rely=0.87, anchor="center")
 
     def _build_add_gesture(self):
@@ -505,7 +522,7 @@ class App:
                      relx=1, rely=1, anchor="se")
 
         tk.Label(self.add_gesture, text="Teach QRUDO a new gesture",
-                 bg=BACKGROUND, fg=INK, font=("Helvetica", 20, "bold")).place(
+                 bg=BACKGROUND, fg=INK, font=(SYSFONT, 20, "bold")).place(
             relx=0.5, rely=0.09, anchor="center")
 
         # Left-anchored, not centred: a centred grid with a wide hint
@@ -516,13 +533,13 @@ class App:
 
         def label(r, text):
             tk.Label(form, text=text, bg=BACKGROUND, fg=INK,
-                     font=("Helvetica", 14), anchor="w").grid(
+                     font=(SYSFONT, 14), anchor="w").grid(
                 row=r, column=0, columnspan=2, padx=4, pady=(14, 2),
                 sticky="w")
 
         def hint(r, text):
             tk.Label(form, text=text, bg=BACKGROUND, fg=DIM,
-                     font=("Helvetica", 11), anchor="w").grid(
+                     font=(SYSFONT, 11), anchor="w").grid(
                 row=r, column=0, columnspan=2, padx=4, pady=(0, 2),
                 sticky="w")
 
@@ -537,7 +554,7 @@ class App:
                 '"go to gmail.com"')
         self.job_entry = tk.Entry(form, bg=PANEL, fg=INK,
                                   insertbackground=INK, relief="flat",
-                                  font=("Helvetica", 15), width=38)
+                                  font=(SYSFONT, 15), width=38)
         self.job_entry.insert(0, "next track")
         self.job_entry.grid(row=2, column=0, columnspan=2, padx=4, pady=4,
                             sticky="w", ipady=5)
@@ -548,7 +565,7 @@ class App:
         label(3, "2.  Which gesture?")
         self.gesture_status = tk.Label(
             form, text="＋  Record a gesture", bg=ACCENT, fg=BACKGROUND,
-            font=("Helvetica", 14, "bold"), padx=16, pady=8,
+            font=(SYSFONT, 14, "bold"), padx=16, pady=8,
             cursor="pointinghand" if sys.platform == "darwin" else "hand2")
         self.gesture_status.grid(row=4, column=0, padx=4, pady=4, sticky="w")
         self.gesture_status.bind("<Button-1>",
@@ -558,7 +575,7 @@ class App:
         # label and control are rebuilt by _refresh_box3; the frame is a
         # fixed slot so the layout does not jump.
         self.box3_label = tk.Label(form, text="", bg=BACKGROUND, fg=INK,
-                                   font=("Helvetica", 14), anchor="w")
+                                   font=(SYSFONT, 14), anchor="w")
         self.box3_label.grid(row=5, column=0, columnspan=2, padx=4,
                              pady=(14, 2), sticky="w")
         self.box3_slot = tk.Frame(form, bg=BACKGROUND)
@@ -577,11 +594,11 @@ class App:
         tk.Label(self.add_gesture,
                  text="Tip: Ctrl+Shift+←/→ switches the target app "
                       "live, any time.",
-                 bg=BACKGROUND, fg=DIM, font=("Helvetica", 12)).place(
+                 bg=BACKGROUND, fg=DIM, font=(SYSFONT, 12)).place(
             relx=0.08, rely=0.9, anchor="w")
 
         self.add_note = tk.Label(self.add_gesture, text="", bg=BACKGROUND,
-                                 fg=ACCENT, font=("Helvetica", 13),
+                                 fg=ACCENT, font=(SYSFONT, 13),
                                  wraplength=600, justify="left")
         self.add_note.place(relx=0.08, rely=0.95, anchor="w")
 
@@ -642,7 +659,7 @@ class App:
             tk.Label(self.box3_slot,
                      text="✓ " + action_mod.describe([action]),
                      bg=BACKGROUND, fg=ACCENT,
-                     font=("Helvetica", 14)).pack(anchor="w")
+                     font=(SYSFONT, 14)).pack(anchor="w")
 
         elif kind == "builtin":
             self.app_choice = None
@@ -650,7 +667,7 @@ class App:
             tk.Label(self.box3_slot,
                      text="✓ no app needed",
                      bg=BACKGROUND, fg=ACCENT,
-                     font=("Helvetica", 14)).pack(anchor="w")
+                     font=(SYSFONT, 14)).pack(anchor="w")
 
         else:
             self.app_choice = None
@@ -658,7 +675,7 @@ class App:
             tk.Label(self.box3_slot,
                      text="type a task above that QRUDO recognises",
                      bg=BACKGROUND, fg=DIM,
-                     font=("Helvetica", 13)).pack(anchor="w")
+                     font=(SYSFONT, 13)).pack(anchor="w")
 
     # -- what the corners do -------------------------------------------
 
@@ -680,7 +697,7 @@ class App:
                        text="keyboard rules are a later feature")
                    ).pack(side="right")
         logs = tk.Label(bar, text="🗎  For logs", bg=BACKGROUND, fg=DIM,
-                        font=("Helvetica Neue", 13),
+                        font=(SYSFONT, 13),
                         cursor="pointinghand"
                         if sys.platform == "darwin" else "hand2")
         logs.pack(side="right", padx=(0, 14))
@@ -693,7 +710,7 @@ class App:
                  text="You can pause a gesture with its switch -- off "
                       "stays taught, and never fires",
                  bg=BACKGROUND, fg=INK,
-                 font=("Helvetica Neue", 14)).pack(
+                 font=(SYSFONT, 14)).pack(
             anchor="w", padx=28, pady=(16, 10))
 
         self._gesture_rows = tk.Frame(self.gestures_page, bg=BACKGROUND)
@@ -745,7 +762,7 @@ class App:
                      text="no gestures yet -- Add Gesture teaches "
                           "QRUDO your first",
                      bg=BACKGROUND, fg=DIM,
-                     font=("Helvetica", 14)).pack(pady=30)
+                     font=(SYSFONT, 14)).pack(pady=30)
             return
 
         for gesture in gestures:
@@ -758,7 +775,7 @@ class App:
             live = gesture.enabled
 
             tk.Label(body, text="⇅", bg=BACKGROUND, fg=DIM,
-                     font=("Helvetica Neue", 12)).pack(side="left",
+                     font=(SYSFONT, 12)).pack(side="left",
                                                        padx=(2, 10))
 
             hands = "  (two hands)" if gesture.partner_signature else ""
@@ -772,7 +789,7 @@ class App:
             tk.Label(body,
                      text=f"{gesture.name}{hands}  →  {said}",
                      bg=BACKGROUND, fg=INK if live else DIM,
-                     font=("Helvetica Neue", 15)).pack(side="left")
+                     font=(SYSFONT, 15)).pack(side="left")
 
             def flip(paint, name=gesture.name, was=live):
                 custom.set_enabled(name, not was)
@@ -792,7 +809,7 @@ class App:
 
             if not live:
                 tk.Label(body, text="disabled", bg=BACKGROUND, fg=DIM,
-                         font=("Helvetica Neue", 12)).pack(
+                         font=(SYSFONT, 12)).pack(
                     side="right", padx=(0, 4))
 
             tk.Frame(row, bg=HAIRLINE, height=1).pack(fill="x")
@@ -996,6 +1013,30 @@ class App:
             "lives in the menu bar Q")
 
         self.root.withdraw()
+
+    def _dress_native_window(self):
+        """The last inch of native: a transparent title bar.
+
+        The original's sidebar runs the full height of the window with
+        the traffic lights floating over it.  Tk draws below a stock
+        title bar unless the underlying NSWindow is asked otherwise --
+        so it is asked, once the window exists.  Failure changes
+        nothing but the inch.
+        """
+
+        try:
+            from AppKit import NSApp
+
+            full_size = 1 << 15    # NSWindowStyleMaskFullSizeContentView
+
+            for win in NSApp.windows():
+                if "QRUDO" in str(win.title()):
+                    win.setTitlebarAppearsTransparent_(True)
+                    win.setTitleVisibility_(1)          # hidden
+                    win.setStyleMask_(win.styleMask() | full_size)
+                    break
+        except Exception:
+            pass
 
     def _enforce_agent_policy(self):
         """Back to Accessory: menu bar presence, no Dock entry."""
@@ -1260,6 +1301,8 @@ class App:
             for delay in (500, 2000, 5000):
                 self.root.after(delay, self._enforce_agent_policy)
 
+        self.root.after(600, self._dress_native_window)
+
         self.root.after(40, self.tick)
         self.root.mainloop()
 
@@ -1372,7 +1415,7 @@ class App:
             return
         self._retry_button = tk.Label(
             self.home, text="↻  Try camera again", bg=ACCENT, fg=BACKGROUND,
-            font=("Helvetica", 15, "bold"), padx=20, pady=10,
+            font=(SYSFONT, 15, "bold"), padx=20, pady=10,
             cursor="pointinghand" if sys.platform == "darwin" else "hand2")
         self._retry_button.place(relx=0.36, rely=0.62, anchor="center")
         self._retry_button.bind("<Button-1>", lambda _e: self._start_vision())
@@ -1427,18 +1470,18 @@ class Recorder:
                          relwidth=0.82, relheight=0.86)
 
         self.title = tk.Label(self.panel, text="", bg=PANEL, fg=INK,
-                              font=("Helvetica", 18, "bold"))
+                              font=(SYSFONT, 18, "bold"))
         self.title.place(relx=0.5, rely=0.06, anchor="center")
 
         # The live camera, so recording feels like calibration: you see
         # yourself, you know where to hold your hand, and a green frame
         # says when a hand is actually being read.
         self.view = tk.Label(self.panel, bg=BACKGROUND, fg=DIM,
-                             font=("Helvetica", 13))
+                             font=(SYSFONT, 13))
         self.view.place(relx=0.5, rely=0.42, anchor="center")
 
         self.body = tk.Label(self.panel, text="", bg=PANEL, fg=DIM,
-                             font=("Helvetica", 14), wraplength=460,
+                             font=(SYSFONT, 14), wraplength=460,
                              justify="center")
         self.body.place(relx=0.5, rely=0.78, anchor="center")
 
@@ -1689,7 +1732,7 @@ class Recorder:
 
         self.name_entry = tk.Entry(self.panel, bg=BACKGROUND, fg=INK,
                                    insertbackground=INK, relief="flat",
-                                   font=("Helvetica", 16), width=18,
+                                   font=(SYSFONT, 16), width=18,
                                    justify="center")
         self.name_entry.place(relx=0.5, rely=0.55, anchor="center")
         self.name_entry.focus_set()
@@ -1719,7 +1762,7 @@ class Recorder:
 
         for text, command in items:
             b = tk.Label(self.row, text=text, bg=BACKGROUND, fg=INK,
-                        font=("Helvetica", 13), padx=14, pady=7,
+                        font=(SYSFONT, 13), padx=14, pady=7,
                         cursor="pointinghand" if sys.platform == "darwin"
                         else "hand2")
             b.pack(side="left", padx=6)
