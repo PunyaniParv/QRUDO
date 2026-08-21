@@ -1053,7 +1053,20 @@ class App:
             pass
 
     def _enforce_agent_policy(self):
-        """Back to Accessory: menu bar presence, no Dock entry."""
+        """Back to Accessory: menu bar presence, no Dock entry.
+
+        Only while the window is hidden.  A visible window means the
+        person is USING the app -- Regular is then correct and wanted
+        -- and the startup timers this guards against once fired
+        seconds after a quick Show, yanking QRUDO out of the switcher
+        and Mission Control mid-use.
+        """
+
+        try:
+            if self.root.state() == "normal":
+                return
+        except Exception:
+            pass
 
         try:
             from AppKit import (NSApp,
