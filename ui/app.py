@@ -706,12 +706,18 @@ class App:
         tk.Frame(self.gestures_page, bg=HAIRLINE, height=1).pack(
             fill="x")
 
-        tk.Label(self.gestures_page,
-                 text="You can pause a gesture with its switch -- off "
-                      "stays taught, and never fires",
+        # The hint line, with its little boxed chip mid-sentence, the
+        # way the original boxes its drag icon.
+        hint = tk.Frame(self.gestures_page, bg=BACKGROUND)
+        hint.pack(anchor="w", padx=28, pady=(16, 10))
+        tk.Label(hint, text="You can pause a gesture with its",
                  bg=BACKGROUND, fg=INK,
-                 font=(SYSFONT, 14)).pack(
-            anchor="w", padx=28, pady=(16, 10))
+                 font=(SYSFONT, 14)).pack(side="left")
+        self._chip(hint, "switch", lambda: None,
+                   font=(SYSFONT, 11)).pack(side="left", padx=6)
+        tk.Label(hint, text="— off stays taught, and never fires",
+                 bg=BACKGROUND, fg=INK,
+                 font=(SYSFONT, 14)).pack(side="left")
 
         self._gesture_rows = tk.Frame(self.gestures_page, bg=BACKGROUND)
         self._gesture_rows.pack(fill="both", expand=True, padx=28)
@@ -723,7 +729,7 @@ class App:
         original's disabled rows read, not merely a darker gray.
         """
 
-        w, h = 48, 28
+        w, h = 50, 30
         canvas = tk.Canvas(parent, width=w, height=h,
                            bg=parent["bg"], highlightthickness=0,
                            cursor="pointinghand"
@@ -1005,7 +1011,9 @@ class App:
 
     def hide_window(self):
         """The window goes away; QRUDO does not.  The camera, the
-        gestures and the menu bar mark all stay exactly as they are."""
+        gestures and the menu bar mark all stay exactly as they are --
+        and the app leaves the cmd-tab switcher along with its window,
+        the way a background service should."""
 
         from control import log as _log
         _log.get_logger("ui").info(
@@ -1013,6 +1021,7 @@ class App:
             "lives in the menu bar Q")
 
         self.root.withdraw()
+        self._enforce_agent_policy()
 
     def _dress_native_window(self):
         """The last inch of native: a transparent title bar.
@@ -1050,7 +1059,19 @@ class App:
             pass
 
     def show_from_menubar(self):
-        """Bring the window back, in front, from the menu bar."""
+        """Bring the window back, in front, from the menu bar.
+
+        While the window is up, QRUDO is a REGULAR app on purpose: it
+        appears in cmd-tab like any window you are working with.
+        Closing the window hands it back to the menu bar and out of
+        the switcher; only Quit or cmd-Q ends it.
+        """
+
+        try:
+            from AppKit import NSApp
+            NSApp.setActivationPolicy_(0)     # regular: cmd-tab listed
+        except Exception:
+            pass
 
         self.root.deiconify()
         self.root.lift()
@@ -1060,9 +1081,6 @@ class App:
             NSApp.activateIgnoringOtherApps_(True)
         except Exception:
             pass
-
-        # Showing the window tempts Tk to promote the app again.
-        self.root.after(500, self._enforce_agent_policy)
 
     def quit(self):
         """Stop everything that matters, then leave -- without giving
