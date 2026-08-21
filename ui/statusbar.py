@@ -67,23 +67,20 @@ def install(app):
             self._app._menubar_intent = "quit"
 
     try:
-        # Pin the Q as the RIGHTMOST app icon -- right up against the
-        # system's own zone (the camera pill, control centre, battery),
-        # which is the closest any app is allowed to sit: everything
-        # from the camera pill rightward is Apple's, for every app.
-        # A tiny preferred distance from the right edge gets clamped to
-        # the nearest legal spot; set only once, so a hand-dragged
-        # position is respected afterwards.
+        # Position is left to macOS and to the person's own cmd-drag.
+        # A "pin it right" experiment once shoved the Q past the
+        # battery into the system cluster -- Tahoe interleaves more
+        # than documented -- and a mark that wanders reads as broken.
+        # Any stale pinned position from that experiment is cleared.
         from Foundation import NSUserDefaults
 
         defaults = NSUserDefaults.standardUserDefaults()
         key = "NSStatusItem Preferred Position QRUDO"
-        if defaults.objectForKey_(key) is None:
-            defaults.setFloat_forKey_(40.0, key)
+        if defaults.objectForKey_(key) is not None:
+            defaults.removeObjectForKey_(key)
 
         bar = NSStatusBar.systemStatusBar()
         item = bar.statusItemWithLength_(NSVariableStatusItemLength)
-        item.setAutosaveName_("QRUDO")
 
         image = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
         if image is None:
