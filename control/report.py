@@ -51,7 +51,7 @@ SESSION_GAP_SECONDS = 30 * 60
 #: Routes where a human pressed a key on purpose -- or spoke a command
 #: through the wake-word gate.  Their commands count in the totals but
 #: never toward the misfire verdict.
-DELIBERATE_SOURCES = {"hotkey", "simulator", "selftest", "cli", "voice"}
+DELIBERATE_SOURCES = {"hotkey", "simulator", "selftest", "cli", "voice", "ai"}
 
 
 def run(config, path: str | Path | None = None) -> int:

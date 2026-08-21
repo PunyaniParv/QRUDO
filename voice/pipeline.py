@@ -60,6 +60,8 @@ from voice.log import voice_debug, voice_log
 from voice.stt import SpeechToText
 from voice.stream import MicMonitor
 from voice.wake_word import WakeWordError, create_wake_word_engine
+from ai.provider import AssistantProvider
+from ai.assistant import Assistant, create_assistant
 
 
 TextHandler = Callable[[str], None]
@@ -217,6 +219,7 @@ def run_voice_command_loop(
     max_cycles: int | None = None,
     debug: bool | None = None,
     monitor: MicMonitor | None = None,
+    assistant: Assistant | None = None,
 ) -> None:
     """
     Blocks forever (or for ``max_cycles`` wake->command cycles) running the
@@ -405,6 +408,18 @@ def run_voice_command_loop(
             if route is None:
                 # UNSUPPORTED_COMMAND: malformed or unsupported speech --
                 # nothing is executed, ever.
+                # Exception: if an Assistant is injected and this is a
+                # genuinely unmatched request, hand it off for AI processing.
+                if assistant is not None:
+                    voice_log("[voice] No supported command matched; escalating to AI assistant.")
+                    final = assistant.escalate(command_text, {"command_text": command_text})
+                    # If the assistant produced a spoken reply, play it
+                    if tts_speak is not None:
+                        try:
+                            tts_speak(final)
+                        except Exception:
+                            pass
+                    continue
                 voice_log("[voice] No supported command matched. Nothing executed.")
                 continue
             command = route.command
