@@ -11,6 +11,17 @@ import os
 from dataclasses import dataclass
 
 
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable, gracefully falling back."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 @dataclass
 class AIConfig:
     """Configuration for the AI tool foundation.
@@ -39,6 +50,12 @@ class AIConfig:
     max_turns: int = 5
     """Maximum conversation turns before cutoff."""
 
+    api_key: str = ""
+    """API key for the HTTP provider. Never logged or printed."""
+
+    timeout: int = 60
+    """Bounded per-request timeout in seconds for the HTTP provider."""
+
     @classmethod
     def load(cls) -> "AIConfig":
         """Load configuration from environment variables.
@@ -50,6 +67,8 @@ class AIConfig:
           AI_MODEL=...
           AI_CONFIRM_ACTIONS=1|0
           AI_MAX_TURNS=...
+          AI_API_KEY=...
+          AI_TIMEOUT=...
         """
         return cls(
             ai_enabled=os.environ.get("AI_ENABLED", "").lower() in ("1", "true", "yes"),
@@ -60,6 +79,8 @@ class AIConfig:
                     if os.environ.get("AI_CONFIRM_ACTIONS") is not None
                     else True,
             max_turns=int(os.environ.get("AI_MAX_TURNS", "5")),
+            api_key=os.environ.get("AI_API_KEY", ""),
+            timeout=_env_int("AI_TIMEOUT", 60),
         )
 
 

@@ -191,7 +191,7 @@ class Assistant:
             return "AI did not produce a response."
 
         # Max turns exceeded
-        return f"AI response exceeded maximum of {self.config.ai_max_turns} turns."
+        return f"AI response exceeded maximum of {self.config.max_turns} turns."
 
     # ------------------------------------------------------------------
     # Internal helpers
